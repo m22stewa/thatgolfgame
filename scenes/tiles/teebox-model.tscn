@@ -1,6 +1,4 @@
-[gd_scene load_steps=3 format=3 uid="uid://b3dftw4nr54m8"]
-
-[ext_resource type="PackedScene" uid="uid://tohiatncovpm" path="res://models/golfball.glb" id="1_bgh23"]
+[gd_scene load_steps=2 format=3 uid="uid://b3dftw4nr54m8"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kusjy"]
 
@@ -20,6 +18,3 @@ radius = 0.13717762
 radial_segments = 20
 rings = 20
 material = SubResource("StandardMaterial3D_kusjy")
-
-[node name="Sketchfab_Scene" parent="." instance=ExtResource("1_bgh23")]
-transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0.4588554, 0)

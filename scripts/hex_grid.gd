@@ -82,6 +82,14 @@ var grid: Array = []
 # 2D array for elevation data (col, row) - stores Y height for each cell
 var elevation: Array = []
 
+# Golf ball reference
+var golf_ball: Node3D = null
+var tee_position: Vector3 = Vector3.ZERO
+
+# Tile highlighting
+var highlight_mesh: MeshInstance3D = null
+var hovered_cell: Vector2i = Vector2i(-1, -1)
+
 # Elevation noise seed (randomized per generation)
 var elevation_seed: int = 0
 
@@ -131,6 +139,7 @@ const ELEVATION_OFFSETS = {
 
 func _clear_course_nodes() -> void:
 	thefloor.hide()
+	golf_ball = null  # Reset golf ball reference
 	var to_remove: Array = []
 	for child in get_children():
 		if child is MultiMeshInstance3D:
@@ -140,6 +149,8 @@ func _clear_course_nodes() -> void:
 		elif child.is_in_group("trees"):
 			to_remove.append(child)
 		elif child.is_in_group("teebox"):
+			to_remove.append(child)
+		elif child.is_in_group("golfball"):
 			to_remove.append(child)
 		elif child.is_in_group("foliage"):
 			to_remove.append(child)
@@ -560,9 +571,96 @@ func set_elevation(col: int, row: int, value: float) -> void:
 # --- Lifecycle ----------------------------------------------------------
 
 func _ready() -> void:
+	_create_highlight_mesh()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
+
+
+func _process(_delta: float) -> void:
+	_update_tile_highlight()
+
+
+# Create the highlight mesh used to show hovered tile
+func _create_highlight_mesh() -> void:
+	highlight_mesh = MeshInstance3D.new()
+	
+	# Use a CylinderMesh as a ring - make it very short (flat) and hollow looking
+	var cylinder = CylinderMesh.new()
+	cylinder.top_radius = TILE_SIZE * 0.55
+	cylinder.bottom_radius = TILE_SIZE * 0.55
+	cylinder.height = 0.05  # Very thin/flat
+	cylinder.radial_segments = 6  # Hexagonal shape
+	highlight_mesh.mesh = cylinder
+	
+	# Create a bright, unshaded material for maximum visibility
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Bright yellow/gold, semi-transparent
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # Always fully bright
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	highlight_mesh.material_override = mat
+	highlight_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	highlight_mesh.visible = false
+	add_child(highlight_mesh)
+
+
+# Update tile highlight based on mouse position
+func _update_tile_highlight() -> void:
+	var camera = get_viewport().get_camera_3d()
+	if not camera:
+		highlight_mesh.visible = false
+		return
+	
+	var mouse_pos = get_viewport().get_mouse_position()
+	var ray_origin = camera.project_ray_origin(mouse_pos)
+	var ray_dir = camera.project_ray_normal(mouse_pos)
+	
+	# Raycast against a horizontal plane at y=0 (approximate ground level)
+	var plane = Plane(Vector3.UP, 0)
+	var intersection = plane.intersects_ray(ray_origin, ray_dir)
+	
+	if intersection:
+		# Convert world position to grid coordinates
+		var cell = world_to_grid(intersection)
+		
+		if cell.x >= 0 and cell.x < grid_width and cell.y >= 0 and cell.y < grid_height:
+			var surface = get_cell(cell.x, cell.y)
+			if surface != -1 and surface != SurfaceType.WATER:
+				hovered_cell = cell
+				
+				# Position highlight mesh at the cell
+				var width = TILE_SIZE
+				var hex_height = TILE_SIZE * sqrt(3.0)
+				var x_pos = cell.x * width * 1.5
+				var z_pos = cell.y * hex_height + (cell.x % 2) * (hex_height / 2.0)
+				# Position well above the tile to be visible
+				var y_pos = get_elevation(cell.x, cell.y) + 0.5
+				
+				highlight_mesh.position = Vector3(x_pos, y_pos, z_pos)
+				highlight_mesh.rotation.y = PI / 6.0  # Match tile rotation
+				highlight_mesh.visible = true
+				return
+	
+	# No valid hover
+	hovered_cell = Vector2i(-1, -1)
+	highlight_mesh.visible = false
+
+
+# Convert world position to grid cell coordinates
+func world_to_grid(world_pos: Vector3) -> Vector2i:
+	var width = TILE_SIZE
+	var height = TILE_SIZE * sqrt(3.0)
+	
+	# Approximate column from x position
+	var col = roundi(world_pos.x / (width * 1.5))
+	
+	# Adjust z for row offset based on column
+	var z_offset = (col % 2) * (height / 2.0)
+	var row = roundi((world_pos.z - z_offset) / height)
+	
+	return Vector2i(col, row)
 
 
 # Display hole information in the UI Label
@@ -1368,6 +1466,15 @@ func _generate_grid() -> void:
 				teebox_instance.position = Vector3(tee_x, tee_y, tee_z)
 				teebox_instance.add_to_group("teebox")
 				add_child(teebox_instance)
+				
+				# Place golf ball at center of tee box
+				if golf_ball == null:
+					golf_ball = GOLFBALL.instantiate()
+					golf_ball.scale = Vector3(0.5, 0.5, 0.5)  # 50% size
+					tee_position = Vector3(tee_x, tee_y + 0.7, tee_z)  # On top of teebox model
+					golf_ball.position = tee_position
+					golf_ball.add_to_group("golfball")
+					add_child(golf_ball)
 
 	# Instance trees at TREE cells
 	# Trees are placed to frame the hole and provide visual boundaries

@@ -1,6 +1,7 @@
-[gd_scene load_steps=45 format=4 uid="uid://cuxm2wcvvyl3d"]
+[gd_scene load_steps=47 format=4 uid="uid://cuxm2wcvvyl3d"]
 
 [ext_resource type="Texture2D" uid="uid://bhxi4iljnxiwl" path="res://textures/texture_gradient.png" id="1_8gvh7"]
+[ext_resource type="Shader" uid="uid://cmc0chrl8l1mt" path="res://scripts/outline.gdshader" id="2_12mr5"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_cw43q"]
 resource_name = "AllColors_Material"
@@ -157,6 +158,15 @@ _surfaces = [{
 }]
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_3gsbf")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_uifu7"]
+render_priority = 0
+shader = ExtResource("2_12mr5")
+shader_parameter/step_count = 3
+shader_parameter/thickness = 3.0
+shader_parameter/edge_color = Color(0, 0, 0, 1)
+shader_parameter/fade_start = 100.0
+shader_parameter/fade_length = 200.0
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_5mob4"]
 resource_name = "AllColors_Material"
@@ -557,6 +567,7 @@ mesh = SubResource("ArrayMesh_sn4m5")
 skeleton = NodePath("")
 
 [node name="Tree_Spruce_small_01" type="Node3D" parent="."]
+visible = false
 
 [node name="Tree_Spruce_small_01" type="MeshInstance3D" parent="Tree_Spruce_small_01"]
 material_override = SubResource("StandardMaterial3D_12mr5")
@@ -564,6 +575,7 @@ mesh = SubResource("ArrayMesh_ycaeg")
 skeleton = NodePath("")
 
 [node name="Tree_average_lush" type="Node3D" parent="."]
+visible = false
 
 [node name="Tree_average_lush" type="MeshInstance3D" parent="Tree_average_lush"]
 mesh = SubResource("ArrayMesh_igyb3")
@@ -572,6 +584,7 @@ skeleton = NodePath("")
 [node name="Tree_small_regular" type="Node3D" parent="."]
 
 [node name="Tree_small_regular" type="MeshInstance3D" parent="Tree_small_regular"]
+material_overlay = SubResource("ShaderMaterial_uifu7")
 mesh = SubResource("ArrayMesh_3811y")
 skeleton = NodePath("")
 
