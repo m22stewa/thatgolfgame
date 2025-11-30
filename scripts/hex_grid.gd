@@ -90,6 +90,10 @@ var tee_position: Vector3 = Vector3.ZERO
 var highlight_mesh: MeshInstance3D = null
 var hovered_cell: Vector2i = Vector2i(-1, -1)
 
+# Trajectory line
+var trajectory_mesh: MeshInstance3D = null
+var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary by club)
+
 # Elevation noise seed (randomized per generation)
 var elevation_seed: int = 0
 
@@ -572,6 +576,7 @@ func set_elevation(col: int, row: int, value: float) -> void:
 
 func _ready() -> void:
 	_create_highlight_mesh()
+	_create_trajectory_mesh()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
@@ -604,6 +609,56 @@ func _create_highlight_mesh() -> void:
 	
 	highlight_mesh.visible = false
 	add_child(highlight_mesh)
+
+
+# Create the trajectory arc mesh
+func _create_trajectory_mesh() -> void:
+	trajectory_mesh = MeshInstance3D.new()
+	trajectory_mesh.mesh = ImmediateMesh.new()
+	
+	# Create a bright material for the trajectory line
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.8)  # White, slightly transparent
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	trajectory_mesh.material_override = mat
+	trajectory_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	add_child(trajectory_mesh)
+
+
+# Update the trajectory arc from ball to target
+func _update_trajectory(target_pos: Vector3) -> void:
+	if golf_ball == null:
+		trajectory_mesh.visible = false
+		return
+	
+	var im: ImmediateMesh = trajectory_mesh.mesh
+	im.clear_surfaces()
+	
+	var start_pos = golf_ball.position
+	var end_pos = target_pos
+	
+	# Number of segments in the arc
+	var segments = 30
+	
+	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+	
+	for i in range(segments + 1):
+		var t = float(i) / float(segments)
+		
+		# Linear interpolation for X and Z
+		var pos = start_pos.lerp(end_pos, t)
+		
+		# Parabolic arc for Y (height)
+		# Peak at t=0.5, using sin for smooth arc
+		var arc_height = sin(t * PI) * trajectory_height
+		pos.y = start_pos.y + (end_pos.y - start_pos.y) * t + arc_height
+		
+		im.surface_add_vertex(pos)
+	
+	im.surface_end()
+	trajectory_mesh.visible = true
 
 
 # Update tile highlight based on mouse position
@@ -641,11 +696,16 @@ func _update_tile_highlight() -> void:
 				highlight_mesh.position = Vector3(x_pos, y_pos, z_pos)
 				highlight_mesh.rotation.y = PI / 6.0  # Match tile rotation
 				highlight_mesh.visible = true
+				
+				# Update trajectory arc to target
+				var target_y = get_elevation(cell.x, cell.y)
+				_update_trajectory(Vector3(x_pos, target_y, z_pos))
 				return
 	
 	# No valid hover
 	hovered_cell = Vector2i(-1, -1)
 	highlight_mesh.visible = false
+	trajectory_mesh.visible = false
 
 
 # Convert world position to grid cell coordinates
@@ -1470,7 +1530,7 @@ func _generate_grid() -> void:
 				# Place golf ball at center of tee box
 				if golf_ball == null:
 					golf_ball = GOLFBALL.instantiate()
-					golf_ball.scale = Vector3(0.5, 0.5, 0.5)  # 50% size
+					golf_ball.scale = Vector3(0.3, 0.3, 0.3)  # 50% size
 					tee_position = Vector3(tee_x, tee_y + 0.7, tee_z)  # On top of teebox model
 					golf_ball.position = tee_position
 					golf_ball.add_to_group("golfball")
