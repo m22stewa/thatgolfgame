@@ -1,0 +1,92 @@
+[gd_scene load_steps=11 format=3 uid="uid://i0lqex70w705"]
+
+[ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
+[ext_resource type="Script" uid="uid://di5l5thhjio4c" path="res://simple-free-look-camera-4-cf0bc21bfd15940b18ec42e3c6cae1ad385284c4/camera.gd" id="2_tryan"]
+[ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
+[ext_resource type="PackedScene" uid="uid://bm4yp6kkayc83" path="res://scenes/hole-generator.tscn" id="4_81eei"]
+
+[sub_resource type="Gradient" id="Gradient_81eei"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_u36vh"]
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_nnrla"]
+noise = SubResource("FastNoiseLite_u36vh")
+color_ramp = SubResource("Gradient_81eei")
+seamless = true
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cdobm"]
+sky_top_color = Color(0.25285417, 0.40795365, 0.96155053, 1)
+sky_horizon_color = Color(2.7434528e-06, 0.3997219, 0.51739854, 1)
+sky_cover = SubResource("NoiseTexture2D_nnrla")
+ground_bottom_color = Color(0.014956853, 0.11497355, 0.07771852, 1)
+ground_horizon_color = Color(0.07983077, 0.3446369, 0.23902681, 1)
+ground_curve = 0.09513669
+
+[sub_resource type="Sky" id="Sky_keddd"]
+sky_material = SubResource("ProceduralSkyMaterial_cdobm")
+
+[sub_resource type="Environment" id="Environment_rvr3e"]
+background_mode = 2
+sky = SubResource("Sky_keddd")
+tonemap_mode = 2
+sdfgi_enabled = true
+fog_light_color = Color(0.25687778, 0.612905, 0.62375724, 1)
+fog_light_energy = 0.43
+fog_sun_scatter = 15.0
+fog_sky_affect = 0.425
+volumetric_fog_density = 0.013
+volumetric_fog_length = 28.6
+volumetric_fog_sky_affect = 0.18
+
+[node name="GOLF" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_rvr3e")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.8660254, -0.43301278, 0.25, 0, 0.49999997, 0.86602545, -0.50000006, 0.75, -0.43301266, 0, 0, 0)
+light_color = Color(0.7882353, 0.68235296, 0.07058824, 1)
+light_energy = 0.7
+shadow_enabled = true
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(-1, 8.742278e-08, 4.2322548e-15, 5.8304238e-08, 0.6669227, 0.7451269, 6.5141066e-08, 0.7451269, -0.6669227, 4.962555, 32.72398, -5.907792)
+script = ExtResource("2_tryan")
+
+[node name="floor" type="CSGBox3D" parent="."]
+unique_name_in_owner = true
+transform = Transform3D(-1, -8.742278e-08, -3.821371e-15, 0, -4.371139e-08, 1, -8.742278e-08, 1, 4.371139e-08, 5, -1, 15)
+size = Vector3(10, 30, 1)
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Button" type="Button" parent="Control"]
+layout_mode = 0
+offset_left = 29.0
+offset_top = 24.0
+offset_right = 240.0
+offset_bottom = 92.0
+text = "Generate"
+
+[node name="Label" type="Label" parent="Control"]
+unique_name_in_owner = true
+layout_mode = 0
+offset_left = 30.0
+offset_top = 105.0
+offset_right = 306.0
+offset_bottom = 245.0
+
+[node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]
+
+[node name="HexGrid" type="Node3D" parent="HoleGenerator"]
+script = ExtResource("1_rp2c5")
+
+[node name="tree-spawner" type="Node3D" parent="HoleGenerator"]
+visible = false
+script = ExtResource("3_tryan")
+
+[connection signal="pressed" from="Control/Button" to="HoleGenerator/HexGrid" method="_on_button_pressed"]

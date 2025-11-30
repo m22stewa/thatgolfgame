@@ -1,0 +1,25 @@
+[gd_scene load_steps=3 format=3 uid="uid://b3dftw4nr54m8"]
+
+[ext_resource type="PackedScene" uid="uid://tohiatncovpm" path="res://models/golfball.glb" id="1_bgh23"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_kusjy"]
+
+[node name="unit_hexTEEBOX" type="Node3D"]
+transform = Transform3D(-1, 0, 8.742278e-08, 0, 1, 0, -8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="CSGSphere3D" type="CSGSphere3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.7, 0.65, 0)
+radius = 0.13717762
+radial_segments = 20
+rings = 20
+material = SubResource("StandardMaterial3D_kusjy")
+
+[node name="CSGSphere3D2" type="CSGSphere3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.7, 0.65, 0)
+radius = 0.13717762
+radial_segments = 20
+rings = 20
+material = SubResource("StandardMaterial3D_kusjy")
+
+[node name="Sketchfab_Scene" parent="." instance=ExtResource("1_bgh23")]
+transform = Transform3D(0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0.4588554, 0)

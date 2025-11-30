@@ -1,0 +1,31 @@
+[gd_scene load_steps=2 format=3 uid="uid://155xx7s6y6ta"]
+
+[ext_resource type="Script" uid="uid://da6e4q8em88er" path="res://scripts/CourseGenerator.gd" id="1_o5qli"]
+
+[node name="Main" type="Node3D"]
+
+[node name="CourseGenerator" type="Node3D" parent="."]
+script = ExtResource("1_o5qli")
+
+[node name="CSGBox3D" type="CSGBox3D" parent="."]
+transform = Transform3D(20, 0, 0, 0, 1, 0, 0, 0, 10, 10.150122, 0.024, 5.058523)
+visible = false
+size = Vector3(1, 0.047851563, 1)
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.58579254, 0.81046104, 0, -0.81046104, 0.58579254, 20.307764, 11.022587, 10.817657)
+fov = 85.548195
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Button" type="Button" parent="Control"]
+layout_mode = 0
+offset_right = 211.0
+offset_bottom = 68.0
+text = "Generate"
+
+[connection signal="pressed" from="Control/Button" to="CourseGenerator" method="_on_button_pressed"]

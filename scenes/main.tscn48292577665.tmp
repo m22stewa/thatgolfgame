@@ -1,0 +1,42 @@
+[gd_scene load_steps=3 format=3 uid="uid://155xx7s6y6ta"]
+
+[ext_resource type="Script" uid="uid://da6e4q8em88er" path="res://scripts/CourseGenerator.gd" id="1_o5qli"]
+[ext_resource type="Script" uid="uid://di5l5thhjio4c" path="res://simple-free-look-camera-4-cf0bc21bfd15940b18ec42e3c6cae1ad385284c4/camera.gd" id="2_0wfyh"]
+
+[node name="Main" type="Node3D"]
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.8660254, -0.43301278, 0.25, 0, 0.49999997, 0.86602545, -0.50000006, 0.75, -0.43301266, 0, 0, 0)
+shadow_enabled = true
+
+[node name="CourseGenerator" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.99999994, 0, 0, 0, 0.99999994, -5, 1.0000005, -10)
+script = ExtResource("1_o5qli")
+resolution = 2
+
+[node name="Hole" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.17183685, 0.33801746, -0.23493338)
+size = Vector3(10, 1, 20)
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Button" type="Button" parent="Control"]
+layout_mode = 0
+offset_right = 211.0
+offset_bottom = 68.0
+text = "Generate"
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(-1, 0, -8.742278e-08, -2.2492532e-08, 0.96633565, 0.25728458, 8.4479744e-08, 0.25728458, -0.96633565, 0, 6.3422227, -14.98)
+script = ExtResource("2_0wfyh")
+
+[node name="HoleInfoLabel" type="Label3D" parent="."]
+transform = Transform3D(-1, 0, 8.742278e-08, 0, 1, 0, -8.742278e-08, 0, -1, 0, 3.422121, 0)
+text = "aaaaaaa"
+font_size = 200
+
+[connection signal="pressed" from="Control/Button" to="CourseGenerator" method="_on_button_pressed"]

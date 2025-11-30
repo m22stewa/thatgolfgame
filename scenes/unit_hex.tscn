@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3 uid="uid://erok5kiplva3"]
+
+[ext_resource type="ArrayMesh" uid="uid://3xkvjlrp6gql" path="res://scenes/tiles/fairway-mesh.tres" id="1_asera"]
+[ext_resource type="ArrayMesh" uid="uid://b4eaqsjfkbr05" path="res://scenes/tiles/ground-mesh.tres" id="2_efo1q"]
+
+[node name="unit_hex" type="Node3D"]
+transform = Transform3D(-4.371139e-08, 0, 1, 0, 1, 0, -1, 0, -4.371139e-08, 0, 0, 0)
+
+[node name="surface" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.3, 0, 0, 0, 1, 0, 0.38, 0)
+mesh = ExtResource("1_asera")
+skeleton = NodePath("")
+
+[node name="ground" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.95, 0, 0, 0, 0.95, 0, 0, 0, 0.95, 0, 0, 0)
+mesh = ExtResource("2_efo1q")
+skeleton = NodePath("")

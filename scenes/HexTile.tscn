@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://ctd4v43vatih6"]
+
+[ext_resource type="PackedScene" uid="uid://erok5kiplva3" path="res://scenes/unit_hex.tscn" id="1_44cck"]
+
+[node name="HexTile" type="Node3D"]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 0, 0, 0)
+
+[node name="unit_hex" parent="." instance=ExtResource("1_44cck")]
