@@ -900,26 +900,128 @@ func _on_landing_resolved(context: ShotContext) -> void:
 
 
 func _on_shot_completed(context: ShotContext) -> void:
-	"""Called when shot is finished - update ball position, scoring, UI"""
+	"""Called when shot is finished - animate ball flight, then update state"""
 	print("Shot completed! Score: %d (chips: %d x mult: %.1f)" % [context.final_score, context.chips, context.mult])
-	
-	# Move ball to landing position
-	if golf_ball and context.landing_tile.x >= 0:
-		var new_pos = get_tile_world_position(context.landing_tile)
-		golf_ball.position = new_pos + Vector3(0, 0.1, 0)  # Slight offset above ground
 	
 	# Reset target lock state
 	target_locked = false
 	target_highlight_mesh.visible = false
+	
+	# Animate ball flight to landing position
+	if golf_ball and context.landing_tile.x >= 0:
+		var target_pos = get_tile_world_position(context.landing_tile) + Vector3(0, 0.1, 0)
+		await _animate_ball_flight(golf_ball.position, target_pos)
+	
+	# Hide trajectory after landing
+	trajectory_mesh.visible = false
+	trajectory_shadow_mesh.visible = false
 	
 	# Check if reached flag
 	if context.has_metadata("reached_flag"):
 		print("HOLE COMPLETE!")
 		# UI handles showing hole complete popup via signal
 	else:
-		# Start next shot after a brief delay
+		# Start next shot after score popup finishes
 		await get_tree().create_timer(2.5).timeout
 		_start_new_shot()
+
+
+# --- Ball Flight Animation ---
+
+func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
+	"""Animate the golf ball along an arc from start to end position"""
+	if golf_ball == null:
+		return
+	
+	# Calculate flight parameters based on distance
+	var distance = start_pos.distance_to(end_pos)
+	var flight_duration = clamp(distance * 0.08, 0.5, 2.5)  # 0.5 to 2.5 seconds based on distance
+	
+	# Peak height based on distance (longer shots go higher)
+	var peak_height = clamp(distance * 0.3, 2.0, 12.0)
+	
+	# Add extra height if going uphill
+	var height_diff = end_pos.y - start_pos.y
+	if height_diff > 0:
+		peak_height += height_diff * 0.5
+	
+	# Create tween for smooth animation
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_SINE)
+	
+	# Number of steps for arc calculation
+	var steps = 30
+	var step_duration = flight_duration / steps
+	
+	# Animate through arc points
+	for i in range(1, steps + 1):
+		var t = float(i) / float(steps)
+		var arc_pos = _calculate_arc_position(start_pos, end_pos, t, peak_height)
+		
+		# Use different easing for up vs down portion
+		if t < 0.5:
+			tween.set_trans(Tween.TRANS_SINE)
+			tween.set_ease(Tween.EASE_OUT)
+		else:
+			tween.set_trans(Tween.TRANS_QUAD)
+			tween.set_ease(Tween.EASE_IN)
+		
+		tween.tween_property(golf_ball, "position", arc_pos, step_duration)
+	
+	# Wait for animation to complete
+	await tween.finished
+	
+	# Ensure ball is at exact landing position
+	golf_ball.position = end_pos
+	
+	# Add a small bounce effect on landing
+	await _animate_ball_bounce(end_pos)
+
+
+func _calculate_arc_position(start: Vector3, end: Vector3, t: float, peak_height: float) -> Vector3:
+	"""Calculate position along a parabolic arc at time t (0 to 1)"""
+	# Linear interpolation for X and Z
+	var pos = start.lerp(end, t)
+	
+	# Parabolic arc for Y (peaks at t=0.5)
+	# Using formula: h = 4 * peak * t * (1 - t)
+	var arc_height = 4.0 * peak_height * t * (1.0 - t)
+	
+	# Start from the higher of the two elevations for the arc base
+	var base_y = lerp(start.y, end.y, t)
+	pos.y = base_y + arc_height
+	
+	return pos
+
+
+func _animate_ball_bounce(land_pos: Vector3) -> void:
+	"""Add a small bounce effect when ball lands"""
+	if golf_ball == null:
+		return
+	
+	var bounce_height = 0.3  # Small bounce
+	var bounce_duration = 0.15
+	
+	var tween = create_tween()
+	
+	# Bounce up
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_QUAD)
+	tween.tween_property(golf_ball, "position:y", land_pos.y + bounce_height, bounce_duration)
+	
+	# Fall back down
+	tween.set_ease(Tween.EASE_IN)
+	tween.set_trans(Tween.TRANS_QUAD)
+	tween.tween_property(golf_ball, "position:y", land_pos.y, bounce_duration)
+	
+	# Tiny second bounce
+	tween.set_ease(Tween.EASE_OUT)
+	tween.tween_property(golf_ball, "position:y", land_pos.y + bounce_height * 0.3, bounce_duration * 0.6)
+	tween.set_ease(Tween.EASE_IN)
+	tween.tween_property(golf_ball, "position:y", land_pos.y, bounce_duration * 0.6)
+	
+	await tween.finished
 
 
 func get_hex_tile(cell: Vector2i) -> HexTile:
