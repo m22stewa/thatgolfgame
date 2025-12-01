@@ -6,7 +6,7 @@ enum SurfaceType {
 
 const FLAG = preload("uid://cu7517xrwfodv")
 const TEEBOX_MODEL = preload("res://scenes/tiles/teebox-model.tscn")
-const GOLFBALL = preload("uid://tohiatncovpm")
+const GOLFBALL = preload("res://scenes/golf_ball.tscn")
 
 # Array of tree scenes to randomly choose from
 # Add more tree .tscn files here for variety!

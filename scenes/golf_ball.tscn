@@ -1,0 +1,107 @@
+[gd_scene load_steps=5 format=3 uid="uid://golfball_scene"]
+
+[ext_resource type="PackedScene" uid="uid://tohiatncovpm" path="res://models/golfball.glb" id="1_model"]
+[ext_resource type="Script" path="res://scripts/golf_ball.gd" id="2_script"]
+
+[sub_resource type="Shader" id="Shader_golfball"]
+code = "
+shader_type spatial;
+render_mode cull_back, diffuse_toon, specular_toon;
+
+// Ball colors
+uniform vec3 base_color : source_color = vec3(1.0, 1.0, 1.0);
+uniform vec3 shadow_color : source_color = vec3(0.85, 0.85, 0.9);
+uniform vec3 highlight_color : source_color = vec3(1.0, 1.0, 1.0);
+
+// Toon shading parameters
+uniform float shadow_threshold : hint_range(0.0, 1.0) = 0.4;
+uniform float shadow_smoothness : hint_range(0.0, 0.5) = 0.05;
+uniform float highlight_threshold : hint_range(0.0, 1.0) = 0.9;
+uniform float highlight_smoothness : hint_range(0.0, 0.5) = 0.05;
+
+// Rim light
+uniform float rim_power : hint_range(0.0, 10.0) = 3.0;
+uniform float rim_intensity : hint_range(0.0, 1.0) = 0.3;
+uniform vec3 rim_color : source_color = vec3(1.0, 1.0, 1.0);
+
+// Fresnel for subtle edge glow
+uniform float fresnel_power : hint_range(0.0, 5.0) = 2.0;
+
+// Dimple effect (optional noise-based)
+uniform float dimple_scale : hint_range(1.0, 50.0) = 20.0;
+uniform float dimple_depth : hint_range(0.0, 0.1) = 0.02;
+
+varying vec3 world_normal;
+varying vec3 world_vertex;
+
+void vertex() {
+    world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
+    world_vertex = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+void fragment() {
+    // Base albedo
+    ALBEDO = base_color;
+    
+    // Calculate view direction for rim lighting
+    vec3 view_dir = normalize(CAMERA_POSITION_WORLD - world_vertex);
+    vec3 normal = normalize(world_normal);
+    
+    // Fresnel effect (edges catch more light)
+    float fresnel = pow(1.0 - max(dot(view_dir, normal), 0.0), fresnel_power);
+    
+    // Rim lighting
+    float rim = pow(1.0 - max(dot(view_dir, normal), 0.0), rim_power);
+    vec3 rim_contribution = rim_color * rim * rim_intensity;
+    
+    // Add rim and fresnel to emission for glow effect
+    EMISSION = rim_contribution + fresnel * 0.1;
+    
+    // Smooth, slightly shiny surface
+    ROUGHNESS = 0.3;
+    METALLIC = 0.0;
+    SPECULAR = 0.5;
+}
+
+void light() {
+    // Calculate light intensity
+    float NdotL = dot(NORMAL, LIGHT);
+    
+    // Toon shadow band
+    float shadow = smoothstep(shadow_threshold - shadow_smoothness, 
+                              shadow_threshold + shadow_smoothness, NdotL);
+    
+    // Toon highlight band
+    float highlight = smoothstep(highlight_threshold - highlight_smoothness,
+                                 highlight_threshold + highlight_smoothness, NdotL);
+    
+    // Blend between shadow, base, and highlight colors
+    vec3 toon_color = mix(shadow_color, base_color, shadow);
+    toon_color = mix(toon_color, highlight_color, highlight);
+    
+    // Apply lighting
+    DIFFUSE_LIGHT += toon_color * ATTENUATION * LIGHT_COLOR;
+}
+"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_golfball"]
+shader = SubResource("Shader_golfball")
+shader_parameter/base_color = Color(1, 1, 1, 1)
+shader_parameter/shadow_color = Color(0.85, 0.85, 0.9, 1)
+shader_parameter/highlight_color = Color(1, 1, 1, 1)
+shader_parameter/shadow_threshold = 0.4
+shader_parameter/shadow_smoothness = 0.05
+shader_parameter/highlight_threshold = 0.9
+shader_parameter/highlight_smoothness = 0.05
+shader_parameter/rim_power = 3.0
+shader_parameter/rim_intensity = 0.3
+shader_parameter/rim_color = Color(1, 1, 1, 1)
+shader_parameter/fresnel_power = 2.0
+shader_parameter/dimple_scale = 20.0
+shader_parameter/dimple_depth = 0.02
+
+[node name="GolfBall" type="Node3D"]
+script = ExtResource("2_script")
+ball_material = SubResource("ShaderMaterial_golfball")
+
+[node name="Model" parent="." instance=ExtResource("1_model")]
