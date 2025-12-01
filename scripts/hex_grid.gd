@@ -660,8 +660,9 @@ func _ready() -> void:
 	_start_new_shot()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_tile_highlight()
+	_process_ball_spin(delta)
 
 
 func _input(event: InputEvent) -> void:
@@ -928,8 +929,11 @@ func _on_shot_completed(context: ShotContext) -> void:
 
 # --- Ball Flight Animation ---
 
+# Ball spin tracking
+var ball_spin_tween: Tween = null
+
 func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
-	"""Animate the golf ball along an arc from start to end position"""
+	"""Animate the golf ball along an arc from start to end position with spin"""
 	if golf_ball == null:
 		return
 	
@@ -945,7 +949,17 @@ func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
 	if height_diff > 0:
 		peak_height += height_diff * 0.5
 	
-	# Create tween for smooth animation
+	# Calculate spin direction (ball spins in direction of travel)
+	var travel_dir = (end_pos - start_pos).normalized()
+	# Spin axis is perpendicular to travel direction (cross with up vector)
+	var spin_axis = travel_dir.cross(Vector3.UP).normalized()
+	if spin_axis.length() < 0.1:
+		spin_axis = Vector3.RIGHT  # Fallback if traveling straight up/down
+	
+	# Start ball spin animation
+	_start_ball_spin(spin_axis, flight_duration, distance)
+	
+	# Create tween for position animation
 	var tween = create_tween()
 	tween.set_ease(Tween.EASE_OUT)
 	tween.set_trans(Tween.TRANS_SINE)
@@ -972,11 +986,73 @@ func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
 	# Wait for animation to complete
 	await tween.finished
 	
+	# Stop spin
+	_stop_ball_spin()
+	
 	# Ensure ball is at exact landing position
 	golf_ball.position = end_pos
 	
 	# Add a small bounce effect on landing
 	await _animate_ball_bounce(end_pos)
+
+
+func _start_ball_spin(spin_axis: Vector3, duration: float, distance: float) -> void:
+	"""Start the ball spinning during flight"""
+	if golf_ball == null:
+		return
+	
+	# Calculate spin speed based on distance (faster spin for longer shots)
+	# More rotations for longer distance
+	var total_rotations = clamp(distance * 0.5, 2.0, 15.0)  # 2 to 15 full rotations
+	var spin_speed = (total_rotations * TAU) / duration  # radians per second
+	
+	# Reset ball rotation
+	golf_ball.rotation = Vector3.ZERO
+	
+	# Kill any existing spin tween
+	if ball_spin_tween and ball_spin_tween.is_valid():
+		ball_spin_tween.kill()
+	
+	# Create continuous spin using process
+	ball_spin_tween = create_tween()
+	ball_spin_tween.set_loops()  # Infinite loops
+	
+	# Rotate around the spin axis
+	# We'll use a short interval and rotate incrementally
+	var spin_interval = 0.016  # ~60fps
+	var rotation_per_interval = spin_speed * spin_interval
+	
+	# Store spin data for _process to use
+	golf_ball.set_meta("spin_axis", spin_axis)
+	golf_ball.set_meta("spin_speed", spin_speed)
+	golf_ball.set_meta("is_spinning", true)
+
+
+func _stop_ball_spin() -> void:
+	"""Stop the ball spinning"""
+	if golf_ball == null:
+		return
+	
+	golf_ball.set_meta("is_spinning", false)
+	
+	if ball_spin_tween and ball_spin_tween.is_valid():
+		ball_spin_tween.kill()
+		ball_spin_tween = null
+
+
+func _process_ball_spin(delta: float) -> void:
+	"""Update ball spin rotation each frame"""
+	if golf_ball == null:
+		return
+	
+	if not golf_ball.has_meta("is_spinning") or not golf_ball.get_meta("is_spinning"):
+		return
+	
+	var spin_axis = golf_ball.get_meta("spin_axis")
+	var spin_speed = golf_ball.get_meta("spin_speed")
+	
+	# Rotate around the spin axis
+	golf_ball.rotate(spin_axis, spin_speed * delta)
 
 
 func _calculate_arc_position(start: Vector3, end: Vector3, t: float, peak_height: float) -> Vector3:
