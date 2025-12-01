@@ -116,6 +116,14 @@ var side_camera: Camera3D = null
 var top_viewport_container: SubViewportContainer = null
 var side_viewport_container: SubViewportContainer = null
 
+# Shot system components
+var shot_manager: ShotManager = null
+var modifier_manager: ModifierManager = null
+var aoe_system: AOESystem = null
+
+# Tile data storage - HexTile resources keyed by cell position
+var tile_data: Dictionary = {}  # Key: Vector2i, Value: HexTile
+
 # Elevation noise seed (randomized per generation)
 var elevation_seed: int = 0
 
@@ -167,6 +175,7 @@ func _clear_course_nodes() -> void:
 	thefloor.hide()
 	golf_ball = null  # Reset golf ball reference
 	tile_nodes.clear()  # Clear tile node references
+	tile_data.clear()  # Clear HexTile data
 	var to_remove: Array = []
 	for child in get_children():
 		if child is MultiMeshInstance3D:
@@ -639,10 +648,12 @@ func _ready() -> void:
 	_create_highlight_mesh()
 	_create_trajectory_mesh()
 	_create_mini_viewports()
+	_init_shot_system()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
 	_update_mini_cameras()
+	_start_new_shot()
 
 
 func _process(_delta: float) -> void:
@@ -670,8 +681,20 @@ func _input(event: InputEvent) -> void:
 				target_highlight_mesh.rotation.y = PI / 6.0
 				target_highlight_mesh.visible = true
 				
+				# Update shot manager with aim target
+				if shot_manager and shot_manager.is_shot_in_progress:
+					shot_manager.set_aim_target(locked_cell)
+				
 				# Display debug info for the clicked tile
 				_display_tile_debug_info(locked_cell)
+		
+		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+			# Right-click to confirm shot (if target is locked)
+			if target_locked and shot_manager and shot_manager.is_shot_in_progress:
+				shot_manager.confirm_shot()
+				target_locked = false
+				target_highlight_mesh.visible = false
+				_hide_all_aoe_highlights()
 
 
 # Display debug information about a tile in the info label
@@ -761,6 +784,121 @@ func _display_tile_debug_info(cell: Vector2i) -> void:
 	# Update the label - append to hole info
 	if holelabel:
 		holelabel.text = hole_info_text + "\n" + debug_text
+
+
+# --- Shot System Integration -------------------------------------------
+
+func _init_shot_system() -> void:
+	"""Initialize shot system components and connect signals"""
+	# Create AOE system
+	aoe_system = AOESystem.new()
+	aoe_system.name = "AOESystem"
+	add_child(aoe_system)
+	
+	# Create modifier manager
+	modifier_manager = ModifierManager.new()
+	modifier_manager.name = "ModifierManager"
+	add_child(modifier_manager)
+	
+	# Create shot manager
+	shot_manager = ShotManager.new()
+	shot_manager.name = "ShotManager"
+	add_child(shot_manager)
+	
+	# Wire up shot manager references
+	shot_manager.set_hole_controller(self)
+	shot_manager.set_aoe_system(aoe_system)
+	shot_manager.set_modifier_manager(modifier_manager)
+	
+	# Connect shot lifecycle signals
+	shot_manager.shot_started.connect(_on_shot_started)
+	shot_manager.aoe_computed.connect(_on_aoe_computed)
+	shot_manager.landing_resolved.connect(_on_landing_resolved)
+	shot_manager.shot_completed.connect(_on_shot_completed)
+
+
+func _start_new_shot() -> void:
+	"""Start a new shot from the ball's current position"""
+	if golf_ball == null:
+		push_warning("No golf ball to start shot from")
+		return
+	
+	# Get ball's current tile
+	var ball_tile = world_to_grid(golf_ball.position)
+	shot_manager.start_shot(golf_ball, ball_tile)
+
+
+func _on_shot_started(context: ShotContext) -> void:
+	"""Called when shot begins - update UI"""
+	print("Shot %d started from tile [%d, %d]" % [context.shot_index, context.start_tile.x, context.start_tile.y])
+
+
+func _on_aoe_computed(context: ShotContext) -> void:
+	"""Called when AOE is calculated - update visuals"""
+	# The existing highlight system handles this via _update_tile_highlight
+	pass
+
+
+func _on_landing_resolved(context: ShotContext) -> void:
+	"""Called when landing tile is determined"""
+	print("Ball landing at tile [%d, %d]" % [context.landing_tile.x, context.landing_tile.y])
+
+
+func _on_shot_completed(context: ShotContext) -> void:
+	"""Called when shot is finished - update ball position, scoring, UI"""
+	print("Shot completed! Score: %d (chips: %d x mult: %.1f)" % [context.final_score, context.chips, context.mult])
+	
+	# Move ball to landing position
+	if golf_ball and context.landing_tile.x >= 0:
+		var new_pos = get_tile_world_position(context.landing_tile)
+		golf_ball.position = new_pos + Vector3(0, 0.1, 0)  # Slight offset above ground
+	
+	# Check if reached flag
+	if context.has_metadata("reached_flag"):
+		print("HOLE COMPLETE!")
+	else:
+		# Start next shot
+		_start_new_shot()
+
+
+func get_hex_tile(cell: Vector2i) -> HexTile:
+	"""Get HexTile data for a cell, creating if needed"""
+	if tile_data.has(cell):
+		return tile_data[cell]
+	
+	# Create new HexTile from current grid data
+	var tile = HexTile.new()
+	tile.col = cell.x
+	tile.row = cell.y
+	tile.terrain_type = get_cell(cell.x, cell.y)
+	tile.elevation = get_elevation(cell.x, cell.y)
+	tile_data[cell] = tile
+	return tile
+
+
+func set_tile_terrain(cell: Vector2i, terrain_type: int) -> void:
+	"""Set terrain type for a tile (updates both grid and HexTile)"""
+	set_cell(cell.x, cell.y, terrain_type)
+	var tile = get_hex_tile(cell)
+	tile.terrain_type = terrain_type
+
+
+func add_tile_tag(cell: Vector2i, tag: String) -> void:
+	"""Add a tag to a tile"""
+	var tile = get_hex_tile(cell)
+	tile.add_tag(tag)
+
+
+func remove_tile_tag(cell: Vector2i, tag: String) -> void:
+	"""Remove a tag from a tile"""
+	var tile = get_hex_tile(cell)
+	tile.remove_tag(tag)
+
+
+func tile_has_tag(cell: Vector2i, tag: String) -> bool:
+	"""Check if tile has a tag"""
+	var tile = get_hex_tile(cell)
+	return tile.has_tag(tag)
 
 
 # Create the highlight mesh used to show hovered tile
@@ -2273,12 +2411,20 @@ func _on_regenerate_button_pressed() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	target_highlight_mesh.visible = false
+	_hide_all_aoe_highlights()
+	
+	# Cancel any in-progress shot
+	if shot_manager:
+		shot_manager.cancel_shot()
 	
 	_clear_course_nodes()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
 	_update_mini_cameras()
+	
+	# Start a fresh shot
+	_start_new_shot()
 
 
 func _on_button_pressed() -> void:
@@ -2288,9 +2434,17 @@ func _on_button_pressed() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	target_highlight_mesh.visible = false
+	_hide_all_aoe_highlights()
+	
+	# Cancel any in-progress shot
+	if shot_manager:
+		shot_manager.cancel_shot()
 	
 	_clear_course_nodes()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
 	_update_mini_cameras()
+	
+	# Start a fresh shot
+	_start_new_shot()
