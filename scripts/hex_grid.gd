@@ -120,9 +120,13 @@ var side_viewport_container: SubViewportContainer = null
 var shot_manager: ShotManager = null
 var modifier_manager: ModifierManager = null
 var aoe_system: AOESystem = null
+var shot_ui: ShotUI = null
 
 # Tile data storage - HexTile resources keyed by cell position
 var tile_data: Dictionary = {}  # Key: Vector2i, Value: HexTile
+
+# Flag position for distance calculations
+var flag_position: Vector2i = Vector2i(-1, -1)
 
 # Elevation noise seed (randomized per generation)
 var elevation_seed: int = 0
@@ -685,6 +689,13 @@ func _input(event: InputEvent) -> void:
 				if shot_manager and shot_manager.is_shot_in_progress:
 					shot_manager.set_aim_target(locked_cell)
 				
+				# Update UI with target info
+				if shot_ui and golf_ball:
+					var terrain = get_cell(locked_cell.x, locked_cell.y)
+					var ball_tile = world_to_grid(golf_ball.position)
+					var distance = _calculate_distance_yards(ball_tile, locked_cell)
+					shot_ui.update_target_info(terrain, distance)
+				
 				# Display debug info for the clicked tile
 				_display_tile_debug_info(locked_cell)
 		
@@ -815,6 +826,33 @@ func _init_shot_system() -> void:
 	shot_manager.aoe_computed.connect(_on_aoe_computed)
 	shot_manager.landing_resolved.connect(_on_landing_resolved)
 	shot_manager.shot_completed.connect(_on_shot_completed)
+	
+	# Look for ShotUI in the scene tree
+	_find_and_setup_ui()
+
+
+func _find_and_setup_ui() -> void:
+	"""Find ShotUI node and connect it to the shot system"""
+	# Try to find ShotUI as a sibling or in the Control node
+	var control = get_tree().current_scene.get_node_or_null("Control")
+	if control:
+		shot_ui = control.get_node_or_null("ShotUI")
+	
+	# Also try as direct child of scene root
+	if shot_ui == null:
+		shot_ui = get_tree().current_scene.get_node_or_null("ShotUI")
+	
+	if shot_ui:
+		shot_ui.setup(shot_manager, self)
+		print("ShotUI connected to shot system")
+	else:
+		print("ShotUI not found - add ShotUI scene to Control node")
+
+
+func _update_ui_hole_info() -> void:
+	"""Update UI with current hole information"""
+	if shot_ui:
+		shot_ui.set_hole_info(1, current_par, current_yardage)
 
 
 func _start_new_shot() -> void:
@@ -826,11 +864,28 @@ func _start_new_shot() -> void:
 	# Get ball's current tile
 	var ball_tile = world_to_grid(golf_ball.position)
 	shot_manager.start_shot(golf_ball, ball_tile)
+	
+	# Update UI with distance to flag
+	if shot_ui and flag_position.x >= 0:
+		var dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
+		shot_ui.update_shot_info(shot_manager.current_context.shot_index, dist_to_flag)
+
+
+func _calculate_distance_yards(from: Vector2i, to: Vector2i) -> int:
+	"""Calculate distance between two cells in yards"""
+	var dx = to.x - from.x
+	var dy = to.y - from.y
+	return int(sqrt(dx * dx + dy * dy) * YARDS_PER_CELL)
 
 
 func _on_shot_started(context: ShotContext) -> void:
 	"""Called when shot begins - update UI"""
 	print("Shot %d started from tile [%d, %d]" % [context.shot_index, context.start_tile.x, context.start_tile.y])
+	
+	# Update UI with current terrain
+	if shot_ui and context.start_tile.x >= 0:
+		var terrain = get_cell(context.start_tile.x, context.start_tile.y)
+		shot_ui.update_current_terrain(terrain)
 
 
 func _on_aoe_computed(context: ShotContext) -> void:
@@ -853,11 +908,17 @@ func _on_shot_completed(context: ShotContext) -> void:
 		var new_pos = get_tile_world_position(context.landing_tile)
 		golf_ball.position = new_pos + Vector3(0, 0.1, 0)  # Slight offset above ground
 	
+	# Reset target lock state
+	target_locked = false
+	target_highlight_mesh.visible = false
+	
 	# Check if reached flag
 	if context.has_metadata("reached_flag"):
 		print("HOLE COMPLETE!")
+		# UI handles showing hole complete popup via signal
 	else:
-		# Start next shot
+		# Start next shot after a brief delay
+		await get_tree().create_timer(2.5).timeout
 		_start_new_shot()
 
 
@@ -1466,6 +1527,16 @@ func _log_hole_info() -> void:
 			if elev > max_elev:
 				max_elev = elev
 	
+	# Find flag position
+	flag_position = Vector2i(-1, -1)
+	for col in range(grid_width):
+		for row in range(grid_height):
+			if get_cell(col, row) == SurfaceType.FLAG:
+				flag_position = Vector2i(col, row)
+				break
+		if flag_position.x >= 0:
+			break
+	
 	# Count landforms by type
 	var hills = 0
 	var mounds = 0
@@ -1495,6 +1566,9 @@ func _log_hole_info() -> void:
 	else:
 		# Fallback to console if label not found
 		print(hole_info_text)
+	
+	# Update ShotUI with hole info
+	_update_ui_hole_info()
 
 
 # Generate a specific par hole (3, 4, or 5)

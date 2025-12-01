@@ -1,0 +1,251 @@
+[gd_scene load_steps=2 format=3 uid="uid://c2shot_ui_main"]
+
+[ext_resource type="Script" uid="uid://cshotui_script" path="res://scripts/shot_ui.gd" id="1_shot_ui"]
+
+[node name="ShotUI" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_shot_ui")
+
+[node name="TopBar" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 60.0
+grow_horizontal = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 30
+
+[node name="HoleInfo" type="HBoxContainer" parent="TopBar/HBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="HoleLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Hole 1"
+
+[node name="ParLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Par 4"
+
+[node name="YardageLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "380 yds"
+
+[node name="Spacer" type="Control" parent="TopBar/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ShotInfo" type="HBoxContainer" parent="TopBar/HBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="ShotLabel" type="Label" parent="TopBar/HBoxContainer/ShotInfo"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Shot 1"
+
+[node name="DistanceLabel" type="Label" parent="TopBar/HBoxContainer/ShotInfo"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "0 yds"
+
+[node name="BottomPanel" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -120.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="HBoxContainer" type="HBoxContainer" parent="BottomPanel"]
+layout_mode = 2
+theme_override_constants/separation = 20
+
+[node name="ClubPanel" type="VBoxContainer" parent="BottomPanel/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ClubLabel" type="Label" parent="BottomPanel/HBoxContainer/ClubPanel"]
+layout_mode = 2
+text = "Club"
+
+[node name="ClubName" type="Label" parent="BottomPanel/HBoxContainer/ClubPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "Driver"
+
+[node name="ClubRange" type="Label" parent="BottomPanel/HBoxContainer/ClubPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "200-250 yds"
+
+[node name="TerrainPanel" type="VBoxContainer" parent="BottomPanel/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TerrainLabel" type="Label" parent="BottomPanel/HBoxContainer/TerrainPanel"]
+layout_mode = 2
+text = "Terrain"
+
+[node name="CurrentTerrain" type="Label" parent="BottomPanel/HBoxContainer/TerrainPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "Tee Box"
+
+[node name="TerrainEffect" type="Label" parent="BottomPanel/HBoxContainer/TerrainPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.5, 0.8, 0.5, 1)
+text = "No penalty"
+
+[node name="TargetPanel" type="VBoxContainer" parent="BottomPanel/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TargetLabel" type="Label" parent="BottomPanel/HBoxContainer/TargetPanel"]
+layout_mode = 2
+text = "Target"
+
+[node name="TargetTerrain" type="Label" parent="BottomPanel/HBoxContainer/TargetPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "Fairway"
+
+[node name="TargetDistance" type="Label" parent="BottomPanel/HBoxContainer/TargetPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "180 yds"
+
+[node name="Spacer" type="Control" parent="BottomPanel/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 2.0
+
+[node name="ActionPanel" type="VBoxContainer" parent="BottomPanel/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ConfirmButton" type="Button" parent="BottomPanel/HBoxContainer/ActionPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 20
+disabled = true
+text = "Confirm Shot"
+
+[node name="Hint" type="Label" parent="BottomPanel/HBoxContainer/ActionPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 12
+text = "Left-click to aim, Right-click to shoot"
+
+[node name="ScorePopup" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -80.0
+offset_right = 150.0
+offset_bottom = 80.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ScorePopup"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="ScoreTitle" type="Label" parent="ScorePopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 32
+text = "Shot Complete!"
+horizontal_alignment = 1
+
+[node name="ScoreValue" type="Label" parent="ScorePopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 48
+text = "+250"
+horizontal_alignment = 1
+
+[node name="ScoreDetails" type="Label" parent="ScorePopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+theme_override_font_sizes/font_size = 16
+text = "50 chips × 5.0 mult"
+horizontal_alignment = 1
+
+[node name="HoleCompletePopup" type="PanelContainer" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -100.0
+offset_right = 200.0
+offset_bottom = 100.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HoleCompletePopup"]
+layout_mode = 2
+theme_override_constants/separation = 15
+alignment = 1
+
+[node name="HoleCompleteTitle" type="Label" parent="HoleCompletePopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "Hole Complete!"
+horizontal_alignment = 1
+
+[node name="HoleScore" type="Label" parent="HoleCompletePopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "Birdie! (-1)"
+horizontal_alignment = 1
+
+[node name="TotalScore" type="Label" parent="HoleCompletePopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Total: 1,250 pts"
+horizontal_alignment = 1
+
+[node name="NextButton" type="Button" parent="HoleCompletePopup/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Next Hole"
