@@ -8,6 +8,74 @@ There is currently a **single main script** that controls AOE and returns a list
 
 Copilot should help **refactor** and **extend** the project into small, single‑purpose scripts, without rewriting the existing generator.
 
+---
+
+## IMPLEMENTATION STATUS
+
+### ✅ Completed Systems
+
+**Core Shot System** (in `scripts/`)
+- `shot_context.gd` - Data object for shot state (chips, mult, AOE, physics, curve, bounce tracking)
+- `shot_manager.gd` - Shot lifecycle phases with signals
+- `modifier_manager.gd` - Holds modifiers, calls lifecycle methods
+- `aoe_system.gd` - Computes AOE tiles from center
+- `shot_ui.gd` - Basic shot UI display
+- `hex_tile.gd` - Tile data with terrain, elevation, tags
+
+**Cards & Deck System** (in `scripts/cards/`)
+- `card_data.gd` - Resource class for card blueprints (id, name, rarity, type, effects)
+- `card_effect.gd` - Base class for modular card effects with trigger conditions
+- `card_instance.gd` - Runtime card wrapper (upgrade level, uses, temp modifiers)
+- `deck_manager.gd` - Draw/hand/discard pile management with shot lifecycle hooks
+- `card_modifier.gd` - Bridge class connecting CardInstance to ModifierManager
+- `card_library.gd` - Static library of all cards with factory methods
+- `card_system_manager.gd` - Central controller integrating cards with shot system
+
+**Card Effects** (in `scripts/cards/effects/`)
+- `effect_chips_bonus.gd` - Flat chip bonus
+- `effect_mult_bonus.gd` - Flat mult bonus
+- `effect_aoe_expand.gd` - Expands landing zone radius
+- `effect_terrain_bonus.gd` - Conditional bonuses based on landing terrain
+- `effect_distance_bonus.gd` - Bonuses based on shot distance (per-cell, long, short)
+- `effect_bounce_bonus.gd` - Bonuses for bounce/trick shots
+- `effect_roll_modifier.gd` - Modifies roll distance and friction
+- `effect_curve_shot.gd` - Adds curve/spin to trajectory
+
+**Card Types Defined:**
+- Shot - Played to modify current shot
+- Passive - Always provides effect while in hand
+- Consumable - Single-use powerful effects
+- Joker - Always active, persist between shots
+
+**Rarities:** Common, Uncommon, Rare, Legendary
+
+**Starter Deck Cards:**
+- Power Drive (Common Shot) - +10 chips
+- Steady Putter (Common Shot) - Bonus for short shots
+- Fairway Finder (Common Passive) - Bonus on fairway landing
+
+**UI Components** (in `scenes/ui/`)
+- `card_ui.tscn` / `card_ui.gd` - Individual card visual with hover/select states
+- `hand_ui.tscn` / `hand_ui.gd` - Hand display with fan layout
+
+### 🔄 Integration Needed
+
+1. **Add CardSystemManager to main scene** - Needs to be a child of the hex_grid or scene root
+2. **Call initialize_starter_deck()** at hole/run start
+3. **Wire HandUI into Control node** - Add the hand_ui.tscn to the game UI
+4. **Connect play button to card system** - When player confirms shot, played card effects apply
+
+### 📋 Next Priority: Roguelike Run Structure
+
+Per the design doc, the next major system is the **Run State** that tracks:
+- Current hole number
+- Total strokes
+- Score/money
+- Deck composition between holes
+- Shop/reward screens between holes
+
+---
+
 **Core concepts and responsibilities**
 
 **Hole and tiles**

@@ -24,8 +24,16 @@ var path_tiles: Array[Vector2i] = []          # Tiles along ball trajectory
 
 # Physics modifiers
 var max_bounces: int = 0                      # Allowed bounces
+var bounce_count: int = 0                     # Actual bounces during shot
 var roll_distance: float = 0.0                # Roll after landing
+var roll_distance_mult: float = 1.0           # Multiplier for roll distance
+var friction_mult: float = 1.0                # Multiplier for friction
 var elevation_influence: float = 1.0          # How much elevation affects shot
+
+# Curve/spin modifiers
+var curve_strength: float = 0.0               # How much ball curves mid-flight
+var curve_delay: float = 0.0                  # Distance before curve activates
+var did_curve: bool = false                   # Whether ball curved this shot
 
 # Scoring
 var base_chips: int = 0                       # Base chips from distance/path
@@ -53,8 +61,14 @@ func reset() -> void:
 	aoe_weights.clear()
 	path_tiles.clear()
 	max_bounces = 0
+	bounce_count = 0
 	roll_distance = 0.0
+	roll_distance_mult = 1.0
+	friction_mult = 1.0
 	elevation_influence = 1.0
+	curve_strength = 0.0
+	curve_delay = 0.0
+	did_curve = false
 	base_chips = 0
 	chips = 0
 	mult = 1.0
@@ -92,3 +106,23 @@ func get_shot_distance() -> float:
 func get_shot_distance_yards() -> float:
 	"""Calculate distance in yards (assuming 10 yards per cell)"""
 	return get_shot_distance() * 10.0
+
+
+func get_start_terrain() -> String:
+	"""Get terrain type of starting tile"""
+	return get_metadata("start_terrain", "Unknown")
+
+
+func get_landing_terrain() -> String:
+	"""Get terrain type of landing tile"""
+	return get_metadata("landing_terrain", "Unknown")
+
+
+func set_start_terrain(terrain: String) -> void:
+	"""Set terrain type of starting tile"""
+	add_metadata("start_terrain", terrain)
+
+
+func set_landing_terrain(terrain: String) -> void:
+	"""Set terrain type of landing tile"""
+	add_metadata("landing_terrain", terrain)

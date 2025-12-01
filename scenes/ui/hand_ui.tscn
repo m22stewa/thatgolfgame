@@ -1,0 +1,19 @@
+[gd_scene load_steps=2 format=3 uid="uid://hand_ui_scene"]
+
+[ext_resource type="Script" path="res://scripts/cards/hand_ui.gd" id="1_hand_ui"]
+
+[node name="HandUI" type="Control"]
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -200.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 1
+script = ExtResource("1_hand_ui")
+hand_width = 600.0
+card_size = Vector2(100, 150)
+hand_y_offset = 5.0
+slot_spacing = 15.0
+slot_y_offset = 170.0

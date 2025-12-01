@@ -1,4 +1,4 @@
-[gd_scene load_steps=5 format=3 uid="uid://cu7517xrwfodv"]
+[gd_scene load_steps=12 format=3 uid="uid://cu7517xrwfodv"]
 
 [ext_resource type="PackedScene" uid="uid://b0dh6kfnb1ol4" path="res://assets/kenney-platforms/flag.glb" id="1_bdvvk"]
 
@@ -12,6 +12,57 @@ albedo_color = Color(0.80813736, 3.272891e-06, 7.70092e-07, 1)
 albedo_color = Color(0, 0, 0, 1)
 metallic = 1.0
 metallic_specular = 0.0
+
+[sub_resource type="Gradient" id="Gradient_bdvvk"]
+offsets = PackedFloat32Array(0, 0.40361446, 0.67670685, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0.5311245, 0.5311245, 0.5311245, 1, 0.76004016, 0.76004016, 0.76004016, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_vdtgd"]
+gradient = SubResource("Gradient_bdvvk")
+
+[sub_resource type="Curve" id="Curve_hhiv0"]
+_limits = [-1.0, 1.0, 0.0, 1.0]
+_data = [Vector2(0, -1), 0.0, 0.0, 0, 0, Vector2(1e-05, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_lwr64"]
+curve = SubResource("Curve_hhiv0")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_bdvvk"]
+lifetime_randomness = 0.51
+direction = Vector3(0, 1, 0)
+initial_velocity_max = 5.0
+angular_velocity_min = -1.0000161
+angular_velocity_max = 0.9999839
+radial_velocity_min = 9.999977
+radial_velocity_max = 14.999977
+gravity = Vector3(0, 10.235, 0)
+linear_accel_min = -1.0000023
+linear_accel_max = 0.99999774
+radial_accel_min = -2.2351742e-06
+radial_accel_max = 4.9999976
+tangential_accel_min = -2.2351742e-06
+tangential_accel_max = 4.9999976
+scale_over_velocity_min = 0.29999998
+scale_over_velocity_max = 0.39999998
+color = Color(1, 0, 0, 1)
+color_ramp = SubResource("GradientTexture1D_vdtgd")
+hue_variation_min = -1.0
+hue_variation_max = 0.99999994
+hue_variation_curve = SubResource("CurveTexture_lwr64")
+turbulence_enabled = true
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ky4ew"]
+transparency = 1
+cull_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+use_particle_trails = true
+
+[sub_resource type="RibbonTrailMesh" id="RibbonTrailMesh_tqtu5"]
+material = SubResource("StandardMaterial3D_ky4ew")
+shape = 0
+sections = 3
 
 [node name="Flag" type="Node3D"]
 
@@ -37,3 +88,15 @@ material = SubResource("StandardMaterial3D_2q3e8")
 
 [node name="flag2" parent="." instance=ExtResource("1_bdvvk")]
 transform = Transform3D(2.2753267, 0, 0, 0, 2.2753267, 0, 0, 0, 2.2753267, 0, 0, 0)
+
+[node name="confetti" type="GPUParticles3D" parent="."]
+unique_name_in_owner = true
+visible = false
+amount = 20
+lifetime = 2.0
+explosiveness = 1.0
+randomness = 1.0
+trail_enabled = true
+trail_lifetime = 0.5
+process_material = SubResource("ParticleProcessMaterial_bdvvk")
+draw_pass_1 = SubResource("RibbonTrailMesh_tqtu5")

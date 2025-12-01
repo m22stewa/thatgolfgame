@@ -1,10 +1,11 @@
-[gd_scene load_steps=12 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=13 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
 [ext_resource type="Script" uid="uid://di5l5thhjio4c" path="res://simple-free-look-camera-4-cf0bc21bfd15940b18ec42e3c6cae1ad385284c4/camera.gd" id="2_tryan"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
 [ext_resource type="PackedScene" uid="uid://bm4yp6kkayc83" path="res://scenes/hole-generator.tscn" id="4_81eei"]
 [ext_resource type="PackedScene" path="res://scenes/ui/shot_ui.tscn" id="5_shot_ui"]
+[ext_resource type="PackedScene" uid="uid://hand_ui_scene" path="res://scenes/ui/hand_ui.tscn" id="6_hand_ui"]
 
 [sub_resource type="Gradient" id="Gradient_81eei"]
 
@@ -69,6 +70,9 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="ShotUI" parent="Control" instance=ExtResource("5_shot_ui")]
+layout_mode = 1
+
+[node name="HandUI" parent="Control" instance=ExtResource("6_hand_ui")]
 layout_mode = 1
 
 [node name="Label" type="Label" parent="Control"]

@@ -272,6 +272,12 @@ var modifier_manager: ModifierManager = null
 var aoe_system: AOESystem = null
 var shot_ui: ShotUI = null
 
+# Card system components
+var card_system: CardSystemManager = null
+var card_library: CardLibrary = null
+var deck_manager: DeckManager = null
+var hand_ui: HandUI = null
+
 # Tile data storage - HexTile resources keyed by cell position
 var tile_data: Dictionary = {}  # Key: Vector2i, Value: HexTile
 
@@ -1548,26 +1554,78 @@ func _init_shot_system() -> void:
 	shot_manager.landing_resolved.connect(_on_landing_resolved)
 	shot_manager.shot_completed.connect(_on_shot_completed)
 	
+	# Initialize card system
+	_init_card_system()
+	
 	# Look for ShotUI in the scene tree
 	_find_and_setup_ui()
 
 
+func _init_card_system() -> void:
+	"""Initialize the card/deck system"""
+	# Create card library (holds all card definitions)
+	card_library = CardLibrary.new()
+	card_library.name = "CardLibrary"
+	add_child(card_library)
+	
+	# Create deck manager
+	deck_manager = DeckManager.new()
+	deck_manager.name = "DeckManager"
+	add_child(deck_manager)
+	
+	# Create card system manager (bridges cards with modifiers)
+	card_system = CardSystemManager.new()
+	card_system.name = "CardSystemManager"
+	card_system.deck_manager = deck_manager
+	card_system.modifier_manager = modifier_manager
+	card_system.shot_manager = shot_manager
+	card_system.card_library = card_library
+	add_child(card_system)
+	
+	# Initialize starter deck
+	card_system.initialize_starter_deck()
+	card_system.draw_starting_hand(5)
+	
+	print("Card system initialized with starter deck")
+
+
 func _find_and_setup_ui() -> void:
-	"""Find ShotUI node and connect it to the shot system"""
-	# Try to find ShotUI as a sibling or in the Control node
+	"""Find ShotUI and HandUI nodes and connect them to systems"""
+	# Try to find UI nodes in the Control node
 	var control = get_tree().current_scene.get_node_or_null("Control")
 	if control:
 		shot_ui = control.get_node_or_null("ShotUI")
+		hand_ui = control.get_node_or_null("HandUI")
 	
-	# Also try as direct child of scene root
+	# Also try as direct children of scene root
 	if shot_ui == null:
 		shot_ui = get_tree().current_scene.get_node_or_null("ShotUI")
+	if hand_ui == null:
+		hand_ui = get_tree().current_scene.get_node_or_null("HandUI")
 	
+	# Connect ShotUI
 	if shot_ui:
 		shot_ui.setup(shot_manager, self)
 		print("ShotUI connected to shot system")
 	else:
 		print("ShotUI not found - add ShotUI scene to Control node")
+	
+	# Connect HandUI to deck manager
+	if hand_ui and deck_manager:
+		hand_ui.setup(deck_manager)
+		hand_ui.card_played.connect(_on_card_played_from_hand)
+		print("HandUI connected to deck manager")
+	else:
+		print("HandUI not found - add HandUI scene to Control node")
+
+
+func _on_card_played_from_hand(card_instance: CardInstance) -> void:
+	"""Handle when a card is played from the hand UI"""
+	if card_system and shot_manager and shot_manager.is_shot_in_progress:
+		# Create modifier from card and add to current shot
+		var card_mod = CardModifier.new(card_instance)
+		modifier_manager.add_modifier(card_mod)
+		print("Played card: %s" % card_instance.get_display_name())
 
 
 func _update_ui_hole_info() -> void:
@@ -1631,24 +1689,28 @@ func _on_shot_completed(context: ShotContext) -> void:
 	target_locked = false
 	target_highlight_mesh.visible = false
 	
-	# Animate ball flight to landing position (carry position, 1 tile before target)
+	# Animate ball flight to landing position, then bounces
 	if golf_ball and context.landing_tile.x >= 0:
-		# Calculate carry position (1 tile behind the target in the direction of travel)
 		var ball_tile = world_to_grid(golf_ball.position)
-		var carry_tile = _get_carry_position(ball_tile, context.landing_tile)
+		
+		# Get base bounce count from club (drivers bounce more, wedges less)
+		var num_bounces = CLUB_BASE_ROLLOUT.get(current_club, 1)
+		
+		# Calculate carry position (num_bounces tiles before target)
+		var carry_tile = _get_carry_position(ball_tile, context.landing_tile, num_bounces)
 		var carry_pos = get_tile_surface_position(carry_tile)
 		
-		# Animate ball flight to carry position (this transitions into roll smoothly)
+		# Animate ball flight to carry position
 		await _animate_ball_flight_with_bounce(golf_ball.position, carry_pos)
 		
-		# Now apply rollout from carry position toward target and beyond
-		var final_tile = await _apply_rollout(carry_tile, context.landing_tile)
+		# Now apply bounces from carry position toward target and beyond
+		var final_tile = await _apply_bounce_rollout(carry_tile, context.landing_tile, num_bounces)
 		
-		# Stop ball spin after all rolling is complete
+		# Stop ball spin after all bouncing is complete
 		if golf_ball:
 			golf_ball.set_meta("is_spinning", false)
 		
-		print("Final tile after rollout: [%d, %d]" % [final_tile.x, final_tile.y])
+		print("Final tile after bounces: [%d, %d]" % [final_tile.x, final_tile.y])
 	
 	# Hide trajectory after landing
 	trajectory_mesh.visible = false
@@ -1688,6 +1750,9 @@ func _trigger_hole_complete() -> void:
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
 	
+	# Trigger confetti on the flag
+	_play_hole_confetti()
+	
 	# TODO: Show hole complete UI, calculate final score, etc.
 	# For now, just wait and regenerate
 	await get_tree().create_timer(2.0).timeout
@@ -1697,19 +1762,39 @@ func _trigger_hole_complete() -> void:
 	_on_button_pressed()  # Regenerate course
 
 
-func _get_carry_position(from_tile: Vector2i, target_tile: Vector2i) -> Vector2i:
-	"""Calculate the carry position (1 tile before target in direction of travel).
-	   This is where the ball first lands before rolling."""
+func _play_hole_confetti() -> void:
+	"""Show confetti particle effect on the flag"""
+	# Find the flag node (it's in the "flag" group)
+	var flags = get_tree().get_nodes_in_group("flag")
+	if flags.size() > 0:
+		var flag_node = flags[0]
+		var confetti = flag_node.get_node_or_null("%confetti")
+		if confetti:
+			confetti.visible = true
+			# If it's a particle emitter, restart it
+			if confetti.has_method("restart"):
+				confetti.restart()
+			elif confetti is GPUParticles3D or confetti is CPUParticles3D:
+				confetti.emitting = true
+			
+			# Hide after 2 seconds
+			await get_tree().create_timer(2.0).timeout
+			confetti.visible = false
+
+
+func _get_carry_position(from_tile: Vector2i, target_tile: Vector2i, bounce_count: int) -> Vector2i:
+	"""Calculate the carry/landing position based on bounce count.
+	   Ball lands bounce_count tiles before target, then bounces forward."""
 	# Direction from ball to target
 	var dx = target_tile.x - from_tile.x
 	var dy = target_tile.y - from_tile.y
 	
-	# If target is same tile or adjacent, carry lands on target
+	# If target is same tile or no bounces needed, land on target
 	var distance = get_tile_distance(from_tile, target_tile)
-	if distance <= 1:
+	if distance <= bounce_count or bounce_count <= 0:
 		return target_tile
 	
-	# Normalize direction and step back 1 tile from target
+	# Normalize direction and step back bounce_count tiles from target
 	var dir_x = 0
 	var dir_y = 0
 	if abs(dx) > abs(dy):
@@ -1722,11 +1807,18 @@ func _get_carry_position(from_tile: Vector2i, target_tile: Vector2i) -> Vector2i
 		dir_y = 1 if dy > 0 else -1
 		dir_x = 0
 	
-	var carry_tile = Vector2i(target_tile.x - dir_x, target_tile.y - dir_y)
+	# Step back bounce_count tiles
+	var carry_tile = Vector2i(target_tile.x - dir_x * bounce_count, target_tile.y - dir_y * bounce_count)
 	
 	# Validate carry tile is valid
 	if carry_tile.x < 0 or carry_tile.x >= grid_width or carry_tile.y < 0 or carry_tile.y >= grid_height:
-		return target_tile
+		# Try stepping back fewer tiles
+		for i in range(bounce_count - 1, 0, -1):
+			carry_tile = Vector2i(target_tile.x - dir_x * i, target_tile.y - dir_y * i)
+			if carry_tile.x >= 0 and carry_tile.x < grid_width and carry_tile.y >= 0 and carry_tile.y < grid_height:
+				break
+			else:
+				return target_tile
 	
 	var surface = get_cell(carry_tile.x, carry_tile.y)
 	if surface == -1 or surface == SurfaceType.WATER:
@@ -1735,25 +1827,21 @@ func _get_carry_position(from_tile: Vector2i, target_tile: Vector2i) -> Vector2i
 	return carry_tile
 
 
-func _apply_rollout(carry_tile: Vector2i, target_tile: Vector2i) -> Vector2i:
-	"""Apply natural rollout after ball lands. Ball rolls forward based on:
-	   - Club base rollout (drivers roll more, wedges less)
-	   - Elevation changes (+1 roll for downhill, -1 for uphill)
-	   Spin (topspin/backspin) is applied AFTER natural rollout finishes.
+func _apply_bounce_rollout(carry_tile: Vector2i, target_tile: Vector2i, num_bounces: int) -> Vector2i:
+	"""Apply bounce-based rollout after ball lands. Ball bounces forward based on:
+	   - Club base rollout determines number of bounces
+	   - Each bounce gets progressively smaller
+	   - Elevation changes can add/remove bounces
+	   Spin (topspin/backspin) is applied AFTER bouncing finishes.
 	   Ball stops at water/sand hazards."""
 	
-	# Calculate base rollout from club (spin is applied separately after)
-	var base_rollout = CLUB_BASE_ROLLOUT.get(current_club, 1)
+	# Determine bounce direction (from carry toward target)
+	var bounce_dir = _get_roll_direction(carry_tile, target_tile)
 	
-	# Determine roll direction (from carry toward target, then continue forward)
-	var roll_dir = _get_roll_direction(carry_tile, target_tile)
+	print("Bounce rollout: bounces=%d, direction=%s" % [num_bounces, bounce_dir])
 	
-	print("Natural rollout: base=%d, direction=%s" % [base_rollout, roll_dir])
-	
-	# Roll tile by tile for natural rollout
 	var current_tile = carry_tile
-	var tiles_to_roll = base_rollout
-	var tiles_rolled = 0
+	var bounces_done = 0
 	var reached_hole = false
 	
 	# Check if carry position is already on the hole
@@ -1762,69 +1850,132 @@ func _apply_rollout(carry_tile: Vector2i, target_tile: Vector2i) -> Vector2i:
 		_trigger_hole_complete()
 		return current_tile
 	
-	while tiles_rolled < tiles_to_roll:
-		var next_tile = Vector2i(current_tile.x + roll_dir.x, current_tile.y + roll_dir.y)
+	# Do bounces one at a time
+	while bounces_done < num_bounces:
+		var next_tile = Vector2i(current_tile.x + bounce_dir.x, current_tile.y + bounce_dir.y)
 		
 		# Check bounds
 		if next_tile.x < 0 or next_tile.x >= grid_width or next_tile.y < 0 or next_tile.y >= grid_height:
-			print("Rollout stopped - out of bounds")
+			print("Bounce stopped - out of bounds")
 			break
 		
 		# Check for hazards that stop the ball
 		var next_surface = get_cell(next_tile.x, next_tile.y)
 		if next_surface == -1:
-			print("Rollout stopped - invalid tile")
+			print("Bounce stopped - invalid tile")
 			break
 		if next_surface == SurfaceType.WATER:
-			print("Rollout stopped - water hazard")
+			print("Bounce stopped - water hazard")
 			break
 		if next_surface == SurfaceType.SAND:
-			print("Rollout stopped - sand bunker")
+			print("Bounce stopped - sand bunker (ball plugs)")
 			break
 		if next_surface == SurfaceType.TREE:
-			print("Rollout stopped - trees")
+			print("Bounce stopped - trees")
 			break
 		
-		# Check elevation change
+		# Check elevation change for bounce adjustments
 		var current_elev = get_elevation(current_tile.x, current_tile.y)
 		var next_elev = get_elevation(next_tile.x, next_tile.y)
 		var elev_diff = next_elev - current_elev
 		
-		# Adjust rollout based on elevation
+		# Adjust bounces based on elevation
 		if elev_diff < -0.3:
-			tiles_to_roll += 1  # Downhill bonus
-			print("  Downhill at [%d,%d] - bonus roll!" % [next_tile.x, next_tile.y])
+			num_bounces += 1  # Downhill = extra bounce
+			print("  Downhill at [%d,%d] - extra bounce!" % [next_tile.x, next_tile.y])
 		elif elev_diff > 0.3:
-			tiles_to_roll -= 1  # Uphill penalty
-			print("  Uphill at [%d,%d] - reduced roll" % [next_tile.x, next_tile.y])
-			if tiles_rolled >= tiles_to_roll:
-				break
+			# Uphill kills the bounce early
+			print("  Uphill at [%d,%d] - bounce dies" % [next_tile.x, next_tile.y])
+			break
 		
-		# Animate roll to next tile
+		# Animate bounce to next tile (height decreases with each bounce)
+		var bounce_number = bounces_done + 1
 		var next_pos = get_tile_surface_position(next_tile)
-		await _animate_ball_roll(golf_ball.position, next_pos)
+		await _animate_ball_bounce_to_tile(golf_ball.position, next_pos, bounce_number, num_bounces)
 		
 		current_tile = next_tile
-		tiles_rolled += 1
+		bounces_done += 1
 		
-		# Check if ball rolled into the hole
+		# Check if ball bounced into the hole
 		if current_tile == flag_position:
-			print("Ball rolled into the hole!")
+			print("Ball bounced into the hole!")
 			reached_hole = true
 			break
 	
-	print("Natural roll: %d tiles, position: [%d, %d]" % [tiles_rolled, current_tile.x, current_tile.y])
+	print("Bounces complete: %d bounces, position: [%d, %d]" % [bounces_done, current_tile.x, current_tile.y])
 	
 	# If ball reached hole, trigger completion and skip spin
 	if reached_hole:
 		_trigger_hole_complete()
 		return current_tile
 	
-	# Now apply spin effect AFTER natural rollout
+	# Now apply spin effect AFTER bouncing
 	if current_spin != SpinType.NONE:
-		current_tile = await _apply_spin_effect(current_tile, roll_dir)
+		current_tile = await _apply_spin_effect(current_tile, bounce_dir)
 	
 	return current_tile
+
+
+func _animate_ball_bounce_to_tile(start_pos: Vector3, end_pos: Vector3, bounce_num: int, total_bounces: int) -> void:
+	"""Animate ball bouncing from one tile to the next.
+	   bounce_num: which bounce this is (1, 2, 3...)
+	   total_bounces: total expected bounces (used to scale height)"""
+	if golf_ball == null:
+		return
+	
+	var distance = start_pos.distance_to(end_pos)
+	
+	# Bounce height decreases with each bounce (first bounce highest)
+	# First bounce: ~0.8 units, subsequent bounces get smaller
+	var height_factor = 1.0 / float(bounce_num)
+	var bounce_height = clamp(0.8 * height_factor, 0.15, 0.8)
+	
+	# Duration also decreases slightly with each bounce
+	var base_duration = clamp(distance * 0.15, 0.2, 0.5)
+	var duration = base_duration * (0.7 + 0.3 * height_factor)
+	
+	# Keep ball spinning during bounces
+	var travel_dir = (end_pos - start_pos).normalized()
+	var spin_axis = travel_dir.cross(Vector3.UP).normalized()
+	if spin_axis.length() < 0.1:
+		spin_axis = Vector3.RIGHT
+	
+	var spin_speed = 8.0 * height_factor  # Spin slows down with bounces
+	golf_ball.set_meta("spin_axis", spin_axis)
+	golf_ball.set_meta("spin_speed", spin_speed)
+	golf_ball.set_meta("is_spinning", true)
+	
+	# Animate the bounce arc
+	var tween = create_tween()
+	var steps = 15
+	var step_duration = duration / steps
+	
+	for i in range(1, steps + 1):
+		var t = float(i) / float(steps)
+		
+		# Horizontal position (linear)
+		var pos = start_pos.lerp(end_pos, t)
+		
+		# Vertical position (parabolic arc)
+		var arc_height = 4.0 * bounce_height * t * (1.0 - t)
+		var base_y = lerp(start_pos.y, end_pos.y, t)
+		pos.y = base_y + arc_height
+		
+		# Easing: fast up, slow at peak, fast down
+		if t < 0.3:
+			tween.set_ease(Tween.EASE_OUT)
+			tween.set_trans(Tween.TRANS_QUAD)
+		elif t > 0.7:
+			tween.set_ease(Tween.EASE_IN)
+			tween.set_trans(Tween.TRANS_QUAD)
+		else:
+			tween.set_ease(Tween.EASE_IN_OUT)
+			tween.set_trans(Tween.TRANS_SINE)
+		
+		tween.tween_property(golf_ball, "position", pos, step_duration)
+	
+	await tween.finished
+	golf_ball.position = end_pos
 
 
 func _apply_spin_effect(from_tile: Vector2i, roll_dir: Vector2i) -> Vector2i:
@@ -2051,23 +2202,8 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 	await tween.finished
 	golf_ball.position = end_pos
 	
-	# Quick, subtle bounce that flows into roll (no spin stop)
-	var bounce_height = 0.3  # Small bounce
-	var bounce_duration = 0.15
-	
-	var bounce_tween = create_tween()
-	bounce_tween.set_ease(Tween.EASE_OUT)
-	bounce_tween.set_trans(Tween.TRANS_QUAD)
-	
-	# Up
-	var bounce_pos = end_pos + Vector3(0, bounce_height, 0)
-	bounce_tween.tween_property(golf_ball, "position", bounce_pos, bounce_duration * 0.4)
-	
-	# Down (with slight forward motion to lead into roll)
-	bounce_tween.set_ease(Tween.EASE_IN)
-	bounce_tween.tween_property(golf_ball, "position", end_pos, bounce_duration * 0.6)
-	
-	await bounce_tween.finished
+	# Skip the landing bounce - go straight into the bounce rollout
+	# The first bounce in _apply_bounce_rollout will handle the transition
 	
 	# Don't stop spin - let it continue into the roll for smooth transition
 

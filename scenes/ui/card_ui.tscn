@@ -1,0 +1,69 @@
+[gd_scene load_steps=2 format=3 uid="uid://card_ui_scene"]
+
+[ext_resource type="Script" path="res://scripts/cards/card_ui.gd" id="1_card_ui"]
+
+[node name="CardUI" type="Control"]
+custom_minimum_size = Vector2(100, 150)
+offset_right = 100.0
+offset_bottom = 150.0
+mouse_filter = 0
+script = ExtResource("1_card_ui")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.2, 0.3, 0.2, 1)
+
+[node name="RarityIndicator" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 6.0
+grow_horizontal = 2
+mouse_filter = 2
+color = Color(0.6, 0.6, 0.6, 1)
+
+[node name="CardName" type="Label" parent="."]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 10.0
+offset_right = 96.0
+offset_bottom = 32.0
+mouse_filter = 2
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Description" type="RichTextLabel" parent="."]
+layout_mode = 0
+offset_left = 6.0
+offset_top = 35.0
+offset_right = 94.0
+offset_bottom = 125.0
+mouse_filter = 2
+bbcode_enabled = true
+scroll_active = false
+fit_content = true
+
+[node name="CostLabel" type="Label" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 70.0
+offset_top = 130.0
+offset_right = 96.0
+offset_bottom = 146.0
+mouse_filter = 2
+horizontal_alignment = 2
+
+[node name="TypeIcon" type="TextureRect" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 4.0
+offset_top = 130.0
+offset_right = 20.0
+offset_bottom = 146.0
+mouse_filter = 2
