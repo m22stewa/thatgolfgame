@@ -1435,6 +1435,79 @@ func _input(event: InputEvent) -> void:
 					])
 
 
+## Public function to set aim target from external sources (like HoleViewer)
+func set_aim_cell(cell: Vector2i) -> bool:
+	"""Set the aim target to a specific cell. Returns true if successful."""
+	# Validate cell is in bounds
+	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+		print("HexGrid: Invalid aim cell - out of bounds: ", cell)
+		return false
+	
+	# Check if target is available (in range AND forward)
+	if golf_ball:
+		if not is_tile_available(cell):
+			var ball_tile = world_to_grid(golf_ball.position)
+			var tile_dist = get_tile_distance(ball_tile, cell)
+			var max_dist = get_current_club_distance()
+			
+			if tile_dist > max_dist:
+				print("Target too far! %d tiles > %s max of %d tiles" % [
+					tile_dist, _get_club_name(current_club), max_dist
+				])
+				return false
+			elif not is_forward_from_ball(cell):
+				print("Cannot shoot backward! Target must be toward the hole.")
+				return false
+	
+	# Lock target to this cell
+	locked_cell = cell
+	target_locked = true
+	
+	# Calculate locked target position
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	var x_pos = locked_cell.x * width * 1.5
+	var z_pos = locked_cell.y * hex_height + (locked_cell.x % 2) * (hex_height / 2.0)
+	var y_pos = get_elevation(locked_cell.x, locked_cell.y)
+	locked_target_pos = Vector3(x_pos, y_pos, z_pos)
+	
+	# Show white target highlight on the locked cell (original aim point)
+	target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	target_highlight_mesh.rotation.y = PI / 6.0
+	target_highlight_mesh.visible = true
+	
+	# Calculate shape-adjusted landing tile
+	var adjusted_landing = get_shape_adjusted_landing(locked_cell)
+	
+	# Update shot manager with the shape-adjusted landing tile
+	if shot_manager and shot_manager.is_shot_in_progress:
+		shot_manager.set_aim_target(adjusted_landing)
+	
+	# Update UI with target info (show adjusted landing info)
+	if shot_ui and golf_ball:
+		var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
+		var ball_tile = world_to_grid(golf_ball.position)
+		var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
+		shot_ui.update_target_info(terrain, distance)
+	
+	# Display debug info for the clicked tile
+	_display_tile_debug_info(locked_cell)
+	if adjusted_landing != locked_cell:
+		print("Shape %s: Aim [%d,%d] -> Landing [%d,%d]" % [
+			_get_shape_name(current_shape),
+			locked_cell.x, locked_cell.y,
+			adjusted_landing.x, adjusted_landing.y
+		])
+	
+	return true
+
+
+## Set hovered cell for highlighting (from external sources)
+func set_hover_cell(cell: Vector2i) -> void:
+	"""Set the currently hovered cell for highlighting"""
+	hovered_cell = cell
+
+
 # Display debug information about a tile in the info label
 func _display_tile_debug_info(cell: Vector2i) -> void:
 	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
