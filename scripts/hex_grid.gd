@@ -4,6 +4,147 @@ enum SurfaceType {
 	TEE, FAIRWAY, ROUGH, DEEP_ROUGH, GREEN, SAND, WATER, TREE, FLAG
 }
 
+# Golf club types and their max distances in tiles
+enum ClubType {
+	DRIVER, WOOD_3, WOOD_5, IRON_3, IRON_5, IRON_6, IRON_7, IRON_8, IRON_9, PITCHING_WEDGE, SAND_WEDGE
+}
+
+# Shot shape types (curve direction for right-handed golfer)
+# Hook/Draw curve LEFT, Fade/Slice curve RIGHT
+enum ShotShape {
+	STRAIGHT,  # No curve
+	HOOK,      # Severe curve left
+	DRAW,      # Gentle curve left
+	FADE,      # Gentle curve right
+	SLICE      # Severe curve right
+}
+
+# Spin types affecting ball roll after landing
+enum SpinType {
+	NONE,      # No spin effect
+	TOPSPIN,   # Ball rolls forward (+1 tile)
+	BACKSPIN   # Ball rolls backward (-1 tile)
+}
+
+# Golfer handedness - affects curve direction
+# Right-handed: Hook/Draw curve LEFT, Fade/Slice curve RIGHT
+# Left-handed: Hook/Draw curve RIGHT, Fade/Slice curve LEFT
+enum Handedness {
+	RIGHT_HANDED,
+	LEFT_HANDED
+}
+
+# Shape curve amounts (lateral offset as fraction of distance)
+# Negative = curve left, Positive = curve right
+const SHAPE_CURVE_AMOUNTS = {
+	ShotShape.STRAIGHT: 0.0,
+	ShotShape.HOOK: -0.25,    # Severe left curve
+	ShotShape.DRAW: -0.12,    # Gentle left curve
+	ShotShape.FADE: 0.12,     # Gentle right curve
+	ShotShape.SLICE: 0.25,    # Severe right curve
+}
+
+# Distance penalty for shot shapes (curved shots lose distance)
+const SHAPE_DISTANCE_PENALTY = {
+	ShotShape.STRAIGHT: 0,
+	ShotShape.HOOK: -2,       # Lose 2 tiles of distance
+	ShotShape.DRAW: -1,       # Lose 1 tile of distance
+	ShotShape.FADE: -1,       # Lose 1 tile of distance
+	ShotShape.SLICE: -2,      # Lose 2 tiles of distance
+}
+
+# AOE lateral offset in tiles based on shot shape
+# Shifts the entire AOE pattern left/right so target tile is on the edge
+const SHAPE_AOE_OFFSETS = {
+	ShotShape.STRAIGHT: 0,
+	ShotShape.HOOK: -2,       # AOE shifts 2 tiles left
+	ShotShape.DRAW: -1,       # AOE shifts 1 tile left
+	ShotShape.FADE: 1,        # AOE shifts 1 tile right
+	ShotShape.SLICE: 2,       # AOE shifts 2 tiles right
+}
+
+# Minimum curve offsets (in tiles) to ensure visible curve
+const SHAPE_MIN_OFFSETS = {
+	ShotShape.STRAIGHT: 0,
+	ShotShape.HOOK: 2,        # At least 2 tiles
+	ShotShape.DRAW: 1,        # At least 1 tile
+	ShotShape.FADE: 1,        # At least 1 tile
+	ShotShape.SLICE: 2,       # At least 2 tiles
+}
+
+# Current shot modifiers
+var current_shape: ShotShape = ShotShape.STRAIGHT
+var current_spin: SpinType = SpinType.NONE
+
+# Shape and spin button references
+var shape_buttons: Dictionary = {}  # ShotShape -> Button
+var spin_buttons: Dictionary = {}   # SpinType -> Button
+
+# Handedness setting and button references
+var current_handedness: Handedness = Handedness.RIGHT_HANDED
+var handedness_buttons: Dictionary = {}  # Handedness -> Button
+
+# Club distance limits (in tiles, where 1 tile = 10 yards)
+# Based on average amateur golfer distances:
+# Driver: ~220 yards, 3W: ~200, 5W: ~180, 3i: ~170, 5i: ~160
+# 6i: ~150, 7i: ~140, 8i: ~130, 9i: ~120, PW: ~110, SW: ~90
+const CLUB_DISTANCES = {
+	ClubType.DRIVER: 22,
+	ClubType.WOOD_3: 20,
+	ClubType.WOOD_5: 18,
+	ClubType.IRON_3: 17,
+	ClubType.IRON_5: 16,
+	ClubType.IRON_6: 15,
+	ClubType.IRON_7: 14,
+	ClubType.IRON_8: 13,
+	ClubType.IRON_9: 12,
+	ClubType.PITCHING_WEDGE: 11,
+	ClubType.SAND_WEDGE: 9,
+}
+
+# Club arc heights (longer clubs = higher arc, also affects trajectory visual)
+const CLUB_ARC_HEIGHTS = {
+	ClubType.DRIVER: 12.0,
+	ClubType.WOOD_3: 11.0,
+	ClubType.WOOD_5: 10.0,
+	ClubType.IRON_3: 9.0,
+	ClubType.IRON_5: 8.5,
+	ClubType.IRON_6: 8.0,
+	ClubType.IRON_7: 7.5,
+	ClubType.IRON_8: 7.0,
+	ClubType.IRON_9: 6.5,
+	ClubType.PITCHING_WEDGE: 6.0,
+	ClubType.SAND_WEDGE: 5.0,
+}
+
+# Club base rollout in tiles (natural roll after ball lands)
+# Lower lofted clubs roll more, wedges land soft with minimal roll
+const CLUB_BASE_ROLLOUT = {
+	ClubType.DRIVER: 3,        # Hot landing, lots of roll
+	ClubType.WOOD_3: 3,
+	ClubType.WOOD_5: 2,
+	ClubType.IRON_3: 2,
+	ClubType.IRON_5: 2,
+	ClubType.IRON_6: 1,
+	ClubType.IRON_7: 1,
+	ClubType.IRON_8: 1,
+	ClubType.IRON_9: 1,
+	ClubType.PITCHING_WEDGE: 0,  # High loft, lands soft
+	ClubType.SAND_WEDGE: 0,      # Very high loft, minimal roll
+}
+
+# Current selected club
+var current_club: ClubType = ClubType.DRIVER
+
+# Club button references
+var club_buttons: Array[Button] = []
+var club_range_highlights: Array[MeshInstance3D] = []  # Ring highlights for range preview
+var is_previewing_range: bool = false  # True when hovering a club button
+
+# Dim overlays for unavailable tiles (out of range or behind ball)
+var dim_overlay_meshes: Array[MeshInstance3D] = []
+var dim_overlays_visible: bool = false
+
 const FLAG = preload("uid://cu7517xrwfodv")
 const TEEBOX_MODEL = preload("res://scenes/tiles/teebox-model.tscn")
 const GOLFBALL = preload("res://scenes/golf_ball.tscn")
@@ -59,6 +200,14 @@ var grid_width: int = 10
 
 const TILE_SIZE := 1.0
 
+# Tile mesh height offset - tiles are hex prisms with Y from -0.5 to +0.5
+# This offset places objects on top of the tile surface
+const TILE_SURFACE_OFFSET := 0.5
+
+# Ball radius offset - the ball mesh scaled at 0.3 has approximate radius 0.15
+# Add this to surface position so ball sits ON TOP of tile, not inside it
+const BALL_RADIUS_OFFSET := 0.15
+
 # Conversion: 1 grid cell ≈ 10 yards (typical hex size for golf visualization)
 const YARDS_PER_CELL := 10.0
 
@@ -100,6 +249,7 @@ var tile_nodes: Dictionary = {}  # Key: Vector2i cell position, Value: Node3D (t
 # Trajectory line
 var trajectory_mesh: MeshInstance3D = null
 var trajectory_shadow_mesh: MeshInstance3D = null  # Shadow line on ground
+var curved_trajectory_mesh: MeshInstance3D = null  # Curved trajectory when shape is active
 var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary by club)
 
 # Target locking
@@ -633,6 +783,14 @@ func get_tile_world_position(cell: Vector2i) -> Vector3:
 	return Vector3(x_pos, y_pos, z_pos)
 
 
+# Get the surface position for a cell (on top of the tile mesh)
+func get_tile_surface_position(cell: Vector2i) -> Vector3:
+	"""Returns position on top of the tile surface, accounting for mesh height and ball radius"""
+	var pos = get_tile_world_position(cell)
+	pos.y += TILE_SURFACE_OFFSET + BALL_RADIUS_OFFSET
+	return pos
+
+
 # Get tile data as a dictionary (useful for serialization or debugging)
 func get_tile_data(cell: Vector2i) -> Dictionary:
 	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
@@ -653,11 +811,557 @@ func _ready() -> void:
 	_create_trajectory_mesh()
 	_create_mini_viewports()
 	_init_shot_system()
+	_init_club_menu()
+	_init_shot_modifier_buttons()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
 	_update_mini_cameras()
 	_start_new_shot()
+
+
+func _init_club_menu() -> void:
+	"""Initialize club selection buttons"""
+	var control = get_node_or_null("../../Control")
+	if not control:
+		return
+	
+	var container = control.get_node_or_null("HFlowContainer")
+	if not container:
+		return
+	
+	# Map button names to club types
+	var button_club_map = {
+		"Button": ClubType.DRIVER,
+		"Button2": ClubType.WOOD_3,
+		"Button3": ClubType.WOOD_5,
+		"Button4": ClubType.IRON_3,
+		"Button5": ClubType.IRON_5,
+		"Button6": ClubType.IRON_6,
+		"Button7": ClubType.IRON_7,
+		"Button8": ClubType.IRON_8,
+		"Button9": ClubType.IRON_9,
+		"Button10": ClubType.PITCHING_WEDGE,
+		"Button11": ClubType.SAND_WEDGE,
+	}
+	
+	# Connect all club buttons
+	for button_name in button_club_map:
+		var button = container.get_node_or_null(button_name)
+		if button and button is Button:
+			var club_type = button_club_map[button_name]
+			club_buttons.append(button)
+			
+			# Connect pressed signal with club type
+			button.pressed.connect(_on_club_button_pressed.bind(club_type))
+			
+			# Connect hover signals for range preview
+			button.mouse_entered.connect(_on_club_button_hover.bind(club_type))
+			button.mouse_exited.connect(_on_club_button_hover_end)
+	
+	# Update button visuals to show selected club
+	_update_club_button_visuals()
+	print("Club buttons connected: %d buttons" % club_buttons.size())
+
+
+func _init_shot_modifier_buttons() -> void:
+	"""Initialize shape and spin toggle buttons"""
+	var control = get_node_or_null("../../Control")
+	if not control:
+		return
+	
+	# Get the containers
+	var shape_container = control.get_node_or_null("ShapeContainer")
+	var spin_container = control.get_node_or_null("SpinContainer")
+	
+	# Shape buttons (Hook, Draw, Fade, Slice)
+	var shape_button_map = {
+		"HookButton": ShotShape.HOOK,
+		"DrawButton": ShotShape.DRAW,
+		"FadeButton": ShotShape.FADE,
+		"SliceButton": ShotShape.SLICE,
+	}
+	
+	if shape_container:
+		for button_name in shape_button_map:
+			var button = shape_container.get_node_or_null(button_name)
+			if button and button is Button:
+				var shape = shape_button_map[button_name]
+				shape_buttons[shape] = button
+				button.toggle_mode = true
+				button.pressed.connect(_on_shape_button_toggled.bind(shape))
+	
+	# Spin buttons (Topspin, Backspin)
+	var spin_button_map = {
+		"TopspinButton": SpinType.TOPSPIN,
+		"BackspinButton": SpinType.BACKSPIN,
+	}
+	
+	if spin_container:
+		for button_name in spin_button_map:
+			var button = spin_container.get_node_or_null(button_name)
+			if button and button is Button:
+				var spin = spin_button_map[button_name]
+				spin_buttons[spin] = button
+				button.toggle_mode = true
+				button.pressed.connect(_on_spin_button_toggled.bind(spin))
+	
+	# Handedness buttons (Right, Left)
+	var handedness_container = control.get_node_or_null("HandednessContainer")
+	var handedness_button_map = {
+		"RightHandedButton": Handedness.RIGHT_HANDED,
+		"LeftHandedButton": Handedness.LEFT_HANDED,
+	}
+	
+	if handedness_container:
+		for button_name in handedness_button_map:
+			var button = handedness_container.get_node_or_null(button_name)
+			if button and button is Button:
+				var handedness = handedness_button_map[button_name]
+				handedness_buttons[handedness] = button
+				button.toggle_mode = true
+				button.pressed.connect(_on_handedness_button_toggled.bind(handedness))
+				# Default to right-handed being selected
+				if handedness == Handedness.RIGHT_HANDED:
+					button.button_pressed = true
+	
+	print("Shot modifier buttons connected: %d shape, %d spin, %d handedness" % [shape_buttons.size(), spin_buttons.size(), handedness_buttons.size()])
+
+
+func _on_shape_button_toggled(shape: ShotShape) -> void:
+	"""Handle shape button toggle - only one shape can be active"""
+	var button = shape_buttons.get(shape)
+	if button and button.button_pressed:
+		# Enable this shape, disable others
+		current_shape = shape
+		for other_shape in shape_buttons:
+			if other_shape != shape:
+				shape_buttons[other_shape].button_pressed = false
+		print("Shot shape: %s" % _get_shape_name(shape))
+	else:
+		# If toggled off, go back to straight
+		current_shape = ShotShape.STRAIGHT
+		print("Shot shape: Straight")
+	
+	# Update trajectory to reflect new shape
+	_refresh_trajectory()
+
+
+func _on_spin_button_toggled(spin: SpinType) -> void:
+	"""Handle spin button toggle - only one spin can be active"""
+	var button = spin_buttons.get(spin)
+	if button and button.button_pressed:
+		# Enable this spin, disable others
+		current_spin = spin
+		for other_spin in spin_buttons:
+			if other_spin != spin:
+				spin_buttons[other_spin].button_pressed = false
+		print("Shot spin: %s" % _get_spin_name(spin))
+	else:
+		# If toggled off, go back to no spin
+		current_spin = SpinType.NONE
+		print("Shot spin: None")
+	
+	# Update trajectory to reflect new spin
+	_refresh_trajectory()
+
+
+func _get_shape_name(shape: ShotShape) -> String:
+	match shape:
+		ShotShape.STRAIGHT: return "Straight"
+		ShotShape.HOOK: return "Hook"
+		ShotShape.DRAW: return "Draw"
+		ShotShape.FADE: return "Fade"
+		ShotShape.SLICE: return "Slice"
+		_: return "Unknown"
+
+
+func _get_spin_name(spin: SpinType) -> String:
+	match spin:
+		SpinType.NONE: return "None"
+		SpinType.TOPSPIN: return "Topspin"
+		SpinType.BACKSPIN: return "Backspin"
+		_: return "Unknown"
+
+
+func _on_handedness_button_toggled(handedness: Handedness) -> void:
+	"""Handle handedness button toggle - only one can be active"""
+	var button = handedness_buttons.get(handedness)
+	if button and button.button_pressed:
+		# Enable this handedness, disable others
+		current_handedness = handedness
+		for other_hand in handedness_buttons:
+			if other_hand != handedness:
+				handedness_buttons[other_hand].button_pressed = false
+		var hand_name = "Right-Handed" if handedness == Handedness.RIGHT_HANDED else "Left-Handed"
+		print("Golfer: %s" % hand_name)
+	else:
+		# Don't allow toggling off - one must always be selected
+		button.button_pressed = true
+	
+	# Update trajectory to reflect new handedness
+	_refresh_trajectory()
+
+
+func _refresh_trajectory() -> void:
+	"""Refresh the trajectory display based on current target"""
+	if target_locked and locked_target_pos != Vector3.ZERO:
+		_update_trajectory(locked_target_pos)
+	elif hovered_cell != Vector2i(-1, -1):
+		var hx = hovered_cell.x
+		var hy = hovered_cell.y
+		var x_pos = hx * TILE_SIZE * 1.5
+		var z_pos = hy * TILE_SIZE * sqrt(3.0) + (hx % 2) * TILE_SIZE * sqrt(3.0) / 2.0
+		var y_pos = get_elevation(hx, hy)
+		_update_trajectory(Vector3(x_pos, y_pos, z_pos))
+
+
+func get_shape_adjusted_landing(aim_tile: Vector2i) -> Vector2i:
+	"""Calculate the actual landing tile based on shot shape curve.
+	   Hook/Draw curves LEFT (negative X offset), Fade/Slice curves RIGHT (positive X offset).
+	   For left-handed golfers, the curve direction is flipped."""
+	if current_shape == ShotShape.STRAIGHT or golf_ball == null:
+		return aim_tile
+	
+	var ball_tile = world_to_grid(golf_ball.position)
+	var distance = get_tile_distance(ball_tile, aim_tile)
+	
+	# Get minimum offset to ensure visible curve
+	var min_offset = SHAPE_MIN_OFFSETS.get(current_shape, 0)
+	
+	# Get distance penalty for curved shots
+	var distance_penalty = SHAPE_DISTANCE_PENALTY.get(current_shape, 0)
+	
+	# Determine lateral offset based on shot shape
+	# Hook/Draw = LEFT (negative X), Fade/Slice = RIGHT (positive X)
+	# NOTE: Positive X in world space appears as LEFT when looking toward flag
+	# So we flip the sign here to match visual expectation
+	var lateral_offset = min_offset
+	
+	match current_shape:
+		ShotShape.HOOK, ShotShape.DRAW:
+			lateral_offset = min_offset   # Positive = visually LEFT
+		ShotShape.FADE, ShotShape.SLICE:
+			lateral_offset = -min_offset  # Negative = visually RIGHT
+	
+	# Flip curve direction for left-handed golfers
+	if current_handedness == Handedness.LEFT_HANDED:
+		lateral_offset = -lateral_offset
+	
+	print("Shape: %s, Handedness: %s, Lateral: %d, DistPenalty: %d" % [
+		_get_shape_name(current_shape),
+		"Right" if current_handedness == Handedness.RIGHT_HANDED else "Left",
+		lateral_offset,
+		distance_penalty
+	])
+	
+	# Apply lateral offset to X and distance penalty to Y
+	# Distance penalty reduces how far down the course the ball goes
+	var adjusted_tile = Vector2i(aim_tile.x + lateral_offset, aim_tile.y + distance_penalty)
+	
+	# Clamp to grid bounds
+	adjusted_tile.x = clampi(adjusted_tile.x, 0, grid_width - 1)
+	adjusted_tile.y = clampi(adjusted_tile.y, 0, grid_height - 1)
+	
+	# Check if adjusted tile is valid (not water or out of bounds)
+	var surface = get_cell(adjusted_tile.x, adjusted_tile.y)
+	if surface == -1 or surface == SurfaceType.WATER:
+		# If landing in water/invalid, try to find nearest valid tile
+		# For now, just return original aim if adjusted is invalid
+		return aim_tile
+	
+	return adjusted_tile
+
+
+func get_shape_adjusted_world_position(aim_tile: Vector2i) -> Vector3:
+	"""Get the world position of the shape-adjusted landing tile."""
+	var adjusted_tile = get_shape_adjusted_landing(aim_tile)
+	return get_tile_surface_position(adjusted_tile)
+
+
+func get_shape_aoe_offset() -> int:
+	"""Get the lateral AOE offset in tiles based on current shot shape.
+	   Returns negative for left offset, positive for right offset.
+	   Flipped for left-handed golfers."""
+	if current_shape == ShotShape.STRAIGHT:
+		return 0
+	
+	var offset = SHAPE_AOE_OFFSETS.get(current_shape, 0)
+	
+	# Flip direction for right-handed golfers
+	if current_handedness == Handedness.RIGHT_HANDED:
+		offset = -offset
+	
+	return offset
+
+
+func _on_club_button_pressed(club_type: ClubType) -> void:
+	"""Handle club button click - select the club"""
+	current_club = club_type
+	trajectory_height = CLUB_ARC_HEIGHTS.get(current_club, 5.0)
+	_update_club_button_visuals()
+	_hide_range_preview()
+	_update_dim_overlays()  # Update dim overlays for new club range
+	print("Selected club: %s (max %d tiles / %d yards)" % [
+		_get_club_name(current_club), 
+		get_current_club_distance(),
+		get_current_club_distance() * int(YARDS_PER_CELL)
+	])
+
+
+func _on_club_button_hover(club_type: ClubType) -> void:
+	"""Show range preview when hovering over a club button"""
+	is_previewing_range = true
+	var max_dist = CLUB_DISTANCES.get(club_type, 10)
+	_show_range_preview(max_dist)
+
+
+func _on_club_button_hover_end() -> void:
+	"""Hide range preview when mouse leaves club button"""
+	is_previewing_range = false
+	_hide_range_preview()
+
+
+func _show_range_preview(max_distance: int) -> void:
+	"""Show a ring of highlights at max distance from ball (only forward from ball)"""
+	_hide_range_preview()
+	
+	if golf_ball == null:
+		return
+	
+	var ball_tile = world_to_grid(golf_ball.position)
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	
+	# Find all tiles at approximately max_distance from ball (only forward)
+	for col in range(grid_width):
+		for row in range(grid_height):
+			var cell = Vector2i(col, row)
+			
+			# Only show forward tiles (row >= ball row)
+			if row < ball_tile.y:
+				continue
+			
+			var dist = get_tile_distance(ball_tile, cell)
+			
+			# Show tiles at max distance (the range boundary)
+			if dist == max_distance:
+				var surface = get_cell(col, row)
+				if surface != -1 and surface != SurfaceType.WATER:
+					var highlight = _create_range_highlight()
+					var x_pos = col * width * 1.5
+					var z_pos = row * hex_height + (col % 2) * (hex_height / 2.0)
+					var y_pos = get_elevation(col, row) + 0.6
+					highlight.position = Vector3(x_pos, y_pos, z_pos)
+					highlight.rotation.y = PI / 6.0
+					highlight.visible = true
+					club_range_highlights.append(highlight)
+
+
+func _create_range_highlight() -> MeshInstance3D:
+	"""Create a range preview highlight mesh"""
+	var mesh = MeshInstance3D.new()
+	
+	# Create a torus/ring shape to show range boundary
+	var torus = TorusMesh.new()
+	torus.inner_radius = TILE_SIZE * 0.35
+	torus.outer_radius = TILE_SIZE * 0.5
+	torus.rings = 8
+	torus.ring_segments = 6
+	mesh.mesh = torus
+	
+	# Cyan/blue color for range preview
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = Color(0.2, 0.8, 1.0, 0.5)  # Cyan, semi-transparent
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.material_override = mat
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	add_child(mesh)
+	return mesh
+
+
+func _hide_range_preview() -> void:
+	"""Hide and clean up range preview highlights"""
+	for highlight in club_range_highlights:
+		if is_instance_valid(highlight):
+			highlight.queue_free()
+	club_range_highlights.clear()
+
+
+func _update_club_button_visuals() -> void:
+	"""Update button appearance to show which club is selected"""
+	var club_types = [
+		ClubType.DRIVER, ClubType.WOOD_3, ClubType.WOOD_5,
+		ClubType.IRON_3, ClubType.IRON_5, ClubType.IRON_6,
+		ClubType.IRON_7, ClubType.IRON_8, ClubType.IRON_9,
+		ClubType.PITCHING_WEDGE, ClubType.SAND_WEDGE
+	]
+	
+	for i in range(mini(club_buttons.size(), club_types.size())):
+		var button = club_buttons[i]
+		var club_type = club_types[i]
+		
+		if club_type == current_club:
+			# Selected club - make it stand out
+			button.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))  # Gold
+			button.add_theme_color_override("font_pressed_color", Color(1.0, 0.85, 0.0))
+			button.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.3))
+		else:
+			# Unselected - normal appearance
+			button.remove_theme_color_override("font_color")
+			button.remove_theme_color_override("font_pressed_color")
+			button.remove_theme_color_override("font_hover_color")
+
+
+func _get_club_name(club: ClubType) -> String:
+	"""Get display name for a club"""
+	match club:
+		ClubType.DRIVER: return "Driver"
+		ClubType.WOOD_3: return "3 Wood"
+		ClubType.WOOD_5: return "5 Wood"
+		ClubType.IRON_3: return "3 Iron"
+		ClubType.IRON_5: return "5 Iron"
+		ClubType.IRON_6: return "6 Iron"
+		ClubType.IRON_7: return "7 Iron"
+		ClubType.IRON_8: return "8 Iron"
+		ClubType.IRON_9: return "9 Iron"
+		ClubType.PITCHING_WEDGE: return "Pitching Wedge"
+		ClubType.SAND_WEDGE: return "Sand Wedge"
+		_: return "Unknown"
+
+
+func get_current_club_distance() -> int:
+	"""Get max distance in tiles for current club"""
+	return CLUB_DISTANCES.get(current_club, 5)
+
+
+func get_tile_distance(from: Vector2i, to: Vector2i) -> int:
+	"""Calculate hex grid distance between two tiles (in tiles, not yards)"""
+	# For hex grids, we use axial distance calculation
+	var dx = abs(to.x - from.x)
+	var dy = abs(to.y - from.y)
+	# Approximate hex distance (works well for pointy-top offset coords)
+	return maxi(dx, dy + dx / 2)
+
+
+func is_forward_from_ball(target_cell: Vector2i) -> bool:
+	"""Check if target is forward (toward flag direction) from ball position.
+	   In this course layout, tee is at low Y and flag is at high Y,
+	   so forward means target.y >= ball.y.
+	   EXCEPTION: If the flag/hole is behind the ball (ball overshot), allow backward shots."""
+	if golf_ball == null:
+		return true
+	var ball_tile = world_to_grid(golf_ball.position)
+	
+	# Check if flag is behind the ball (ball has overshot the hole)
+	var flag_is_behind = false
+	if flag_position.x >= 0 and flag_position.y >= 0:
+		flag_is_behind = flag_position.y < ball_tile.y
+	
+	# If flag is behind us, allow backward shots (toward the flag)
+	if flag_is_behind:
+		return true
+	
+	# Normal case: Target must be at same row or further down the course (higher Y = toward flag)
+	return target_cell.y >= ball_tile.y
+
+
+func is_tile_available(cell: Vector2i) -> bool:
+	"""Check if a tile is available to hit (in range AND forward)"""
+	if golf_ball == null:
+		return true
+	
+	var ball_tile = world_to_grid(golf_ball.position)
+	var tile_dist = get_tile_distance(ball_tile, cell)
+	var max_dist = get_current_club_distance()
+	
+	# Must be within range AND forward from ball
+	return tile_dist <= max_dist and is_forward_from_ball(cell)
+
+
+func _update_dim_overlays() -> void:
+	"""Create or update dim overlays for unavailable tiles (only forward, out of range)"""
+	# Clear existing overlays
+	_clear_dim_overlays()
+	
+	if golf_ball == null:
+		return
+	
+	var ball_tile = world_to_grid(golf_ball.position)
+	var max_dist = get_current_club_distance()
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	
+	var overlay_count = 0
+	
+	# Iterate all tiles and dim those that are out of range (but only forward tiles)
+	for col in range(grid_width):
+		for row in range(grid_height):
+			var cell = Vector2i(col, row)
+			var surface = get_cell(col, row)
+			
+			# Skip empty tiles and water (already visually distinct)
+			if surface == -1 or surface == SurfaceType.WATER:
+				continue
+			
+			# Skip tiles behind the ball - don't dim those at all
+			if not is_forward_from_ball(cell):
+				continue
+			
+			# Only dim forward tiles that are out of range
+			var tile_dist = get_tile_distance(ball_tile, cell)
+			if tile_dist > max_dist:
+				# Create dim overlay for this tile
+				var overlay = _create_dim_overlay()
+				var x_pos = col * width * 1.5
+				var z_pos = row * hex_height + (col % 2) * (hex_height / 2.0)
+				var y_pos = get_elevation(col, row) + 0.3  # Higher to be visible above tiles
+				overlay.position = Vector3(x_pos, y_pos, z_pos)
+				overlay.rotation.y = PI / 6.0
+				overlay.visible = true
+				dim_overlay_meshes.append(overlay)
+				overlay_count += 1
+	
+	dim_overlays_visible = true
+	print("Created %d dim overlays" % overlay_count)
+
+
+func _create_dim_overlay() -> MeshInstance3D:
+	"""Create a dark semi-transparent overlay mesh for unavailable tiles"""
+	var mesh_inst = MeshInstance3D.new()
+	
+	# Use a hexagon mesh that matches tile shape
+	var hex_mesh = CylinderMesh.new()
+	hex_mesh.height = 0.02
+	hex_mesh.top_radius = TILE_SIZE * 0.9
+	hex_mesh.bottom_radius = TILE_SIZE * 0.9
+	hex_mesh.radial_segments = 6  # Hexagon
+	mesh_inst.mesh = hex_mesh
+	
+	# Dark semi-transparent material
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = Color(0.0, 0.0, 0.0, 0.3)  # 30% opacity
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.no_depth_test = true  # Render on top of other geometry
+	mesh_inst.material_override = mat
+	mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	add_child(mesh_inst)
+	return mesh_inst
+
+
+func _clear_dim_overlays() -> void:
+	"""Clear all dim overlay meshes"""
+	for overlay in dim_overlay_meshes:
+		if is_instance_valid(overlay):
+			overlay.queue_free()
+	dim_overlay_meshes.clear()
+	dim_overlays_visible = false
 
 
 func _process(delta: float) -> void:
@@ -670,6 +1374,21 @@ func _input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			# Lock target to currently hovered cell
 			if hovered_cell.x >= 0 and hovered_cell.y >= 0:
+				# Check if target is available (in range AND forward)
+				if golf_ball:
+					if not is_tile_available(hovered_cell):
+						var ball_tile = world_to_grid(golf_ball.position)
+						var tile_dist = get_tile_distance(ball_tile, hovered_cell)
+						var max_dist = get_current_club_distance()
+						
+						if tile_dist > max_dist:
+							print("Target too far! %d tiles > %s max of %d tiles" % [
+								tile_dist, _get_club_name(current_club), max_dist
+							])
+						elif not is_forward_from_ball(hovered_cell):
+							print("Cannot shoot backward! Target must be toward the hole.")
+						return
+				
 				locked_cell = hovered_cell
 				target_locked = true
 				
@@ -681,32 +1400,33 @@ func _input(event: InputEvent) -> void:
 				var y_pos = get_elevation(locked_cell.x, locked_cell.y)
 				locked_target_pos = Vector3(x_pos, y_pos, z_pos)
 				
-				# Show white target highlight on the locked cell
+				# Show white target highlight on the locked cell (original aim point)
 				target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
 				target_highlight_mesh.rotation.y = PI / 6.0
 				target_highlight_mesh.visible = true
 				
-				# Update shot manager with aim target
-				if shot_manager and shot_manager.is_shot_in_progress:
-					shot_manager.set_aim_target(locked_cell)
+				# Calculate shape-adjusted landing tile
+				var adjusted_landing = get_shape_adjusted_landing(locked_cell)
 				
-				# Update UI with target info
+				# Update shot manager with the shape-adjusted landing tile
+				if shot_manager and shot_manager.is_shot_in_progress:
+					shot_manager.set_aim_target(adjusted_landing)
+				
+				# Update UI with target info (show adjusted landing info)
 				if shot_ui and golf_ball:
-					var terrain = get_cell(locked_cell.x, locked_cell.y)
+					var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
 					var ball_tile = world_to_grid(golf_ball.position)
-					var distance = _calculate_distance_yards(ball_tile, locked_cell)
+					var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
 					shot_ui.update_target_info(terrain, distance)
 				
 				# Display debug info for the clicked tile
 				_display_tile_debug_info(locked_cell)
-		
-		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-			# Right-click to confirm shot (if target is locked)
-			if target_locked and shot_manager and shot_manager.is_shot_in_progress:
-				shot_manager.confirm_shot()
-				target_locked = false
-				target_highlight_mesh.visible = false
-				_hide_all_aoe_highlights()
+				if adjusted_landing != locked_cell:
+					print("Shape %s: Aim [%d,%d] -> Landing [%d,%d]" % [
+						_get_shape_name(current_shape),
+						locked_cell.x, locked_cell.y,
+						adjusted_landing.x, adjusted_landing.y
+					])
 
 
 # Display debug information about a tile in the info label
@@ -866,6 +1586,9 @@ func _start_new_shot() -> void:
 	var ball_tile = world_to_grid(golf_ball.position)
 	shot_manager.start_shot(golf_ball, ball_tile)
 	
+	# Update dim overlays for new ball position
+	_update_dim_overlays()
+	
 	# Update UI with distance to flag
 	if shot_ui and flag_position.x >= 0:
 		var dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
@@ -908,16 +1631,34 @@ func _on_shot_completed(context: ShotContext) -> void:
 	target_locked = false
 	target_highlight_mesh.visible = false
 	
-	# Animate ball flight to landing position
+	# Animate ball flight to landing position (carry position, 1 tile before target)
 	if golf_ball and context.landing_tile.x >= 0:
-		var target_pos = get_tile_world_position(context.landing_tile) + Vector3(0, 0.1, 0)
-		await _animate_ball_flight(golf_ball.position, target_pos)
+		# Calculate carry position (1 tile behind the target in the direction of travel)
+		var ball_tile = world_to_grid(golf_ball.position)
+		var carry_tile = _get_carry_position(ball_tile, context.landing_tile)
+		var carry_pos = get_tile_surface_position(carry_tile)
+		
+		# Animate ball flight to carry position (this transitions into roll smoothly)
+		await _animate_ball_flight_with_bounce(golf_ball.position, carry_pos)
+		
+		# Now apply rollout from carry position toward target and beyond
+		var final_tile = await _apply_rollout(carry_tile, context.landing_tile)
+		
+		# Stop ball spin after all rolling is complete
+		if golf_ball:
+			golf_ball.set_meta("is_spinning", false)
+		
+		print("Final tile after rollout: [%d, %d]" % [final_tile.x, final_tile.y])
 	
 	# Hide trajectory after landing
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
+	curved_trajectory_mesh.visible = false
 	
-	# Check if reached flag
+	# Update dim overlays now that ball has moved
+	_update_dim_overlays()
+	
+	# Check if reached flag (note: rollout may have already triggered hole complete)
 	if context.has_metadata("reached_flag"):
 		print("HOLE COMPLETE!")
 		# UI handles showing hole complete popup via signal
@@ -925,6 +1666,268 @@ func _on_shot_completed(context: ShotContext) -> void:
 		# Start next shot after score popup finishes
 		await get_tree().create_timer(2.5).timeout
 		_start_new_shot()
+
+
+var hole_complete_triggered: bool = false  # Prevent multiple triggers
+
+func _trigger_hole_complete() -> void:
+	"""Called when ball reaches the hole/flag during any phase (carry, roll, spin)"""
+	if hole_complete_triggered:
+		return  # Already triggered
+	
+	hole_complete_triggered = true
+	
+	# Stop ball spin
+	if golf_ball:
+		golf_ball.set_meta("is_spinning", false)
+	
+	print("=== HOLE COMPLETE! ===")
+	
+	# Hide trajectory
+	trajectory_mesh.visible = false
+	trajectory_shadow_mesh.visible = false
+	curved_trajectory_mesh.visible = false
+	
+	# TODO: Show hole complete UI, calculate final score, etc.
+	# For now, just wait and regenerate
+	await get_tree().create_timer(2.0).timeout
+	
+	# Reset for next hole
+	hole_complete_triggered = false
+	_on_button_pressed()  # Regenerate course
+
+
+func _get_carry_position(from_tile: Vector2i, target_tile: Vector2i) -> Vector2i:
+	"""Calculate the carry position (1 tile before target in direction of travel).
+	   This is where the ball first lands before rolling."""
+	# Direction from ball to target
+	var dx = target_tile.x - from_tile.x
+	var dy = target_tile.y - from_tile.y
+	
+	# If target is same tile or adjacent, carry lands on target
+	var distance = get_tile_distance(from_tile, target_tile)
+	if distance <= 1:
+		return target_tile
+	
+	# Normalize direction and step back 1 tile from target
+	var dir_x = 0
+	var dir_y = 0
+	if abs(dx) > abs(dy):
+		dir_x = 1 if dx > 0 else -1
+	else:
+		dir_y = 1 if dy > 0 else -1
+	
+	# If diagonal-ish, favor Y direction (toward/away from flag)
+	if abs(dx) > 0 and abs(dy) > 0:
+		dir_y = 1 if dy > 0 else -1
+		dir_x = 0
+	
+	var carry_tile = Vector2i(target_tile.x - dir_x, target_tile.y - dir_y)
+	
+	# Validate carry tile is valid
+	if carry_tile.x < 0 or carry_tile.x >= grid_width or carry_tile.y < 0 or carry_tile.y >= grid_height:
+		return target_tile
+	
+	var surface = get_cell(carry_tile.x, carry_tile.y)
+	if surface == -1 or surface == SurfaceType.WATER:
+		return target_tile
+	
+	return carry_tile
+
+
+func _apply_rollout(carry_tile: Vector2i, target_tile: Vector2i) -> Vector2i:
+	"""Apply natural rollout after ball lands. Ball rolls forward based on:
+	   - Club base rollout (drivers roll more, wedges less)
+	   - Elevation changes (+1 roll for downhill, -1 for uphill)
+	   Spin (topspin/backspin) is applied AFTER natural rollout finishes.
+	   Ball stops at water/sand hazards."""
+	
+	# Calculate base rollout from club (spin is applied separately after)
+	var base_rollout = CLUB_BASE_ROLLOUT.get(current_club, 1)
+	
+	# Determine roll direction (from carry toward target, then continue forward)
+	var roll_dir = _get_roll_direction(carry_tile, target_tile)
+	
+	print("Natural rollout: base=%d, direction=%s" % [base_rollout, roll_dir])
+	
+	# Roll tile by tile for natural rollout
+	var current_tile = carry_tile
+	var tiles_to_roll = base_rollout
+	var tiles_rolled = 0
+	var reached_hole = false
+	
+	# Check if carry position is already on the hole
+	if current_tile == flag_position:
+		print("Ball landed in the hole!")
+		_trigger_hole_complete()
+		return current_tile
+	
+	while tiles_rolled < tiles_to_roll:
+		var next_tile = Vector2i(current_tile.x + roll_dir.x, current_tile.y + roll_dir.y)
+		
+		# Check bounds
+		if next_tile.x < 0 or next_tile.x >= grid_width or next_tile.y < 0 or next_tile.y >= grid_height:
+			print("Rollout stopped - out of bounds")
+			break
+		
+		# Check for hazards that stop the ball
+		var next_surface = get_cell(next_tile.x, next_tile.y)
+		if next_surface == -1:
+			print("Rollout stopped - invalid tile")
+			break
+		if next_surface == SurfaceType.WATER:
+			print("Rollout stopped - water hazard")
+			break
+		if next_surface == SurfaceType.SAND:
+			print("Rollout stopped - sand bunker")
+			break
+		if next_surface == SurfaceType.TREE:
+			print("Rollout stopped - trees")
+			break
+		
+		# Check elevation change
+		var current_elev = get_elevation(current_tile.x, current_tile.y)
+		var next_elev = get_elevation(next_tile.x, next_tile.y)
+		var elev_diff = next_elev - current_elev
+		
+		# Adjust rollout based on elevation
+		if elev_diff < -0.3:
+			tiles_to_roll += 1  # Downhill bonus
+			print("  Downhill at [%d,%d] - bonus roll!" % [next_tile.x, next_tile.y])
+		elif elev_diff > 0.3:
+			tiles_to_roll -= 1  # Uphill penalty
+			print("  Uphill at [%d,%d] - reduced roll" % [next_tile.x, next_tile.y])
+			if tiles_rolled >= tiles_to_roll:
+				break
+		
+		# Animate roll to next tile
+		var next_pos = get_tile_surface_position(next_tile)
+		await _animate_ball_roll(golf_ball.position, next_pos)
+		
+		current_tile = next_tile
+		tiles_rolled += 1
+		
+		# Check if ball rolled into the hole
+		if current_tile == flag_position:
+			print("Ball rolled into the hole!")
+			reached_hole = true
+			break
+	
+	print("Natural roll: %d tiles, position: [%d, %d]" % [tiles_rolled, current_tile.x, current_tile.y])
+	
+	# If ball reached hole, trigger completion and skip spin
+	if reached_hole:
+		_trigger_hole_complete()
+		return current_tile
+	
+	# Now apply spin effect AFTER natural rollout
+	if current_spin != SpinType.NONE:
+		current_tile = await _apply_spin_effect(current_tile, roll_dir)
+	
+	return current_tile
+
+
+func _apply_spin_effect(from_tile: Vector2i, roll_dir: Vector2i) -> Vector2i:
+	"""Apply topspin/backspin effect after natural rollout finishes.
+	   Topspin: +1 tile forward, Backspin: -1 tile backward"""
+	
+	var spin_direction = roll_dir
+	if current_spin == SpinType.BACKSPIN:
+		spin_direction = Vector2i(-roll_dir.x, -roll_dir.y)  # Reverse direction
+	
+	var spin_tiles = 1  # Spin adds 1 tile of roll
+	var current_tile = from_tile
+	
+	print("Applying %s effect..." % _get_spin_name(current_spin))
+	
+	for i in range(spin_tiles):
+		var next_tile = Vector2i(current_tile.x + spin_direction.x, current_tile.y + spin_direction.y)
+		
+		# Check bounds
+		if next_tile.x < 0 or next_tile.x >= grid_width or next_tile.y < 0 or next_tile.y >= grid_height:
+			print("Spin stopped - out of bounds")
+			break
+		
+		# Check for hazards
+		var next_surface = get_cell(next_tile.x, next_tile.y)
+		if next_surface == -1 or next_surface == SurfaceType.WATER or next_surface == SurfaceType.SAND or next_surface == SurfaceType.TREE:
+			print("Spin stopped - hazard")
+			break
+		
+		# Animate the spin roll (slightly slower than natural roll)
+		var next_pos = get_tile_surface_position(next_tile)
+		await _animate_ball_roll(golf_ball.position, next_pos, true)  # true = spin roll (slower)
+		
+		current_tile = next_tile
+		
+		# Check if ball spun into the hole
+		if current_tile == flag_position:
+			print("Ball spun into the hole!")
+			_trigger_hole_complete()
+			break
+	
+	print("Spin effect complete, final: [%d, %d]" % [current_tile.x, current_tile.y])
+	return current_tile
+
+
+func _get_roll_direction(from_tile: Vector2i, to_tile: Vector2i) -> Vector2i:
+	"""Get the primary roll direction (unit vector) from one tile toward another."""
+	var dx = to_tile.x - from_tile.x
+	var dy = to_tile.y - from_tile.y
+	
+	# Normalize to unit direction, favoring Y (forward/backward toward flag)
+	var dir = Vector2i(0, 0)
+	
+	if dy != 0:
+		dir.y = 1 if dy > 0 else -1
+	if dx != 0 and dy == 0:
+		dir.x = 1 if dx > 0 else -1
+	
+	# Default to forward (toward flag) if no direction
+	if dir == Vector2i(0, 0):
+		dir.y = 1
+	
+	return dir
+
+
+func _animate_ball_roll(start_pos: Vector3, end_pos: Vector3, is_spin_roll: bool = false) -> void:
+	"""Animate ball rolling along the ground from start to end.
+	   is_spin_roll: if true, uses slower animation for spin effect"""
+	if golf_ball == null:
+		return
+	
+	var distance = start_pos.distance_to(end_pos)
+	
+	# Spin rolls are slower and more deliberate
+	var roll_duration: float
+	if is_spin_roll:
+		roll_duration = clamp(distance * 0.25, 0.4, 0.8)  # Slower for spin
+	else:
+		roll_duration = clamp(distance * 0.12, 0.15, 0.4)  # Quick natural roll
+	
+	# Calculate roll spin (ball rotates forward along ground) - MUCH slower
+	var travel_dir = (end_pos - start_pos).normalized()
+	var spin_axis = travel_dir.cross(Vector3.UP).normalized()
+	if spin_axis.length() < 0.1:
+		spin_axis = Vector3.RIGHT
+	
+	# Slower, more realistic spin - about 1 rotation per tile
+	var total_rotations = distance * 0.3  # Much slower spin
+	var spin_speed = (total_rotations * TAU) / roll_duration
+	golf_ball.set_meta("spin_axis", spin_axis)
+	golf_ball.set_meta("spin_speed", spin_speed)
+	golf_ball.set_meta("is_spinning", true)
+	
+	# Tween position along ground with smooth deceleration
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_QUAD)
+	tween.tween_property(golf_ball, "position", end_pos, roll_duration)
+	
+	await tween.finished
+	
+	# Don't stop spin here - let it continue into next roll segment for smoothness
+	# Spin will be stopped after all rolling is complete
 
 
 # --- Ball Flight Animation ---
@@ -996,6 +1999,79 @@ func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
 	await _animate_ball_bounce(end_pos)
 
 
+func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> void:
+	"""Animate ball flight with a smooth bounce-and-roll transition at landing.
+	   The ball lands, does a small bounce, and is ready to roll."""
+	if golf_ball == null:
+		return
+	
+	# Calculate flight parameters based on distance
+	var distance = start_pos.distance_to(end_pos)
+	var flight_duration = clamp(distance * 0.08, 0.5, 2.5)
+	
+	# Peak height based on distance and club arc height
+	var peak_height = clamp(trajectory_height * 1.5, 2.0, 15.0)
+	
+	# Add extra height if going uphill
+	var height_diff = end_pos.y - start_pos.y
+	if height_diff > 0:
+		peak_height += height_diff * 0.5
+	
+	# Calculate spin direction (ball spins in direction of travel)
+	var travel_dir = (end_pos - start_pos).normalized()
+	var spin_axis = travel_dir.cross(Vector3.UP).normalized()
+	if spin_axis.length() < 0.1:
+		spin_axis = Vector3.RIGHT
+	
+	# Start ball spin animation (slower, more realistic)
+	var total_rotations = clamp(distance * 0.2, 1.0, 8.0)  # Fewer rotations
+	var spin_speed = (total_rotations * TAU) / flight_duration
+	golf_ball.set_meta("spin_axis", spin_axis)
+	golf_ball.set_meta("spin_speed", spin_speed)
+	golf_ball.set_meta("is_spinning", true)
+	
+	# Create tween for flight arc
+	var tween = create_tween()
+	var steps = 25
+	var step_duration = flight_duration / steps
+	
+	for i in range(1, steps + 1):
+		var t = float(i) / float(steps)
+		var arc_pos = _calculate_arc_position(start_pos, end_pos, t, peak_height)
+		
+		if t < 0.5:
+			tween.set_trans(Tween.TRANS_SINE)
+			tween.set_ease(Tween.EASE_OUT)
+		else:
+			tween.set_trans(Tween.TRANS_QUAD)
+			tween.set_ease(Tween.EASE_IN)
+		
+		tween.tween_property(golf_ball, "position", arc_pos, step_duration)
+	
+	await tween.finished
+	golf_ball.position = end_pos
+	
+	# Quick, subtle bounce that flows into roll (no spin stop)
+	var bounce_height = 0.3  # Small bounce
+	var bounce_duration = 0.15
+	
+	var bounce_tween = create_tween()
+	bounce_tween.set_ease(Tween.EASE_OUT)
+	bounce_tween.set_trans(Tween.TRANS_QUAD)
+	
+	# Up
+	var bounce_pos = end_pos + Vector3(0, bounce_height, 0)
+	bounce_tween.tween_property(golf_ball, "position", bounce_pos, bounce_duration * 0.4)
+	
+	# Down (with slight forward motion to lead into roll)
+	bounce_tween.set_ease(Tween.EASE_IN)
+	bounce_tween.tween_property(golf_ball, "position", end_pos, bounce_duration * 0.6)
+	
+	await bounce_tween.finished
+	
+	# Don't stop spin - let it continue into the roll for smooth transition
+
+
 func _start_ball_spin(spin_axis: Vector3, duration: float, distance: float) -> void:
 	"""Start the ball spinning during flight"""
 	if golf_ball == null:
@@ -1056,7 +2132,8 @@ func _process_ball_spin(delta: float) -> void:
 
 
 func _calculate_arc_position(start: Vector3, end: Vector3, t: float, peak_height: float) -> Vector3:
-	"""Calculate position along a parabolic arc at time t (0 to 1)"""
+	"""Calculate position along a parabolic arc at time t (0 to 1).
+	   The curve is already baked into the end position, so this just does the height arc."""
 	# Linear interpolation for X and Z
 	var pos = start.lerp(end, t)
 	
@@ -1249,7 +2326,7 @@ func _create_trajectory_mesh() -> void:
 	trajectory_mesh = MeshInstance3D.new()
 	trajectory_mesh.mesh = ImmediateMesh.new()
 	
-	# Create a bright material for the trajectory ribbon
+	# Create a bright material for the trajectory ribbon (white for original aim)
 	var mat = StandardMaterial3D.new()
 	mat.albedo_color = Color(1.0, 1.0, 1.0, 1.0)  # Base white, alpha controlled by vertex color
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -1264,6 +2341,23 @@ func _create_trajectory_mesh() -> void:
 	trajectory_mesh.custom_aabb = AABB(Vector3(-100, -100, -100), Vector3(200, 200, 200))
 	
 	add_child(trajectory_mesh)
+	
+	# Create curved trajectory mesh (cyan for shape-adjusted path)
+	curved_trajectory_mesh = MeshInstance3D.new()
+	curved_trajectory_mesh.mesh = ImmediateMesh.new()
+	
+	var curved_mat = StandardMaterial3D.new()
+	curved_mat.albedo_color = Color(0.2, 1.0, 1.0, 1.0)  # Cyan
+	curved_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	curved_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	curved_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	curved_mat.no_depth_test = true
+	curved_mat.vertex_color_use_as_albedo = true
+	curved_trajectory_mesh.material_override = curved_mat
+	curved_trajectory_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	curved_trajectory_mesh.custom_aabb = AABB(Vector3(-100, -100, -100), Vector3(200, 200, 200))
+	
+	add_child(curved_trajectory_mesh)
 	
 	# Create trajectory shadow mesh (dark line on ground)
 	trajectory_shadow_mesh = MeshInstance3D.new()
@@ -1432,34 +2526,55 @@ func _update_trajectory(target_pos: Vector3) -> void:
 	if golf_ball == null:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
+		curved_trajectory_mesh.visible = false
 		return
-	
-	var im: ImmediateMesh = trajectory_mesh.mesh
-	im.clear_surfaces()
 	
 	var start_pos = golf_ball.position
 	var end_pos = target_pos
 	
-	# Number of segments in the arc
+	# If a shape is selected, calculate the curved end position
+	var curved_end_pos = end_pos
+	var has_curve = current_shape != ShotShape.STRAIGHT
+	if has_curve:
+		var aim_tile = world_to_grid(target_pos)
+		var adjusted_tile = get_shape_adjusted_landing(aim_tile)
+		curved_end_pos = get_tile_surface_position(adjusted_tile)
+		print("Trajectory: aim_tile=%s, adjusted_tile=%s" % [aim_tile, adjusted_tile])
+		print("  end_pos.x=%.1f, curved_end_pos.x=%.1f (diff=%.1f)" % [end_pos.x, curved_end_pos.x, curved_end_pos.x - end_pos.x])
+	
+	# Draw the original aim trajectory (white, dimmer when curve is active)
+	_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, 
+		Color(1.0, 1.0, 1.0, 0.4 if has_curve else 0.8))  # Dimmer when curved
+	trajectory_mesh.visible = true
+	
+	# Draw the curved trajectory if shape is active (cyan, bright)
+	if has_curve:
+		_draw_curved_trajectory_arc(curved_trajectory_mesh, start_pos, end_pos, curved_end_pos,
+			Color(0.2, 1.0, 1.0, 0.9))  # Bright cyan
+		curved_trajectory_mesh.visible = true
+	else:
+		curved_trajectory_mesh.visible = false
+	
+	# Draw shadow line on ground showing the actual path (curved if shape active)
+	_draw_trajectory_shadow(start_pos, end_pos if not has_curve else curved_end_pos, has_curve)
+
+
+func _draw_trajectory_arc(mesh: MeshInstance3D, start_pos: Vector3, end_pos: Vector3, color: Color) -> void:
+	"""Draw a simple parabolic arc trajectory ribbon"""
+	var im: ImmediateMesh = mesh.mesh
+	im.clear_surfaces()
+	
 	var segments = 30
+	var ribbon_width = 0.12
+	var invisible_amount = 0.10
+	var fade_amount = 0.15
 	
-	# Width of the ribbon (horizontal spread)
-	var ribbon_width = 0.15
-	
-	# Invisible sections at start and end (0% opacity)
-	var invisible_amount = 0.10  # First and last 10% are invisible
-	# Fade sections after invisible parts
-	var fade_amount = 0.15  # Fade over 15% of the arc after/before invisible
-	
-	# Calculate the horizontal direction perpendicular to the arc
 	var forward_dir = (end_pos - start_pos).normalized()
-	forward_dir.y = 0  # Keep it horizontal
+	forward_dir.y = 0
 	if forward_dir.length() > 0.001:
 		forward_dir = forward_dir.normalized()
 	else:
 		forward_dir = Vector3.FORWARD
-	
-	# Perpendicular horizontal direction (for ribbon width)
 	var right_dir = forward_dir.cross(Vector3.UP).normalized()
 	
 	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
@@ -1470,33 +2585,23 @@ func _update_trajectory(target_pos: Vector3) -> void:
 		# Calculate alpha with invisible sections and fades
 		var alpha = 0.0
 		if t < invisible_amount:
-			# Invisible at start
 			alpha = 0.0
 		elif t < invisible_amount + fade_amount:
-			# Fade in after invisible section
 			alpha = (t - invisible_amount) / fade_amount
 		elif t > (1.0 - invisible_amount):
-			# Invisible at end
 			alpha = 0.0
 		elif t > (1.0 - invisible_amount - fade_amount):
-			# Fade out before invisible section
 			alpha = (1.0 - invisible_amount - t) / fade_amount
 		else:
-			# Full opacity in the middle
 			alpha = 1.0
 		
-		# Set vertex color with alpha
-		var vertex_color = Color(1.0, 1.0, 1.0, alpha * 0.8)
-		im.surface_set_color(vertex_color)
+		im.surface_set_color(Color(color.r, color.g, color.b, alpha * color.a))
 		
-		# Linear interpolation for X and Z
+		# Simple lerp + parabola for straight trajectory
 		var center_pos = start_pos.lerp(end_pos, t)
-		
-		# Parabolic arc for Y (height)
 		var arc_height = sin(t * PI) * trajectory_height
-		center_pos.y = start_pos.y + (end_pos.y - start_pos.y) * t + arc_height
+		center_pos.y = lerp(start_pos.y, end_pos.y, t) + arc_height
 		
-		# Add left and right vertices to create the ribbon
 		var left_pos = center_pos - right_dir * ribbon_width
 		var right_pos = center_pos + right_dir * ribbon_width
 		
@@ -1504,21 +2609,79 @@ func _update_trajectory(target_pos: Vector3) -> void:
 		im.surface_add_vertex(right_pos)
 	
 	im.surface_end()
-	trajectory_mesh.visible = true
+
+
+func _draw_curved_trajectory_arc(mesh: MeshInstance3D, start_pos: Vector3, aim_pos: Vector3, curved_end_pos: Vector3, color: Color) -> void:
+	"""Draw a bezier curved trajectory ribbon from start toward aim, curving to end"""
+	var im: ImmediateMesh = mesh.mesh
+	im.clear_surfaces()
 	
-	# Draw shadow line on ground (straight line from ball to target)
+	var segments = 30
+	var ribbon_width = 0.15
+	var invisible_amount = 0.10
+	var fade_amount = 0.15
+	
+	var forward_dir = (curved_end_pos - start_pos).normalized()
+	forward_dir.y = 0
+	if forward_dir.length() > 0.001:
+		forward_dir = forward_dir.normalized()
+	else:
+		forward_dir = Vector3.FORWARD
+	var right_dir = forward_dir.cross(Vector3.UP).normalized()
+	
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	
+	for i in range(segments + 1):
+		var t = float(i) / float(segments)
+		
+		# Calculate alpha
+		var alpha = 0.0
+		if t < invisible_amount:
+			alpha = 0.0
+		elif t < invisible_amount + fade_amount:
+			alpha = (t - invisible_amount) / fade_amount
+		elif t > (1.0 - invisible_amount):
+			alpha = 0.0
+		elif t > (1.0 - invisible_amount - fade_amount):
+			alpha = (1.0 - invisible_amount - t) / fade_amount
+		else:
+			alpha = 1.0
+		
+		im.surface_set_color(Color(color.r, color.g, color.b, alpha * color.a))
+		
+		# Calculate curved position using bezier
+		var center_pos = _calculate_trajectory_point(start_pos, aim_pos, curved_end_pos, t)
+		
+		var left_pos = center_pos - right_dir * ribbon_width
+		var right_pos = center_pos + right_dir * ribbon_width
+		
+		im.surface_add_vertex(left_pos)
+		im.surface_add_vertex(right_pos)
+	
+	im.surface_end()
+
+
+func _draw_trajectory_shadow(start_pos: Vector3, end_pos: Vector3, is_curved: bool) -> void:
+	"""Draw shadow line on ground"""
 	var shadow_im: ImmediateMesh = trajectory_shadow_mesh.mesh
 	shadow_im.clear_surfaces()
 	
 	var shadow_width = 0.1
 	var shadow_segments = 20
 	
+	var forward_dir = (end_pos - start_pos).normalized()
+	forward_dir.y = 0
+	if forward_dir.length() > 0.001:
+		forward_dir = forward_dir.normalized()
+	else:
+		forward_dir = Vector3.FORWARD
+	var right_dir = forward_dir.cross(Vector3.UP).normalized()
+	
 	shadow_im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
 	
 	for i in range(shadow_segments + 1):
 		var t = float(i) / float(shadow_segments)
 		
-		# Fade at start and end
 		var shadow_alpha = 1.0
 		if t < 0.1:
 			shadow_alpha = t / 0.1
@@ -1527,10 +2690,9 @@ func _update_trajectory(target_pos: Vector3) -> void:
 		
 		shadow_im.surface_set_color(Color(0.0, 0.0, 0.0, shadow_alpha * 0.3))
 		
-		# Straight line on ground, slightly above to avoid z-fighting
 		var ground_pos = Vector3(
 			lerp(start_pos.x, end_pos.x, t),
-			lerp(start_pos.y, end_pos.y, t) + 0.02,  # Slightly above ground
+			lerp(start_pos.y, end_pos.y, t) + 0.02,
 			lerp(start_pos.z, end_pos.z, t)
 		)
 		
@@ -1542,6 +2704,29 @@ func _update_trajectory(target_pos: Vector3) -> void:
 	
 	shadow_im.surface_end()
 	trajectory_shadow_mesh.visible = true
+
+
+func _calculate_trajectory_point(start_pos: Vector3, aim_pos: Vector3, curved_end_pos: Vector3, t: float) -> Vector3:
+	"""Calculate a point along the trajectory arc with curve.
+	   The ball starts toward aim_pos but curves toward curved_end_pos."""
+	# Use quadratic bezier for smooth curve from start -> (aim direction) -> curved end
+	# Control point is along the original aim direction
+	var distance = start_pos.distance_to(aim_pos)
+	var control_t = 0.5  # Control point at 50% of distance along original aim
+	var control_pos = start_pos.lerp(aim_pos, control_t)
+	
+	# Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+	var one_minus_t = 1.0 - t
+	var pos = Vector3.ZERO
+	pos.x = one_minus_t * one_minus_t * start_pos.x + 2 * one_minus_t * t * control_pos.x + t * t * curved_end_pos.x
+	pos.z = one_minus_t * one_minus_t * start_pos.z + 2 * one_minus_t * t * control_pos.z + t * t * curved_end_pos.z
+	
+	# Parabolic arc for Y (height) - peaks at t=0.5
+	var arc_height = sin(t * PI) * trajectory_height
+	var base_y = lerp(start_pos.y, curved_end_pos.y, t)
+	pos.y = base_y + arc_height
+	
+	return pos
 
 
 # Update tile highlight based on mouse position
@@ -1568,8 +2753,25 @@ func _update_tile_highlight() -> void:
 			if surface != -1 and surface != SurfaceType.WATER:
 				hovered_cell = cell
 				
+				# Check if cell is forward from ball (or if flag is behind, allow all directions)
+				var is_forward = is_forward_from_ball(cell)
+				
 				# Hide all previous AOE highlights before showing new ones
 				_hide_all_aoe_highlights()
+				
+				# Don't show any highlight for tiles behind the ball (unless flag is behind)
+				if not is_forward:
+					highlight_mesh.visible = false
+					hovered_cell = Vector2i(-1, -1)  # Clear hovered cell so click won't work
+					return
+				
+				# Check if cell is in range
+				var in_range = true
+				if golf_ball:
+					var ball_tile = world_to_grid(golf_ball.position)
+					var tile_dist = get_tile_distance(ball_tile, cell)
+					var max_dist = get_current_club_distance()
+					in_range = tile_dist <= max_dist
 				
 				# Position highlight mesh at the cell
 				var width = TILE_SIZE
@@ -1583,40 +2785,63 @@ func _update_tile_highlight() -> void:
 				highlight_mesh.rotation.y = PI / 6.0  # Match tile rotation
 				highlight_mesh.visible = true
 				
-				# Update adjacent highlights (ring 1)
-				var neighbors = get_adjacent_cells(cell.x, cell.y)
-				for neighbor in neighbors:
-					if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
-						var n_surface = get_cell(neighbor.x, neighbor.y)
-						if n_surface != -1 and n_surface != SurfaceType.WATER:
-							var highlight = _get_or_create_aoe_highlight(neighbor, 1)
-							var n_x = neighbor.x * width * 1.5
-							var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-							var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
-							highlight.position = Vector3(n_x, n_y, n_z)
-							highlight.rotation.y = PI / 6.0
-							highlight.visible = true
+				# Change highlight color based on range (gold=in range, red=out of range)
+				var mat = highlight_mesh.material_override as StandardMaterial3D
+				if mat:
+					if in_range:
+						mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Gold = in range
+					else:
+						mat.albedo_color = Color(1.0, 0.2, 0.2, 0.6)  # Red = out of range
 				
-				# Update outer ring highlights (ring 2)
-				var outer_cells = get_outer_ring_cells(cell.x, cell.y)
-				for outer_cell in outer_cells:
-					if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
-						var o_surface = get_cell(outer_cell.x, outer_cell.y)
-						if o_surface != -1 and o_surface != SurfaceType.WATER:
-							var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
-							var o_x = outer_cell.x * width * 1.5
-							var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-							var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
-							highlight.position = Vector3(o_x, o_y, o_z)
-							highlight.rotation.y = PI / 6.0
-							highlight.visible = true
-				
-				# Update trajectory arc - use locked target if set, otherwise hovered
-				if target_locked:
-					_update_trajectory(locked_target_pos)
+				# Only show AOE and trajectory if in range
+				if in_range:
+					# Get AOE offset based on shot shape (shifts AOE center laterally)
+					var aoe_offset = get_shape_aoe_offset()
+					var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
+					
+					# Clamp AOE center to grid bounds
+					aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
+					
+					# Update adjacent highlights (ring 1) around the offset AOE center
+					var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
+					for neighbor in neighbors:
+						if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
+							var n_surface = get_cell(neighbor.x, neighbor.y)
+							if n_surface != -1 and n_surface != SurfaceType.WATER:
+								var highlight = _get_or_create_aoe_highlight(neighbor, 1)
+								var n_x = neighbor.x * width * 1.5
+								var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
+								var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
+								highlight.position = Vector3(n_x, n_y, n_z)
+								highlight.rotation.y = PI / 6.0
+								highlight.visible = true
+					
+					# Update outer ring highlights (ring 2) around the offset AOE center
+					var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
+					for outer_cell in outer_cells:
+						if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
+							var o_surface = get_cell(outer_cell.x, outer_cell.y)
+							if o_surface != -1 and o_surface != SurfaceType.WATER:
+								var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
+								var o_x = outer_cell.x * width * 1.5
+								var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
+								var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+								highlight.position = Vector3(o_x, o_y, o_z)
+								highlight.rotation.y = PI / 6.0
+								highlight.visible = true
+					
+					# Update trajectory arc - use locked target if set, otherwise hovered
+					if target_locked:
+						_update_trajectory(locked_target_pos)
+					else:
+						var target_y = get_elevation(cell.x, cell.y)
+						_update_trajectory(Vector3(x_pos, target_y, z_pos))
 				else:
-					var target_y = get_elevation(cell.x, cell.y)
-					_update_trajectory(Vector3(x_pos, target_y, z_pos))
+					# Out of range - hide trajectory unless locked
+					if not target_locked:
+						trajectory_mesh.visible = false
+						trajectory_shadow_mesh.visible = false
+						curved_trajectory_mesh.visible = false
 				return
 	
 	# No valid hover
@@ -1627,6 +2852,7 @@ func _update_tile_highlight() -> void:
 	if not target_locked:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
+		curved_trajectory_mesh.visible = false
 
 
 # Convert world position to grid cell coordinates
@@ -1705,15 +2931,9 @@ func _log_hole_info() -> void:
 			if elev > max_elev:
 				max_elev = elev
 	
-	# Find flag position
-	flag_position = Vector2i(-1, -1)
-	for col in range(grid_width):
-		for row in range(grid_height):
-			if get_cell(col, row) == SurfaceType.FLAG:
-				flag_position = Vector2i(col, row)
-				break
-		if flag_position.x >= 0:
-			break
+	# flag_position is set in _generate_grid() when flag is placed
+	# Just log it here for debugging
+	print("Flag position: %s" % flag_position)
 	
 	# Count landforms by type
 	var hills = 0
@@ -2484,6 +3704,7 @@ func _generate_grid() -> void:
 
 	if green_cells.size() > 0:
 		var flag_cell = green_cells[randi() % green_cells.size()]
+		flag_position = flag_cell  # Store flag position for gameplay logic
 		var flag_scene = FLAG
 		var flag_instance = flag_scene.instantiate()
 		var flag_elev = get_elevation(flag_cell.x, flag_cell.y)
@@ -2662,6 +3883,7 @@ func _on_regenerate_button_pressed() -> void:
 	locked_cell = Vector2i(-1, -1)
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
+	curved_trajectory_mesh.visible = false
 	target_highlight_mesh.visible = false
 	_hide_all_aoe_highlights()
 	
@@ -2685,6 +3907,7 @@ func _on_button_pressed() -> void:
 	locked_cell = Vector2i(-1, -1)
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
+	curved_trajectory_mesh.visible = false
 	target_highlight_mesh.visible = false
 	_hide_all_aoe_highlights()
 	

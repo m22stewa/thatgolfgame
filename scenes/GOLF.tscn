@@ -68,6 +68,9 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="ShotUI" parent="Control" instance=ExtResource("5_shot_ui")]
+layout_mode = 1
+
 [node name="Label" type="Label" parent="Control"]
 unique_name_in_owner = true
 layout_mode = 0
@@ -78,46 +81,54 @@ offset_bottom = 245.0
 
 [node name="HFlowContainer" type="HFlowContainer" parent="Control"]
 layout_mode = 0
-offset_left = 1144.0
-offset_top = 333.0
-offset_right = 1664.0
-offset_bottom = 682.0
+offset_left = 1158.0
+offset_top = 91.0
+offset_right = 1591.0
+offset_bottom = 172.0
 
-[node name="MenuButton" type="MenuButton" parent="Control"]
-visible = false
-layout_mode = 0
-offset_left = 1617.0
-offset_top = 75.0
-offset_right = 1840.0
-offset_bottom = 176.0
-text = "Club"
-flat = false
-item_count = 11
-popup/item_0/text = "Driver"
-popup/item_0/id = 0
-popup/item_1/text = "3 Wood"
-popup/item_1/id = 1
-popup/item_2/text = "5 Wood"
-popup/item_2/id = 2
-popup/item_3/text = "3 Iron"
-popup/item_3/id = 3
-popup/item_4/text = "5 Iron"
-popup/item_4/id = 4
-popup/item_5/text = "6 Iron"
-popup/item_5/id = 5
-popup/item_6/text = "7 Iron"
-popup/item_6/id = 6
-popup/item_7/text = "9 Iron"
-popup/item_7/id = 7
-popup/item_8/text = "9 Iron"
-popup/item_8/id = 8
-popup/item_9/text = "Pitching Wedge"
-popup/item_9/id = 9
-popup/item_10/text = "Sand Wedge"
-popup/item_10/id = 10
+[node name="Button" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "Driver"
 
-[node name="ShotUI" parent="Control" instance=ExtResource("5_shot_ui")]
-layout_mode = 1
+[node name="Button2" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "3 Wood"
+
+[node name="Button3" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "5 Wood"
+
+[node name="Button4" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "3 Iron"
+
+[node name="Button5" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "5 Iron"
+
+[node name="Button6" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "6 Iron"
+
+[node name="Button7" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "7 Iron"
+
+[node name="Button8" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "8 Iron"
+
+[node name="Button9" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "9 Iron"
+
+[node name="Button10" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "Pitching Wedge"
+
+[node name="Button11" type="Button" parent="Control/HFlowContainer"]
+layout_mode = 2
+text = "Sand Wedge"
 
 [node name="Button" type="Button" parent="Control"]
 layout_mode = 0
@@ -125,7 +136,84 @@ offset_left = 1623.0
 offset_top = 214.0
 offset_right = 1834.0
 offset_bottom = 282.0
-text = "Generate"
+text = "Generate new hole"
+
+[node name="ShapeContainer" type="HBoxContainer" parent="Control"]
+layout_mode = 0
+offset_left = 1158.0
+offset_top = 260.0
+offset_right = 1478.0
+offset_bottom = 300.0
+theme_override_constants/separation = 10
+
+[node name="ShapeLabel" type="Label" parent="Control/ShapeContainer"]
+layout_mode = 2
+text = "Shape:"
+
+[node name="HookButton" type="Button" parent="Control/ShapeContainer"]
+layout_mode = 2
+toggle_mode = true
+text = "Hook"
+
+[node name="DrawButton" type="Button" parent="Control/ShapeContainer"]
+layout_mode = 2
+toggle_mode = true
+text = "Draw"
+
+[node name="FadeButton" type="Button" parent="Control/ShapeContainer"]
+layout_mode = 2
+toggle_mode = true
+text = "Fade"
+
+[node name="SliceButton" type="Button" parent="Control/ShapeContainer"]
+layout_mode = 2
+toggle_mode = true
+text = "Slice"
+
+[node name="SpinContainer" type="HBoxContainer" parent="Control"]
+layout_mode = 0
+offset_left = 1158.0
+offset_top = 310.0
+offset_right = 1428.0
+offset_bottom = 350.0
+theme_override_constants/separation = 10
+
+[node name="SpinLabel" type="Label" parent="Control/SpinContainer"]
+layout_mode = 2
+text = "Spin:"
+
+[node name="TopspinButton" type="Button" parent="Control/SpinContainer"]
+layout_mode = 2
+toggle_mode = true
+text = "Topspin"
+
+[node name="BackspinButton" type="Button" parent="Control/SpinContainer"]
+layout_mode = 2
+toggle_mode = true
+text = "Backspin"
+
+[node name="HandednessContainer" type="HBoxContainer" parent="Control"]
+layout_mode = 0
+offset_left = 1158.0
+offset_top = 203.0
+offset_right = 1449.0
+offset_bottom = 243.0
+theme_override_constants/separation = 10
+
+[node name="HandednessLabel" type="Label" parent="Control/HandednessContainer"]
+layout_mode = 2
+text = "Golfer:"
+
+[node name="RightHandedButton" type="Button" parent="Control/HandednessContainer"]
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "Right-Handed"
+
+[node name="LeftHandedButton" type="Button" parent="Control/HandednessContainer"]
+layout_mode = 2
+toggle_mode = true
+text = "Left-Handed"
 
 [node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]
 

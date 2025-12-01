@@ -8,7 +8,7 @@ class_name GolfBall
 @export var ball_material: ShaderMaterial = null
 
 # Trail effect (optional)
-@export var enable_trail: bool = false
+@export var enable_trail: bool = true
 @export var trail_color: Color = Color(1.0, 1.0, 1.0, 0.5)
 
 # Reference to the actual mesh
