@@ -86,13 +86,35 @@ var elevation: Array = []
 var golf_ball: Node3D = null
 var tee_position: Vector3 = Vector3.ZERO
 
-# Tile highlighting
-var highlight_mesh: MeshInstance3D = null
+# Stored hole info text for label
+var hole_info_text: String = ""
+
+# Tile highlighting - using dictionaries keyed by cell Vector2i for individual access
+var highlight_mesh: MeshInstance3D = null  # Main hover highlight
+var aoe_highlights: Dictionary = {}  # Key: Vector2i cell position, Value: MeshInstance3D
 var hovered_cell: Vector2i = Vector2i(-1, -1)
+
+# Tile nodes storage - keyed by cell position for individual modification
+var tile_nodes: Dictionary = {}  # Key: Vector2i cell position, Value: Node3D (the tile instance)
 
 # Trajectory line
 var trajectory_mesh: MeshInstance3D = null
+var trajectory_shadow_mesh: MeshInstance3D = null  # Shadow line on ground
 var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary by club)
+
+# Target locking
+var target_locked: bool = false
+var locked_cell: Vector2i = Vector2i(-1, -1)
+var locked_target_pos: Vector3 = Vector3.ZERO
+var target_highlight_mesh: MeshInstance3D = null  # White highlight on active/locked cell
+
+# Mini-map viewports and cameras
+var top_viewport: SubViewport = null
+var top_camera: Camera3D = null
+var side_viewport: SubViewport = null
+var side_camera: Camera3D = null
+var top_viewport_container: SubViewportContainer = null
+var side_viewport_container: SubViewportContainer = null
 
 # Elevation noise seed (randomized per generation)
 var elevation_seed: int = 0
@@ -144,6 +166,7 @@ const ELEVATION_OFFSETS = {
 func _clear_course_nodes() -> void:
 	thefloor.hide()
 	golf_ball = null  # Reset golf ball reference
+	tile_nodes.clear()  # Clear tile node references
 	var to_remove: Array = []
 	for child in get_children():
 		if child is MultiMeshInstance3D:
@@ -572,18 +595,172 @@ func set_elevation(col: int, row: int, value: float) -> void:
 		elevation[col][row] = value
 
 
+# --- Tile ID Helpers ----------------------------------------------------
+
+# Get a unique string ID for a cell (useful for debugging/logging)
+func get_tile_id(col: int, row: int) -> String:
+	return "tile_%d_%d" % [col, row]
+
+
+# Get cell position from string ID
+func parse_tile_id(tile_id: String) -> Vector2i:
+	var parts = tile_id.split("_")
+	if parts.size() == 3 and parts[0] == "tile":
+		return Vector2i(int(parts[1]), int(parts[2]))
+	return Vector2i(-1, -1)
+
+
+# Get the world position for a cell
+func get_tile_world_position(cell: Vector2i) -> Vector3:
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	var x_pos = cell.x * width * 1.5
+	var z_pos = cell.y * hex_height + (cell.x % 2) * (hex_height / 2.0)
+	var y_pos = get_elevation(cell.x, cell.y)
+	return Vector3(x_pos, y_pos, z_pos)
+
+
+# Get tile data as a dictionary (useful for serialization or debugging)
+func get_tile_data(cell: Vector2i) -> Dictionary:
+	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+		return {}
+	return {
+		"id": get_tile_id(cell.x, cell.y),
+		"cell": cell,
+		"surface": get_cell(cell.x, cell.y),
+		"elevation": get_elevation(cell.x, cell.y),
+		"world_position": get_tile_world_position(cell)
+	}
+
+
 # --- Lifecycle ----------------------------------------------------------
 
 func _ready() -> void:
 	_create_highlight_mesh()
 	_create_trajectory_mesh()
+	_create_mini_viewports()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
+	_update_mini_cameras()
 
 
 func _process(_delta: float) -> void:
 	_update_tile_highlight()
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# Lock target to currently hovered cell
+			if hovered_cell.x >= 0 and hovered_cell.y >= 0:
+				locked_cell = hovered_cell
+				target_locked = true
+				
+				# Calculate locked target position
+				var width = TILE_SIZE
+				var hex_height = TILE_SIZE * sqrt(3.0)
+				var x_pos = locked_cell.x * width * 1.5
+				var z_pos = locked_cell.y * hex_height + (locked_cell.x % 2) * (hex_height / 2.0)
+				var y_pos = get_elevation(locked_cell.x, locked_cell.y)
+				locked_target_pos = Vector3(x_pos, y_pos, z_pos)
+				
+				# Show white target highlight on the locked cell
+				target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+				target_highlight_mesh.rotation.y = PI / 6.0
+				target_highlight_mesh.visible = true
+				
+				# Display debug info for the clicked tile
+				_display_tile_debug_info(locked_cell)
+
+
+# Display debug information about a tile in the info label
+func _display_tile_debug_info(cell: Vector2i) -> void:
+	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+		return
+	
+	var surface = get_cell(cell.x, cell.y)
+	var elev = get_elevation(cell.x, cell.y)
+	var world_pos = get_tile_world_position(cell)
+	
+	# Get surface type name
+	var surface_names = {
+		SurfaceType.TEE: "Tee",
+		SurfaceType.FAIRWAY: "Fairway",
+		SurfaceType.ROUGH: "Rough",
+		SurfaceType.DEEP_ROUGH: "Deep Rough",
+		SurfaceType.GREEN: "Green",
+		SurfaceType.SAND: "Sand",
+		SurfaceType.WATER: "Water",
+		SurfaceType.TREE: "Tree",
+		SurfaceType.FLAG: "Flag"
+	}
+	var surface_name = surface_names.get(surface, "Unknown")
+	
+	# Get neighbors
+	var neighbors = get_adjacent_cells(cell.x, cell.y)
+	var neighbor_info = ""
+	for i in range(neighbors.size()):
+		var n = neighbors[i]
+		if n.x >= 0 and n.x < grid_width and n.y >= 0 and n.y < grid_height:
+			var n_surface = get_cell(n.x, n.y)
+			var n_name = surface_names.get(n_surface, "---")
+			var n_elev = get_elevation(n.x, n.y)
+			neighbor_info += "  [%d,%d] %s (%.2f)\n" % [n.x, n.y, n_name, n_elev]
+		else:
+			neighbor_info += "  [%d,%d] Out of bounds\n" % [n.x, n.y]
+	
+	# Check for nearby landforms
+	var nearby_landforms = ""
+	for lf in landforms:
+		var lf_center = Vector2(lf["col"], lf["row"])
+		var dist = Vector2(cell.x, cell.y).distance_to(lf_center)
+		
+		# Different landform types have different size keys
+		var influence_range = 5.0  # Default
+		if lf.has("radius"):
+			influence_range = lf["radius"] * 1.5
+		elif lf.has("length"):
+			influence_range = lf["length"]
+		elif lf.has("width"):
+			influence_range = lf["width"] * 2.0
+		
+		if dist <= influence_range:
+			var lf_names = {
+				LandformType.HILL: "Hill",
+				LandformType.MOUND: "Mound",
+				LandformType.VALLEY: "Valley",
+				LandformType.RIDGE: "Ridge",
+				LandformType.SWALE: "Swale",
+				LandformType.DUNE: "Dune"
+			}
+			var size_info = ""
+			if lf.has("radius"):
+				size_info = "r: %.1f" % lf["radius"]
+			elif lf.has("length"):
+				size_info = "len: %d" % lf["length"]
+			nearby_landforms += "  %s (dist: %.1f, %s)\n" % [lf_names.get(lf["type"], "?"), dist, size_info]
+	
+	if nearby_landforms == "":
+		nearby_landforms = "  None\n"
+	
+	# Build debug text
+	# Calculate yardage from tee
+	var yards_from_tee = cell.y * YARDS_PER_CELL
+	
+	var debug_text = "=== TILE DEBUG ===\n"
+	debug_text += "Cell: [%d, %d]\n" % [cell.x, cell.y]
+	debug_text += "ID: %s\n" % get_tile_id(cell.x, cell.y)
+	debug_text += "Surface: %s\n" % surface_name
+	debug_text += "Yardage: %d yards from tee\n" % yards_from_tee
+	debug_text += "Elevation: %.3f\n" % elev
+	debug_text += "World Pos: (%.2f, %.2f, %.2f)\n" % [world_pos.x, world_pos.y, world_pos.z]
+	debug_text += "\nNeighbors (6):\n%s" % neighbor_info
+	debug_text += "\nNearby Landforms:\n%s" % nearby_landforms
+	
+	# Update the label - append to hole info
+	if holelabel:
+		holelabel.text = hole_info_text + "\n" + debug_text
 
 
 # Create the highlight mesh used to show hovered tile
@@ -609,6 +786,85 @@ func _create_highlight_mesh() -> void:
 	
 	highlight_mesh.visible = false
 	add_child(highlight_mesh)
+	
+	# Create white target highlight for locked/active cell
+	target_highlight_mesh = MeshInstance3D.new()
+	var target_cylinder = CylinderMesh.new()
+	target_cylinder.top_radius = TILE_SIZE * 0.55
+	target_cylinder.bottom_radius = TILE_SIZE * 0.55
+	target_cylinder.height = 0.05
+	target_cylinder.radial_segments = 6
+	target_highlight_mesh.mesh = target_cylinder
+	
+	var target_mat = StandardMaterial3D.new()
+	target_mat.albedo_color = Color(1.0, 1.0, 1.0, 0.6)  # White, semi-transparent
+	target_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	target_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	target_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	target_highlight_mesh.material_override = target_mat
+	target_highlight_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	
+	target_highlight_mesh.visible = false
+	add_child(target_highlight_mesh)
+	
+	# AOE highlights are now created dynamically via _get_or_create_aoe_highlight()
+
+
+# Get or create an AOE highlight for a specific cell
+# ring: 0 = center (not used), 1 = adjacent, 2 = outer ring
+func _get_or_create_aoe_highlight(cell: Vector2i, ring: int) -> MeshInstance3D:
+	if aoe_highlights.has(cell):
+		return aoe_highlights[cell]
+	
+	# Create a new highlight mesh for this cell
+	var mesh = MeshInstance3D.new()
+	var cylinder = CylinderMesh.new()
+	cylinder.top_radius = TILE_SIZE * 0.55
+	cylinder.bottom_radius = TILE_SIZE * 0.55
+	cylinder.height = 0.05
+	cylinder.radial_segments = 6
+	mesh.mesh = cylinder
+	
+	var mat = StandardMaterial3D.new()
+	# Set opacity based on ring distance
+	var alpha = 0.05 if ring == 1 else 0.025  # Ring 1 = 0.05, Ring 2 = 0.025
+	mat.albedo_color = Color(1.0, 0.85, 0.0, alpha)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mesh.material_override = mat
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mesh.visible = false
+	
+	# Store metadata for future reference
+	mesh.set_meta("cell_id", cell)
+	mesh.set_meta("ring", ring)
+	
+	add_child(mesh)
+	aoe_highlights[cell] = mesh
+	return mesh
+
+
+# Set the color of an AOE highlight by cell ID
+func set_aoe_highlight_color(cell: Vector2i, color: Color) -> void:
+	if aoe_highlights.has(cell):
+		var mesh: MeshInstance3D = aoe_highlights[cell]
+		mesh.material_override.albedo_color = color
+
+
+# Get all currently visible AOE highlight cell IDs
+func get_visible_aoe_cells() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for cell in aoe_highlights.keys():
+		if aoe_highlights[cell].visible:
+			cells.append(cell)
+	return cells
+
+
+# Clear all AOE highlights (hide them, keep for reuse)
+func _hide_all_aoe_highlights() -> void:
+	for cell in aoe_highlights.keys():
+		aoe_highlights[cell].visible = false
 
 
 # Create the trajectory arc mesh
@@ -616,21 +872,189 @@ func _create_trajectory_mesh() -> void:
 	trajectory_mesh = MeshInstance3D.new()
 	trajectory_mesh.mesh = ImmediateMesh.new()
 	
-	# Create a bright material for the trajectory line
+	# Create a bright material for the trajectory ribbon
 	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.8)  # White, slightly transparent
+	mat.albedo_color = Color(1.0, 1.0, 1.0, 1.0)  # Base white, alpha controlled by vertex color
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # Render both sides
+	mat.no_depth_test = true  # Always visible, ignore depth
+	mat.vertex_color_use_as_albedo = true  # Use vertex colors for the fade effect
 	trajectory_mesh.material_override = mat
 	trajectory_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	
+	# Set a large custom AABB so it doesn't get frustum culled
+	trajectory_mesh.custom_aabb = AABB(Vector3(-100, -100, -100), Vector3(200, 200, 200))
+	
 	add_child(trajectory_mesh)
+	
+	# Create trajectory shadow mesh (dark line on ground)
+	trajectory_shadow_mesh = MeshInstance3D.new()
+	trajectory_shadow_mesh.mesh = ImmediateMesh.new()
+	
+	var shadow_mat = StandardMaterial3D.new()
+	shadow_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.3)  # Dark, semi-transparent
+	shadow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	shadow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shadow_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	shadow_mat.no_depth_test = true  # Draw over terrain
+	trajectory_shadow_mesh.material_override = shadow_mat
+	trajectory_shadow_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	trajectory_shadow_mesh.custom_aabb = AABB(Vector3(-100, -100, -100), Vector3(200, 200, 200))
+	
+	add_child(trajectory_shadow_mesh)
+
+
+# Create mini viewports for top and side views
+func _create_mini_viewports() -> void:
+	# Find the Control node to parent the viewport containers
+	var control_node = get_tree().current_scene.get_node("Control")
+	if control_node == null:
+		push_warning("Control node not found - mini viewports not created")
+		return
+	
+	# Viewport size
+	var viewport_size = Vector2i(300, 250)
+	
+	# --- TOP VIEW (looking down at the hole) ---
+	top_viewport_container = SubViewportContainer.new()
+	top_viewport_container.stretch = true
+	top_viewport_container.custom_minimum_size = Vector2(viewport_size)
+	top_viewport_container.size = Vector2(viewport_size)
+	# Position in bottom-right corner
+	# Position in bottom-right corner to avoid covering debug text
+	top_viewport_container.position = Vector2(1600, 450)
+	
+	top_viewport = SubViewport.new()
+	top_viewport.size = viewport_size
+	top_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	top_viewport.transparent_bg = false
+	top_viewport.handle_input_locally = false
+	top_viewport.gui_disable_input = true
+	
+	top_camera = Camera3D.new()
+	top_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	top_camera.size = 30.0  # Orthographic size, will be adjusted per hole
+	top_camera.near = 0.1
+	top_camera.far = 200.0
+	# Look straight down, rotated 180 degrees so tee is at bottom
+	top_camera.rotation_degrees = Vector3(-90, 180, 0)
+	
+	top_viewport.add_child(top_camera)
+	top_viewport_container.add_child(top_viewport)
+	control_node.add_child(top_viewport_container)
+	
+	# Add a border/label for the top view
+	var top_label = Label.new()
+	top_label.text = "TOP VIEW"
+	top_label.position = Vector2(5, 5)
+	top_label.add_theme_color_override("font_color", Color.WHITE)
+	top_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	top_label.add_theme_constant_override("shadow_offset_x", 1)
+	top_label.add_theme_constant_override("shadow_offset_y", 1)
+	top_viewport_container.add_child(top_label)
+	
+	# --- SIDE VIEW (looking at the hole from the side) ---
+	side_viewport_container = SubViewportContainer.new()
+	side_viewport_container.stretch = true
+	side_viewport_container.custom_minimum_size = Vector2(viewport_size)
+	side_viewport_container.size = Vector2(viewport_size)
+	# Position below top view
+	side_viewport_container.position = Vector2(20, 720)
+	
+	side_viewport = SubViewport.new()
+	side_viewport.size = viewport_size
+	side_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	side_viewport.transparent_bg = false
+	side_viewport.handle_input_locally = false
+	side_viewport.gui_disable_input = true
+	
+	side_camera = Camera3D.new()
+	side_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	side_camera.size = 20.0  # Will be adjusted per hole
+	side_camera.near = 0.1
+	side_camera.far = 200.0
+	# Look from the side (along X axis looking at Z)
+	side_camera.rotation_degrees = Vector3(0, -90, 0)
+	
+	side_viewport.add_child(side_camera)
+	side_viewport_container.add_child(side_viewport)
+	control_node.add_child(side_viewport_container)
+	side_viewport_container.visible = false  # Hidden for now
+	
+	# Add a border/label for the side view
+	var side_label = Label.new()
+	side_label.text = "SIDE VIEW"
+	side_label.position = Vector2(5, 5)
+	side_label.add_theme_color_override("font_color", Color.WHITE)
+	side_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	side_label.add_theme_constant_override("shadow_offset_x", 1)
+	side_label.add_theme_constant_override("shadow_offset_y", 1)
+	side_viewport_container.add_child(side_label)
+
+
+# Update mini cameras to frame the current hole
+func _update_mini_cameras() -> void:
+	if top_camera == null or side_camera == null:
+		return
+	
+	# Calculate bounds of the hole
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	
+	# Find min/max positions of the grid
+	var min_x = 0.0
+	var max_x = (grid_width - 1) * width * 1.5
+	var min_z = 0.0
+	var max_z = (grid_height - 1) * hex_height + hex_height / 2.0
+	
+	# Find elevation range
+	var min_y = 0.0
+	var max_y = 0.0
+	for col in range(grid_width):
+		for row in range(grid_height):
+			var elev = get_elevation(col, row)
+			min_y = min(min_y, elev)
+			max_y = max(max_y, elev)
+	
+	# Add some padding
+	var padding = 2.0
+	min_x -= padding
+	max_x += padding
+	min_z -= padding
+	max_z += padding
+	min_y -= 1.0
+	max_y += 3.0
+	
+	# Center of the hole
+	var center_x = (min_x + max_x) / 2.0
+	var center_z = (min_z + max_z) / 2.0
+	var center_y = (min_y + max_y) / 2.0
+	
+	# Size of the hole
+	var size_x = max_x - min_x
+	var size_z = max_z - min_z
+	var size_y = max_y - min_y
+	
+	# --- TOP CAMERA ---
+	# Position above the center looking down
+	top_camera.position = Vector3(center_x, max_y + 50.0, center_z)
+	# Set orthographic size to fit the hole (use the larger dimension)
+	top_camera.size = max(size_x, size_z) * 1.1  # 10% padding
+	
+	# --- SIDE CAMERA ---
+	# Position to the side of the hole looking along the length
+	# We want to look from tee to green, so position on -X side looking toward +X
+	side_camera.position = Vector3(min_x - 50.0, center_y + 5.0, center_z)
+	# Set orthographic size based on height and length
+	side_camera.size = max(size_y + 5.0, size_z) * 0.7
 
 
 # Update the trajectory arc from ball to target
 func _update_trajectory(target_pos: Vector3) -> void:
 	if golf_ball == null:
 		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
 		return
 	
 	var im: ImmediateMesh = trajectory_mesh.mesh
@@ -642,23 +1066,105 @@ func _update_trajectory(target_pos: Vector3) -> void:
 	# Number of segments in the arc
 	var segments = 30
 	
-	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+	# Width of the ribbon (horizontal spread)
+	var ribbon_width = 0.15
+	
+	# Invisible sections at start and end (0% opacity)
+	var invisible_amount = 0.10  # First and last 10% are invisible
+	# Fade sections after invisible parts
+	var fade_amount = 0.15  # Fade over 15% of the arc after/before invisible
+	
+	# Calculate the horizontal direction perpendicular to the arc
+	var forward_dir = (end_pos - start_pos).normalized()
+	forward_dir.y = 0  # Keep it horizontal
+	if forward_dir.length() > 0.001:
+		forward_dir = forward_dir.normalized()
+	else:
+		forward_dir = Vector3.FORWARD
+	
+	# Perpendicular horizontal direction (for ribbon width)
+	var right_dir = forward_dir.cross(Vector3.UP).normalized()
+	
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
 	
 	for i in range(segments + 1):
 		var t = float(i) / float(segments)
 		
+		# Calculate alpha with invisible sections and fades
+		var alpha = 0.0
+		if t < invisible_amount:
+			# Invisible at start
+			alpha = 0.0
+		elif t < invisible_amount + fade_amount:
+			# Fade in after invisible section
+			alpha = (t - invisible_amount) / fade_amount
+		elif t > (1.0 - invisible_amount):
+			# Invisible at end
+			alpha = 0.0
+		elif t > (1.0 - invisible_amount - fade_amount):
+			# Fade out before invisible section
+			alpha = (1.0 - invisible_amount - t) / fade_amount
+		else:
+			# Full opacity in the middle
+			alpha = 1.0
+		
+		# Set vertex color with alpha
+		var vertex_color = Color(1.0, 1.0, 1.0, alpha * 0.8)
+		im.surface_set_color(vertex_color)
+		
 		# Linear interpolation for X and Z
-		var pos = start_pos.lerp(end_pos, t)
+		var center_pos = start_pos.lerp(end_pos, t)
 		
 		# Parabolic arc for Y (height)
-		# Peak at t=0.5, using sin for smooth arc
 		var arc_height = sin(t * PI) * trajectory_height
-		pos.y = start_pos.y + (end_pos.y - start_pos.y) * t + arc_height
+		center_pos.y = start_pos.y + (end_pos.y - start_pos.y) * t + arc_height
 		
-		im.surface_add_vertex(pos)
+		# Add left and right vertices to create the ribbon
+		var left_pos = center_pos - right_dir * ribbon_width
+		var right_pos = center_pos + right_dir * ribbon_width
+		
+		im.surface_add_vertex(left_pos)
+		im.surface_add_vertex(right_pos)
 	
 	im.surface_end()
 	trajectory_mesh.visible = true
+	
+	# Draw shadow line on ground (straight line from ball to target)
+	var shadow_im: ImmediateMesh = trajectory_shadow_mesh.mesh
+	shadow_im.clear_surfaces()
+	
+	var shadow_width = 0.1
+	var shadow_segments = 20
+	
+	shadow_im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	
+	for i in range(shadow_segments + 1):
+		var t = float(i) / float(shadow_segments)
+		
+		# Fade at start and end
+		var shadow_alpha = 1.0
+		if t < 0.1:
+			shadow_alpha = t / 0.1
+		elif t > 0.9:
+			shadow_alpha = (1.0 - t) / 0.1
+		
+		shadow_im.surface_set_color(Color(0.0, 0.0, 0.0, shadow_alpha * 0.3))
+		
+		# Straight line on ground, slightly above to avoid z-fighting
+		var ground_pos = Vector3(
+			lerp(start_pos.x, end_pos.x, t),
+			lerp(start_pos.y, end_pos.y, t) + 0.02,  # Slightly above ground
+			lerp(start_pos.z, end_pos.z, t)
+		)
+		
+		var left_shadow = ground_pos - right_dir * shadow_width
+		var right_shadow = ground_pos + right_dir * shadow_width
+		
+		shadow_im.surface_add_vertex(left_shadow)
+		shadow_im.surface_add_vertex(right_shadow)
+	
+	shadow_im.surface_end()
+	trajectory_shadow_mesh.visible = true
 
 
 # Update tile highlight based on mouse position
@@ -685,6 +1191,9 @@ func _update_tile_highlight() -> void:
 			if surface != -1 and surface != SurfaceType.WATER:
 				hovered_cell = cell
 				
+				# Hide all previous AOE highlights before showing new ones
+				_hide_all_aoe_highlights()
+				
 				# Position highlight mesh at the cell
 				var width = TILE_SIZE
 				var hex_height = TILE_SIZE * sqrt(3.0)
@@ -697,15 +1206,50 @@ func _update_tile_highlight() -> void:
 				highlight_mesh.rotation.y = PI / 6.0  # Match tile rotation
 				highlight_mesh.visible = true
 				
-				# Update trajectory arc to target
-				var target_y = get_elevation(cell.x, cell.y)
-				_update_trajectory(Vector3(x_pos, target_y, z_pos))
+				# Update adjacent highlights (ring 1)
+				var neighbors = get_adjacent_cells(cell.x, cell.y)
+				for neighbor in neighbors:
+					if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
+						var n_surface = get_cell(neighbor.x, neighbor.y)
+						if n_surface != -1 and n_surface != SurfaceType.WATER:
+							var highlight = _get_or_create_aoe_highlight(neighbor, 1)
+							var n_x = neighbor.x * width * 1.5
+							var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
+							var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
+							highlight.position = Vector3(n_x, n_y, n_z)
+							highlight.rotation.y = PI / 6.0
+							highlight.visible = true
+				
+				# Update outer ring highlights (ring 2)
+				var outer_cells = get_outer_ring_cells(cell.x, cell.y)
+				for outer_cell in outer_cells:
+					if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
+						var o_surface = get_cell(outer_cell.x, outer_cell.y)
+						if o_surface != -1 and o_surface != SurfaceType.WATER:
+							var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
+							var o_x = outer_cell.x * width * 1.5
+							var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
+							var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+							highlight.position = Vector3(o_x, o_y, o_z)
+							highlight.rotation.y = PI / 6.0
+							highlight.visible = true
+				
+				# Update trajectory arc - use locked target if set, otherwise hovered
+				if target_locked:
+					_update_trajectory(locked_target_pos)
+				else:
+					var target_y = get_elevation(cell.x, cell.y)
+					_update_trajectory(Vector3(x_pos, target_y, z_pos))
 				return
 	
 	# No valid hover
 	hovered_cell = Vector2i(-1, -1)
 	highlight_mesh.visible = false
-	trajectory_mesh.visible = false
+	_hide_all_aoe_highlights()
+	# Keep trajectory visible if locked
+	if not target_locked:
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
 
 
 # Convert world position to grid cell coordinates
@@ -721,6 +1265,54 @@ func world_to_grid(world_pos: Vector3) -> Vector2i:
 	var row = roundi((world_pos.z - z_offset) / height)
 	
 	return Vector2i(col, row)
+
+
+# Get the 6 adjacent hex cells for a given cell (ring 1)
+func get_adjacent_cells(col: int, row: int) -> Array[Vector2i]:
+	var neighbors: Array[Vector2i] = []
+	
+	# Hex grid neighbor offsets depend on whether column is even or odd
+	if col % 2 == 0:
+		# Even column
+		neighbors.append(Vector2i(col - 1, row - 1))  # Upper left
+		neighbors.append(Vector2i(col - 1, row))      # Lower left
+		neighbors.append(Vector2i(col, row - 1))      # Up
+		neighbors.append(Vector2i(col, row + 1))      # Down
+		neighbors.append(Vector2i(col + 1, row - 1))  # Upper right
+		neighbors.append(Vector2i(col + 1, row))      # Lower right
+	else:
+		# Odd column
+		neighbors.append(Vector2i(col - 1, row))      # Upper left
+		neighbors.append(Vector2i(col - 1, row + 1))  # Lower left
+		neighbors.append(Vector2i(col, row - 1))      # Up
+		neighbors.append(Vector2i(col, row + 1))      # Down
+		neighbors.append(Vector2i(col + 1, row))      # Upper right
+		neighbors.append(Vector2i(col + 1, row + 1))  # Lower right
+	
+	return neighbors
+
+
+# Get the 12 outer ring hex cells for a given cell (ring 2)
+# These are the cells that are 2 steps away from the center
+func get_outer_ring_cells(col: int, row: int) -> Array[Vector2i]:
+	var outer: Array[Vector2i] = []
+	var inner = get_adjacent_cells(col, row)
+	var seen: Dictionary = {}
+	
+	# Mark center and inner ring as seen
+	seen[Vector2i(col, row)] = true
+	for cell in inner:
+		seen[cell] = true
+	
+	# For each inner ring cell, get its neighbors and add ones we haven't seen
+	for inner_cell in inner:
+		var inner_neighbors = get_adjacent_cells(inner_cell.x, inner_cell.y)
+		for neighbor in inner_neighbors:
+			if not seen.has(neighbor):
+				seen[neighbor] = true
+				outer.append(neighbor)
+	
+	return outer
 
 
 # Display hole information in the UI Label
@@ -753,20 +1345,18 @@ func _log_hole_info() -> void:
 			LandformType.DUNE: dunes += 1
 	
 	# Build info text
-	var info_text = "Par %d  |  %d yards\n" % [current_par, current_yardage]
-	info_text += "Grid: %d x %d\n" % [grid_width, grid_height]
-	info_text += "Elevation: %.2f to %.2f\n" % [min_elev, max_elev]
-	info_text += "Landforms: %d hills, %d mounds, %d valleys\n" % [hills, mounds, valleys]
-	info_text += "%d ridges, %d swales, %d dunes" % [ridges, swales, dunes]
+	hole_info_text = "Par %d  |  %d yards\n" % [current_par, current_yardage]
+	hole_info_text += "Grid: %d x %d\n" % [grid_width, grid_height]
+	hole_info_text += "Elevation: %.2f to %.2f\n" % [min_elev, max_elev]
+	hole_info_text += "Landforms: %d hills, %d mounds, %d valleys\n" % [hills, mounds, valleys]
+	hole_info_text += "%d ridges, %d swales, %d dunes" % [ridges, swales, dunes]
 	
 	# Update UI Label
-	
-	var label = holelabel
-	if label:
-		label.text = info_text
+	if holelabel:
+		holelabel.text = hole_info_text
 	else:
 		# Fallback to console if label not found
-		print(info_text)
+		print(hole_info_text)
 
 
 # Generate a specific par hole (3, 4, or 5)
@@ -788,6 +1378,7 @@ func generate_hole_with_par(par: int) -> void:
 	_generate_course_features()
 	_generate_grid()
 	_log_hole_info()
+	_update_mini_cameras()
 
 
 # --- Course generation --------------------------------------------------
@@ -1623,20 +2214,34 @@ func _spawn_foliage() -> void:
 				var model_scene: PackedScene = models[randi() % models.size()]
 				var instance = model_scene.instantiate()
 				
-				# Calculate position
-				var pos_x = col * width * 1.5 + (randf() - 0.5) * 0.6
-				var pos_z = row * height + (col % 2) * (height / 2.0) + (randf() - 0.5) * 0.6
-				var pos_y = get_elevation(col, row)
-				instance.position = Vector3(pos_x, pos_y, pos_z)
+				# Calculate position with offset from cell center
+				var offset_x = (randf() - 0.5) * 0.6
+				var offset_z = (randf() - 0.5) * 0.6
+				var pos_x = col * width * 1.5 + offset_x
+				var pos_z = row * height + (col % 2) * (height / 2.0) + offset_z
+				
+				# Sample elevation at the actual offset position for more accurate placement
+				# Find the nearest cell to the offset position
+				var world_pos = Vector3(pos_x, 0, pos_z)
+				var nearest_cell = world_to_grid(world_pos)
+				var pos_y = get_elevation(nearest_cell.x, nearest_cell.y)
+				
+				# FBX models typically have their origin at center, not bottom
+				# We need to raise them by roughly half their height to sit on terrain
+				# Model base height is ~1-2 units, scaled down significantly
+				var scale_range = cfg["scale"]
+				var base_scale = randf_range(scale_range.x, scale_range.y)
+				var estimated_model_height = 1.5  # Approximate unscaled model height
+				var vertical_offset = (estimated_model_height * base_scale) * 0.5  # Raise by half the scaled height
+				
+				instance.position = Vector3(pos_x, pos_y + vertical_offset, pos_z)
 				
 				# Random rotation
 				instance.rotation.y = randf() * TAU
 				instance.rotation.x = deg_to_rad(randf_range(-3.0, 3.0))
 				instance.rotation.z = deg_to_rad(randf_range(-3.0, 3.0))
 				
-				# Random scale
-				var scale_range = cfg["scale"]
-				var base_scale = randf_range(scale_range.x, scale_range.y)
+				# Apply scale (already calculated above for vertical offset)
 				instance.scale = Vector3(base_scale, base_scale * randf_range(0.9, 1.1), base_scale)
 				
 				instance.add_to_group("foliage")
@@ -1662,14 +2267,30 @@ func _apply_random_tree_colors(tree: Node3D) -> void:
 # --- UI callbacks -------------------------------------------------------
 
 func _on_regenerate_button_pressed() -> void:
+	# Reset target lock
+	target_locked = false
+	locked_cell = Vector2i(-1, -1)
+	trajectory_mesh.visible = false
+	trajectory_shadow_mesh.visible = false
+	target_highlight_mesh.visible = false
+	
 	_clear_course_nodes()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
+	_update_mini_cameras()
 
 
 func _on_button_pressed() -> void:
+	# Reset target lock
+	target_locked = false
+	locked_cell = Vector2i(-1, -1)
+	trajectory_mesh.visible = false
+	trajectory_shadow_mesh.visible = false
+	target_highlight_mesh.visible = false
+	
 	_clear_course_nodes()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
+	_update_mini_cameras()

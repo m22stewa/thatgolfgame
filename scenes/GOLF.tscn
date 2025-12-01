@@ -81,6 +81,45 @@ offset_top = 105.0
 offset_right = 306.0
 offset_bottom = 245.0
 
+[node name="HFlowContainer" type="HFlowContainer" parent="Control"]
+layout_mode = 0
+offset_left = 1144.0
+offset_top = 333.0
+offset_right = 1664.0
+offset_bottom = 682.0
+
+[node name="MenuButton" type="MenuButton" parent="Control"]
+layout_mode = 0
+offset_left = 1617.0
+offset_top = 75.0
+offset_right = 1840.0
+offset_bottom = 176.0
+text = "Club"
+flat = false
+item_count = 11
+popup/item_0/text = "Driver"
+popup/item_0/id = 0
+popup/item_1/text = "3 Wood"
+popup/item_1/id = 1
+popup/item_2/text = "5 Wood"
+popup/item_2/id = 2
+popup/item_3/text = "3 Iron"
+popup/item_3/id = 3
+popup/item_4/text = "5 Iron"
+popup/item_4/id = 4
+popup/item_5/text = "6 Iron"
+popup/item_5/id = 5
+popup/item_6/text = "7 Iron"
+popup/item_6/id = 6
+popup/item_7/text = "9 Iron"
+popup/item_7/id = 7
+popup/item_8/text = "9 Iron"
+popup/item_8/id = 8
+popup/item_9/text = "Pitching Wedge"
+popup/item_9/id = 9
+popup/item_10/text = "Sand Wedge"
+popup/item_10/id = 10
+
 [node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]
 
 [node name="HexGrid" type="Node3D" parent="HoleGenerator"]
