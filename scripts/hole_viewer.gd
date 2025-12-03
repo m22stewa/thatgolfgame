@@ -329,7 +329,7 @@ func _update_camera_transform() -> void:
 	
 	# Shift camera forward (positive Z) to put tee at bottom of view
 	# This offset moves the camera's view forward toward the green
-	var forward_shift = horizontal_dist * 0.6  # Shift forward by 60% of view distance
+	var forward_shift = horizontal_dist * 0.5  # Shift forward by 50% of view distance
 	
 	var cam_pos = Vector3(
 		target_position.x + offset_x,

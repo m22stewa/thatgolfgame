@@ -1,6 +1,5 @@
-[gd_scene load_steps=18 format=4 uid="uid://cu7517xrwfodv"]
+[gd_scene load_steps=15 format=4 uid="uid://cu7517xrwfodv"]
 
-[ext_resource type="Shader" uid="uid://de6xtbbn1ibxo" path="res://scripts/flag.gdshader" id="1_vdtgd"]
 [ext_resource type="Texture2D" uid="uid://deqihveu72rgq" path="res://assets/kenney-platforms/Textures/colormap.png" id="2_hhiv0"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3vqnv"]
@@ -105,15 +104,6 @@ material = SubResource("StandardMaterial3D_ky4ew")
 shape = 0
 sections = 3
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_vdtgd"]
-render_priority = 0
-shader = ExtResource("1_vdtgd")
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_hhiv0"]
-material = SubResource("ShaderMaterial_vdtgd")
-subdivide_width = 20
-subdivide_depth = 20
-
 [node name="Flag" type="Node3D"]
 
 [node name="CSGCylinder3D" type="CSGCylinder3D" parent="."]
@@ -154,7 +144,3 @@ trail_enabled = true
 trail_lifetime = 0.5
 process_material = SubResource("ParticleProcessMaterial_bdvvk")
 draw_pass_1 = SubResource("RibbonTrailMesh_tqtu5")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.4536743, 6.105133, 4.48645)
-mesh = SubResource("PlaneMesh_hhiv0")

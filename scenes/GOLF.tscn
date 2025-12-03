@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=27 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
@@ -6,7 +6,7 @@
 [ext_resource type="Shader" uid="uid://cwotan7qgy7bh" path="res://scenes/tilt.gdshader" id="5_q0ffo"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="5_shot_ui"]
 [ext_resource type="PackedScene" uid="uid://d26l5mg54l7s2" path="res://scenes/ui/hand_ui.tscn" id="6_hand_ui"]
-[ext_resource type="PackedScene" path="res://scenes/ui/hole_viewer.tscn" id="7_hole_viewer"]
+[ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="7_hole_viewer"]
 [ext_resource type="Shader" uid="uid://d03cyebunvl18" path="res://scripts/floor.gdshader" id="8_q0ffo"]
 
 [sub_resource type="Gradient" id="Gradient_81eei"]
@@ -75,25 +75,37 @@ corner_radius_bottom_left = 6
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_2xvcl"]
 shader = ExtResource("5_q0ffo")
-shader_parameter/limit = 0.150000007125
+shader_parameter/limit = 0.2410000114475
 shader_parameter/blur = 2.0
 
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_q0ffo"]
-noise_type = 3
+[sub_resource type="Gradient" id="Gradient_q0ffo"]
+interpolation_mode = 2
 
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_2xvcl"]
-noise = SubResource("FastNoiseLite_q0ffo")
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_2xvcl"]
+gradient = SubResource("Gradient_q0ffo")
+fill_from = Vector2(0, 0.52991456)
+fill_to = Vector2(0.82905984, 0.73789173)
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_ynlb6"]
+frequency = 0.0245
+offset = Vector3(0, 161.85, 0)
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_xe5jh"]
+noise = SubResource("FastNoiseLite_ynlb6")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q0ffo"]
 render_priority = 0
 shader = ExtResource("8_q0ffo")
-shader_parameter/height_scale = 1.815
-shader_parameter/displacement = SubResource("NoiseTexture2D_2xvcl")
+shader_parameter/texture_emission = SubResource("NoiseTexture2D_xe5jh")
+shader_parameter/emission_color = SubResource("GradientTexture2D_2xvcl")
+shader_parameter/depth_scale = 0.095
+shader_parameter/discard_boundaries = false
+shader_parameter/emission_energy = 1.43
+shader_parameter/uv1_scale = Vector2(1, 1)
+shader_parameter/uv1_offset = Vector2(0, 0)
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_q0ffo"]
 size = Vector2(400, 400)
-subdivide_width = 200
-subdivide_depth = 200
 
 [node name="GOLF" type="Node3D"]
 
@@ -116,6 +128,7 @@ current = true
 [node name="EditorHelpers" type="Node3D" parent="."]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.7913742, 0)
+visible = false
 
 [node name="EditorCamera" type="Camera3D" parent="EditorHelpers"]
 transform = Transform3D(-1, -7.571031e-08, 4.3711392e-08, 0, 0.50000024, 0.8660254, -8.742282e-08, 0.8660254, -0.50000024, 10, 40, -20)
@@ -375,7 +388,7 @@ text = "Debug Trajectory"
 [node name="tiltshift" type="ColorRect" parent="Control"]
 material = SubResource("ShaderMaterial_2xvcl")
 layout_mode = 0
-offset_right = 703.0
+offset_right = 798.0
 offset_bottom = 1080.0
 
 [node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]

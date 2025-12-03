@@ -9,16 +9,6 @@ enum ClubType {
 	DRIVER, WOOD_3, WOOD_5, IRON_3, IRON_5, IRON_6, IRON_7, IRON_8, IRON_9, PITCHING_WEDGE, SAND_WEDGE
 }
 
-# Shot shape types (curve direction for right-handed golfer)
-# Hook/Draw curve LEFT, Fade/Slice curve RIGHT
-enum ShotShape {
-	STRAIGHT,  # No curve
-	HOOK,      # Severe curve left
-	DRAW,      # Gentle curve left
-	FADE,      # Gentle curve right
-	SLICE      # Severe curve right
-}
-
 # Spin types affecting ball roll after landing
 enum SpinType {
 	NONE,      # No spin effect
@@ -26,63 +16,11 @@ enum SpinType {
 	BACKSPIN   # Ball rolls backward (-1 tile)
 }
 
-# Golfer handedness - affects curve direction
-# Right-handed: Hook/Draw curve LEFT, Fade/Slice curve RIGHT
-# Left-handed: Hook/Draw curve RIGHT, Fade/Slice curve LEFT
-enum Handedness {
-	RIGHT_HANDED,
-	LEFT_HANDED
-}
-
-# Shape curve amounts (lateral offset as fraction of distance)
-# Negative = curve left, Positive = curve right
-const SHAPE_CURVE_AMOUNTS = {
-	ShotShape.STRAIGHT: 0.0,
-	ShotShape.HOOK: -0.25,    # Severe left curve
-	ShotShape.DRAW: -0.12,    # Gentle left curve
-	ShotShape.FADE: 0.12,     # Gentle right curve
-	ShotShape.SLICE: 0.25,    # Severe right curve
-}
-
-# Distance penalty for shot shapes (curved shots lose distance)
-const SHAPE_DISTANCE_PENALTY = {
-	ShotShape.STRAIGHT: 0,
-	ShotShape.HOOK: -2,       # Lose 2 tiles of distance
-	ShotShape.DRAW: -1,       # Lose 1 tile of distance
-	ShotShape.FADE: -1,       # Lose 1 tile of distance
-	ShotShape.SLICE: -2,      # Lose 2 tiles of distance
-}
-
-# AOE lateral offset in tiles based on shot shape
-# Shifts the entire AOE pattern left/right so target tile is on the edge
-const SHAPE_AOE_OFFSETS = {
-	ShotShape.STRAIGHT: 0,
-	ShotShape.HOOK: -2,       # AOE shifts 2 tiles left
-	ShotShape.DRAW: -1,       # AOE shifts 1 tile left
-	ShotShape.FADE: 1,        # AOE shifts 1 tile right
-	ShotShape.SLICE: 2,       # AOE shifts 2 tiles right
-}
-
-# Minimum curve offsets (in tiles) to ensure visible curve
-const SHAPE_MIN_OFFSETS = {
-	ShotShape.STRAIGHT: 0,
-	ShotShape.HOOK: 2,        # At least 2 tiles
-	ShotShape.DRAW: 1,        # At least 1 tile
-	ShotShape.FADE: 1,        # At least 1 tile
-	ShotShape.SLICE: 2,       # At least 2 tiles
-}
-
 # Current shot modifiers
-var current_shape: ShotShape = ShotShape.STRAIGHT
 var current_spin: SpinType = SpinType.NONE
 
-# Shape and spin button references
-var shape_buttons: Dictionary = {}  # ShotShape -> Button
+# Spin button references
 var spin_buttons: Dictionary = {}   # SpinType -> Button
-
-# Handedness setting and button references
-var current_handedness: Handedness = Handedness.RIGHT_HANDED
-var handedness_buttons: Dictionary = {}  # Handedness -> Button
 
 # ============================================================================
 # CLUB STATS SYSTEM
@@ -185,19 +123,6 @@ const CLUB_STATS = {
 		"arc_height": 5.0,
 	},
 }
-
-# Legacy constants for backward compatibility (derived from CLUB_STATS)
-var CLUB_DISTANCES: Dictionary = {}
-var CLUB_ARC_HEIGHTS: Dictionary = {}
-var CLUB_BASE_ROLLOUT: Dictionary = {}
-
-func _init_club_constants() -> void:
-	"""Initialize legacy club constants from CLUB_STATS"""
-	for club in CLUB_STATS:
-		var stats = CLUB_STATS[club]
-		CLUB_DISTANCES[club] = stats.distance
-		CLUB_ARC_HEIGHTS[club] = stats.arc_height
-		CLUB_BASE_ROLLOUT[club] = stats.roll
 
 # Current selected club
 var current_club: ClubType = ClubType.DRIVER
@@ -319,28 +244,13 @@ var tile_nodes: Dictionary = {}  # Key: Vector2i cell position, Value: Node3D (t
 # Trajectory line
 var trajectory_mesh: MeshInstance3D = null
 var trajectory_shadow_mesh: MeshInstance3D = null  # Shadow line on ground
-var curved_trajectory_mesh: MeshInstance3D = null  # Curved trajectory when shape is active
-var real_trajectory_mesh: MeshInstance3D = null    # Yellow debug arc showing actual ball path with all modifiers
 var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary by club)
-
-# Predicted landing for real trajectory
-var predicted_landing_tile: Vector2i = Vector2i(-1, -1)  # Pre-calculated landing spot for debug arc
-var predicted_landing_seed: int = 0  # Seed for deterministic random selection
-var show_real_trajectory: bool = false  # Toggle for yellow debug arc (press T to toggle)
 
 # Target locking
 var target_locked: bool = false
 var locked_cell: Vector2i = Vector2i(-1, -1)
 var locked_target_pos: Vector3 = Vector3.ZERO
 var target_highlight_mesh: MeshInstance3D = null  # White highlight on active/locked cell
-
-# Mini-map viewports and cameras
-var top_viewport: SubViewport = null
-var top_camera: Camera3D = null
-var side_viewport: SubViewport = null
-var side_camera: Camera3D = null
-var top_viewport_container: SubViewportContainer = null
-var side_viewport_container: SubViewportContainer = null
 
 # Shot system components
 var shot_manager: ShotManager = null
@@ -906,17 +816,13 @@ func get_tile_data(cell: Vector2i) -> Dictionary:
 # --- Lifecycle ----------------------------------------------------------
 
 func _ready() -> void:
-	_init_club_constants()  # Initialize legacy club dictionaries from CLUB_STATS
 	_create_highlight_mesh()
 	_create_trajectory_mesh()
-	_create_mini_viewports()
 	_init_shot_system()
 	_init_club_menu()
-	_init_shot_modifier_buttons()
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
-	_update_mini_cameras()
 	_start_new_shot()
 
 
@@ -964,89 +870,6 @@ func _init_club_menu() -> void:
 	print("Club buttons connected: %d buttons" % club_buttons.size())
 
 
-func _init_shot_modifier_buttons() -> void:
-	"""Initialize shape and spin toggle buttons"""
-	var control = get_node_or_null("../../Control")
-	if not control:
-		return
-	
-	# Get the containers
-	var shape_container = control.get_node_or_null("ShapeContainer")
-	var spin_container = control.get_node_or_null("SpinContainer")
-	
-	# Shape buttons (Hook, Draw, Fade, Slice)
-	var shape_button_map = {
-		"HookButton": ShotShape.HOOK,
-		"DrawButton": ShotShape.DRAW,
-		"FadeButton": ShotShape.FADE,
-		"SliceButton": ShotShape.SLICE,
-	}
-	
-	if shape_container:
-		for button_name in shape_button_map:
-			var button = shape_container.get_node_or_null(button_name)
-			if button and button is Button:
-				var shape = shape_button_map[button_name]
-				shape_buttons[shape] = button
-				button.toggle_mode = true
-				button.pressed.connect(_on_shape_button_toggled.bind(shape))
-	
-	# Spin buttons (Topspin, Backspin)
-	var spin_button_map = {
-		"TopspinButton": SpinType.TOPSPIN,
-		"BackspinButton": SpinType.BACKSPIN,
-	}
-	
-	if spin_container:
-		for button_name in spin_button_map:
-			var button = spin_container.get_node_or_null(button_name)
-			if button and button is Button:
-				var spin = spin_button_map[button_name]
-				spin_buttons[spin] = button
-				button.toggle_mode = true
-				button.pressed.connect(_on_spin_button_toggled.bind(spin))
-	
-	# Handedness buttons (Right, Left)
-	var handedness_container = control.get_node_or_null("HandednessContainer")
-	var handedness_button_map = {
-		"RightHandedButton": Handedness.RIGHT_HANDED,
-		"LeftHandedButton": Handedness.LEFT_HANDED,
-	}
-	
-	if handedness_container:
-		for button_name in handedness_button_map:
-			var button = handedness_container.get_node_or_null(button_name)
-			if button and button is Button:
-				var handedness = handedness_button_map[button_name]
-				handedness_buttons[handedness] = button
-				button.toggle_mode = true
-				button.pressed.connect(_on_handedness_button_toggled.bind(handedness))
-				# Default to right-handed being selected
-				if handedness == Handedness.RIGHT_HANDED:
-					button.button_pressed = true
-	
-	print("Shot modifier buttons connected: %d shape, %d spin, %d handedness" % [shape_buttons.size(), spin_buttons.size(), handedness_buttons.size()])
-
-
-func _on_shape_button_toggled(shape: ShotShape) -> void:
-	"""Handle shape button toggle - only one shape can be active"""
-	var button = shape_buttons.get(shape)
-	if button and button.button_pressed:
-		# Enable this shape, disable others
-		current_shape = shape
-		for other_shape in shape_buttons:
-			if other_shape != shape:
-				shape_buttons[other_shape].button_pressed = false
-		print("Shot shape: %s" % _get_shape_name(shape))
-	else:
-		# If toggled off, go back to straight
-		current_shape = ShotShape.STRAIGHT
-		print("Shot shape: Straight")
-	
-	# Update trajectory to reflect new shape
-	_refresh_trajectory()
-
-
 func _on_spin_button_toggled(spin: SpinType) -> void:
 	"""Handle spin button toggle - only one spin can be active"""
 	var button = spin_buttons.get(spin)
@@ -1066,41 +889,12 @@ func _on_spin_button_toggled(spin: SpinType) -> void:
 	_refresh_trajectory()
 
 
-func _get_shape_name(shape: ShotShape) -> String:
-	match shape:
-		ShotShape.STRAIGHT: return "Straight"
-		ShotShape.HOOK: return "Hook"
-		ShotShape.DRAW: return "Draw"
-		ShotShape.FADE: return "Fade"
-		ShotShape.SLICE: return "Slice"
-		_: return "Unknown"
-
-
 func _get_spin_name(spin: SpinType) -> String:
 	match spin:
 		SpinType.NONE: return "None"
 		SpinType.TOPSPIN: return "Topspin"
 		SpinType.BACKSPIN: return "Backspin"
 		_: return "Unknown"
-
-
-func _on_handedness_button_toggled(handedness: Handedness) -> void:
-	"""Handle handedness button toggle - only one can be active"""
-	var button = handedness_buttons.get(handedness)
-	if button and button.button_pressed:
-		# Enable this handedness, disable others
-		current_handedness = handedness
-		for other_hand in handedness_buttons:
-			if other_hand != handedness:
-				handedness_buttons[other_hand].button_pressed = false
-		var hand_name = "Right-Handed" if handedness == Handedness.RIGHT_HANDED else "Left-Handed"
-		print("Golfer: %s" % hand_name)
-	else:
-		# Don't allow toggling off - one must always be selected
-		button.button_pressed = true
-	
-	# Update trajectory to reflect new handedness
-	_refresh_trajectory()
 
 
 func _refresh_trajectory() -> void:
@@ -1117,167 +911,8 @@ func _refresh_trajectory() -> void:
 
 
 func get_shape_adjusted_landing(aim_tile: Vector2i) -> Vector2i:
-	"""Calculate the actual landing tile based on shot shape curve.
-	   Hook/Draw curves LEFT (negative X offset), Fade/Slice curves RIGHT (positive X offset).
-	   For left-handed golfers, the curve direction is flipped."""
-	if current_shape == ShotShape.STRAIGHT or golf_ball == null:
-		return aim_tile
-	
-	var ball_tile = world_to_grid(golf_ball.position)
-	var distance = get_tile_distance(ball_tile, aim_tile)
-	
-	# Get minimum offset to ensure visible curve
-	var min_offset = SHAPE_MIN_OFFSETS.get(current_shape, 0)
-	
-	# Get distance penalty for curved shots
-	var distance_penalty = SHAPE_DISTANCE_PENALTY.get(current_shape, 0)
-	
-	# Determine lateral offset based on shot shape
-	# Hook/Draw = LEFT (negative X), Fade/Slice = RIGHT (positive X)
-	# NOTE: Positive X in world space appears as LEFT when looking toward flag
-	# So we flip the sign here to match visual expectation
-	var lateral_offset = min_offset
-	
-	match current_shape:
-		ShotShape.HOOK, ShotShape.DRAW:
-			lateral_offset = min_offset   # Positive = visually LEFT
-		ShotShape.FADE, ShotShape.SLICE:
-			lateral_offset = -min_offset  # Negative = visually RIGHT
-	
-	# Flip curve direction for left-handed golfers
-	if current_handedness == Handedness.LEFT_HANDED:
-		lateral_offset = -lateral_offset
-	
-	print("Shape: %s, Handedness: %s, Lateral: %d, DistPenalty: %d" % [
-		_get_shape_name(current_shape),
-		"Right" if current_handedness == Handedness.RIGHT_HANDED else "Left",
-		lateral_offset,
-		distance_penalty
-	])
-	
-	# Apply lateral offset to X and distance penalty to Y
-	# Distance penalty reduces how far down the course the ball goes
-	var adjusted_tile = Vector2i(aim_tile.x + lateral_offset, aim_tile.y + distance_penalty)
-	
-	# Clamp to grid bounds
-	adjusted_tile.x = clampi(adjusted_tile.x, 0, grid_width - 1)
-	adjusted_tile.y = clampi(adjusted_tile.y, 0, grid_height - 1)
-	
-	# Check if adjusted tile is valid (not water or out of bounds)
-	var surface = get_cell(adjusted_tile.x, adjusted_tile.y)
-	if surface == -1 or surface == SurfaceType.WATER:
-		# If landing in water/invalid, try to find nearest valid tile
-		# For now, just return original aim if adjusted is invalid
-		return aim_tile
-	
-	return adjusted_tile
-
-
-func _calculate_predicted_landing(target_pos: Vector3) -> Vector2i:
-	"""Calculate the predicted landing tile considering ALL modifiers:
-	   - Power: Reduces distance (ball won't reach aimed tile)
-	   - Accuracy: Random offset within AOE based on lie
-	   - Shot Shape: Curve applied to final position
-	   This is used for the yellow debug arc to show exactly where the ball will land."""
-	
-	if golf_ball == null:
-		return Vector2i(-1, -1)
-	
-	var ball_tile = world_to_grid(golf_ball.position)
-	var aim_tile = world_to_grid(target_pos)
-	
-	# Get lie modifiers from shot context (additive system)
-	var power_mod = 0
-	var accuracy_mod = 0
-	if shot_manager and shot_manager.current_context:
-		power_mod = int(shot_manager.current_context.power_mod)
-		accuracy_mod = int(shot_manager.current_context.accuracy_mod)
-		# Debug print when toggle is on
-		if show_real_trajectory:
-			print("DEBUG TRAJ: power_mod=%d, accuracy_mod=%d, ball=%s, aim=%s" % [power_mod, accuracy_mod, ball_tile, aim_tile])
-	
-	# STEP 1: Apply POWER reduction - ball goes shorter distance
-	# Calculate the aimed distance and reduce it by power modifier (tiles)
-	var aim_distance_x = aim_tile.x - ball_tile.x
-	var aim_distance_y = aim_tile.y - ball_tile.y
-	var aim_distance = sqrt(aim_distance_x * aim_distance_x + aim_distance_y * aim_distance_y)
-	
-	# Apply power mod to distance (negative = shorter)
-	var modified_distance = maxf(1.0, aim_distance + power_mod)
-	var distance_ratio = modified_distance / maxf(1.0, aim_distance)
-	
-	var actual_distance_x = int(round(aim_distance_x * distance_ratio))
-	var actual_distance_y = int(round(aim_distance_y * distance_ratio))
-	
-	# Calculate power-reduced landing tile
-	var power_adjusted_tile = Vector2i(
-		ball_tile.x + actual_distance_x,
-		ball_tile.y + actual_distance_y
-	)
-	
-	# Clamp to grid bounds
-	power_adjusted_tile.x = clampi(power_adjusted_tile.x, 0, grid_width - 1)
-	power_adjusted_tile.y = clampi(power_adjusted_tile.y, 0, grid_height - 1)
-	
-	# STEP 2: Apply SHOT SHAPE curve to the power-adjusted tile
-	var shape_adjusted_tile = get_shape_adjusted_landing(power_adjusted_tile)
-	
-	# STEP 3: Apply ACCURACY - select from AOE around the shape-adjusted tile
-	# Higher accuracy_mod = more AOE rings = less accurate
-	var aoe_tiles: Array[Vector2i] = []
-	var aoe_weights: Dictionary = {}
-	
-	# Always include the center (shape-adjusted target)
-	if _is_valid_landing_tile(shape_adjusted_tile):
-		aoe_tiles.append(shape_adjusted_tile)
-		aoe_weights[shape_adjusted_tile] = 3.0  # Center has highest weight
-	
-	# Add ring 1 tiles if accuracy is imperfect (accuracy_mod >= 1)
-	if accuracy_mod >= 1:
-		var ring1_tiles = get_adjacent_cells(shape_adjusted_tile.x, shape_adjusted_tile.y)
-		for tile in ring1_tiles:
-			if _is_valid_landing_tile(tile) and tile not in aoe_tiles:
-				aoe_tiles.append(tile)
-				# Weight decreases as accuracy gets worse
-				aoe_weights[tile] = 2.0 / (1.0 + accuracy_mod)
-	
-	# Add ring 2 tiles if accuracy is very poor (accuracy_mod >= 2)
-	if accuracy_mod >= 2:
-		var ring2_tiles = get_outer_ring_cells(shape_adjusted_tile.x, shape_adjusted_tile.y)
-		for tile in ring2_tiles:
-			if _is_valid_landing_tile(tile) and tile not in aoe_tiles:
-				aoe_tiles.append(tile)
-				aoe_weights[tile] = 1.0 / (1.0 + accuracy_mod)
-	
-	# STEP 4: Deterministic random selection based on aim position
-	# This ensures the arc is stable while aiming at the same spot
-	if aoe_tiles.is_empty():
-		predicted_landing_tile = shape_adjusted_tile
-		return shape_adjusted_tile
-	
-	# Create a deterministic seed from target position
-	var seed_val = int(target_pos.x * 1000) ^ int(target_pos.z * 7919)
-	seed(seed_val)
-	
-	# Weighted random selection
-	var total_weight = 0.0
-	for tile in aoe_tiles:
-		total_weight += aoe_weights.get(tile, 1.0)
-	
-	var roll = randf() * total_weight
-	var cumulative = 0.0
-	
-	for tile in aoe_tiles:
-		cumulative += aoe_weights.get(tile, 1.0)
-		if roll <= cumulative:
-			randomize()  # Restore randomness for other systems
-			predicted_landing_tile = tile
-			return tile
-	
-	# Fallback
-	randomize()
-	predicted_landing_tile = aoe_tiles[-1]
-	return aoe_tiles[-1]
+	"""Return the aim tile directly - curve is now handled by swing meter."""
+	return aim_tile
 
 
 func _is_valid_landing_tile(tile: Vector2i) -> bool:
@@ -1295,25 +930,14 @@ func get_shape_adjusted_world_position(aim_tile: Vector2i) -> Vector3:
 
 
 func get_shape_aoe_offset() -> int:
-	"""Get the lateral AOE offset in tiles based on current shot shape.
-	   Returns negative for left offset, positive for right offset.
-	   Flipped for left-handed golfers."""
-	if current_shape == ShotShape.STRAIGHT:
-		return 0
-	
-	var offset = SHAPE_AOE_OFFSETS.get(current_shape, 0)
-	
-	# Flip direction for right-handed golfers
-	if current_handedness == Handedness.RIGHT_HANDED:
-		offset = -offset
-	
-	return offset
+	"""Returns 0 - curve is now handled by swing meter."""
+	return 0
 
 
 func _on_club_button_pressed(club_type: ClubType) -> void:
 	"""Handle club button click - select the club"""
 	current_club = club_type
-	trajectory_height = CLUB_ARC_HEIGHTS.get(current_club, 5.0)
+	trajectory_height = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
 	_update_club_button_visuals()
 	_hide_range_preview()
 	_update_dim_overlays()  # Update dim overlays for new club range
@@ -1327,7 +951,7 @@ func _on_club_button_pressed(club_type: ClubType) -> void:
 func _on_club_button_hover(club_type: ClubType) -> void:
 	"""Show range preview when hovering over a club button"""
 	is_previewing_range = true
-	var max_dist = CLUB_DISTANCES.get(club_type, 10)
+	var max_dist = CLUB_STATS.get(club_type, CLUB_STATS[ClubType.IRON_7]).distance
 	_show_range_preview(max_dist)
 
 
@@ -1450,7 +1074,7 @@ func _get_club_name(club: ClubType) -> String:
 
 func get_current_club_distance() -> int:
 	"""Get max distance in tiles for current club, modified by current lie"""
-	var base_distance = CLUB_DISTANCES.get(current_club, 5)
+	var base_distance = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).distance
 	
 	# Apply lie power modifier if we have a shot context with lie info
 	if shot_manager and shot_manager.current_context:
@@ -1462,7 +1086,7 @@ func get_current_club_distance() -> int:
 
 func get_current_club_base_distance() -> int:
 	"""Get unmodified max distance in tiles for current club"""
-	return CLUB_DISTANCES.get(current_club, 5)
+	return CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).distance
 
 
 func get_current_shot_stats() -> Dictionary:
@@ -1514,7 +1138,7 @@ func get_current_shot_stats() -> Dictionary:
 func _set_club(club_type: ClubType) -> void:
 	"""Set the current club and update visuals."""
 	current_club = club_type
-	trajectory_height = CLUB_ARC_HEIGHTS.get(current_club, 5.0)
+	trajectory_height = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
 	_update_club_button_visuals()
 	_update_dim_overlays()
 	_refresh_stats_panel()
@@ -1667,12 +1291,6 @@ func _process(delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# Toggle debug real trajectory with T key
-	if event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_T:
-			show_real_trajectory = not show_real_trajectory
-			print("Real trajectory debug: %s" % ("ON" if show_real_trajectory else "OFF"))
-	
 	# Only process mouse clicks if not handled by UI
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -1853,12 +1471,6 @@ func set_aim_cell(cell: Vector2i) -> bool:
 	
 	# Display debug info for the clicked tile
 	_display_tile_debug_info(locked_cell)
-	if adjusted_landing != locked_cell:
-		print("Shape %s: Aim [%d,%d] -> Landing [%d,%d]" % [
-			_get_shape_name(current_shape),
-			locked_cell.x, locked_cell.y,
-			adjusted_landing.x, adjusted_landing.y
-		])
 	
 	return true
 
@@ -1875,7 +1487,6 @@ func set_hover_cell(cell: Vector2i) -> void:
 			trajectory_mesh.visible = false
 			trajectory_shadow_mesh.visible = false
 			curved_trajectory_mesh.visible = false
-			real_trajectory_mesh.visible = false
 		return
 	
 	var surface = get_cell(cell.x, cell.y)
@@ -1980,7 +1591,6 @@ func set_hover_cell(cell: Vector2i) -> void:
 			trajectory_mesh.visible = false
 			trajectory_shadow_mesh.visible = false
 			curved_trajectory_mesh.visible = false
-			real_trajectory_mesh.visible = false
 
 
 ## Set the external camera/viewport for mouse picking (called by HoleViewer)
@@ -2223,8 +1833,6 @@ func _hide_shot_visuals() -> void:
 		trajectory_shadow_mesh.visible = false
 	if curved_trajectory_mesh:
 		curved_trajectory_mesh.visible = false
-	if real_trajectory_mesh:
-		real_trajectory_mesh.visible = false
 	if target_highlight_mesh:
 		target_highlight_mesh.visible = false
 	_hide_all_aoe_highlights()
@@ -2520,7 +2128,7 @@ func _on_shot_completed(context: ShotContext) -> void:
 		var ball_tile = world_to_grid(golf_ball.position)
 		
 		# Get base bounce count from club (drivers bounce more, wedges less)
-		var num_bounces = CLUB_BASE_ROLLOUT.get(current_club, 1)
+		var num_bounces = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).roll
 		
 		# Calculate carry position (num_bounces tiles before target)
 		var carry_tile = _get_carry_position(ball_tile, context.landing_tile, num_bounces)
@@ -2542,7 +2150,6 @@ func _on_shot_completed(context: ShotContext) -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
-	real_trajectory_mesh.visible = false
 	
 	# Update dim overlays now that ball has moved
 	_update_dim_overlays()
@@ -2576,7 +2183,6 @@ func _trigger_hole_complete() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
-	real_trajectory_mesh.visible = false
 	
 	# Trigger confetti on the flag
 	_play_hole_confetti()
@@ -3350,23 +2956,6 @@ func _create_trajectory_mesh() -> void:
 	
 	add_child(curved_trajectory_mesh)
 	
-	# Create real trajectory mesh (yellow for debug - shows actual ball path with all modifiers)
-	real_trajectory_mesh = MeshInstance3D.new()
-	real_trajectory_mesh.mesh = ImmediateMesh.new()
-	
-	var real_mat = StandardMaterial3D.new()
-	real_mat.albedo_color = Color(1.0, 0.9, 0.0, 1.0)  # Yellow
-	real_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	real_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	real_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	real_mat.no_depth_test = true
-	real_mat.vertex_color_use_as_albedo = true
-	real_trajectory_mesh.material_override = real_mat
-	real_trajectory_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	real_trajectory_mesh.custom_aabb = AABB(Vector3(-100, -100, -100), Vector3(200, 200, 200))
-	
-	add_child(real_trajectory_mesh)
-	
 	# Create trajectory shadow mesh (dark line on ground)
 	trajectory_shadow_mesh = MeshInstance3D.new()
 	trajectory_shadow_mesh.mesh = ImmediateMesh.new()
@@ -3384,212 +2973,26 @@ func _create_trajectory_mesh() -> void:
 	add_child(trajectory_shadow_mesh)
 
 
-# Create mini viewports for top and side views
-func _create_mini_viewports() -> void:
-	# Find the Control node to parent the viewport containers
-	var control_node = get_tree().current_scene.get_node("Control")
-	if control_node == null:
-		push_warning("Control node not found - mini viewports not created")
-		return
-	
-	# Viewport size
-	var viewport_size = Vector2i(300, 250)
-	
-	# --- TOP VIEW (looking down at the hole) ---
-	top_viewport_container = SubViewportContainer.new()
-	top_viewport_container.stretch = true
-	top_viewport_container.custom_minimum_size = Vector2(viewport_size)
-	top_viewport_container.size = Vector2(viewport_size)
-	# Position in bottom-right corner
-	# Position in bottom-right corner to avoid covering debug text
-	top_viewport_container.position = Vector2(1600, 450)
-	
-	top_viewport = SubViewport.new()
-	top_viewport.size = viewport_size
-	top_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	top_viewport.transparent_bg = false
-	top_viewport.handle_input_locally = false
-	top_viewport.gui_disable_input = true
-	
-	top_camera = Camera3D.new()
-	top_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	top_camera.size = 30.0  # Orthographic size, will be adjusted per hole
-	top_camera.near = 0.1
-	top_camera.far = 200.0
-	# Look straight down, rotated 180 degrees so tee is at bottom
-	top_camera.rotation_degrees = Vector3(-90, 180, 0)
-	
-	top_viewport.add_child(top_camera)
-	top_viewport_container.add_child(top_viewport)
-	control_node.add_child(top_viewport_container)
-	
-	# Add a border/label for the top view
-	var top_label = Label.new()
-	top_label.text = "TOP VIEW"
-	top_label.position = Vector2(5, 5)
-	top_label.add_theme_color_override("font_color", Color.WHITE)
-	top_label.add_theme_color_override("font_shadow_color", Color.BLACK)
-	top_label.add_theme_constant_override("shadow_offset_x", 1)
-	top_label.add_theme_constant_override("shadow_offset_y", 1)
-	top_viewport_container.add_child(top_label)
-	
-	# --- SIDE VIEW (looking at the hole from the side) ---
-	side_viewport_container = SubViewportContainer.new()
-	side_viewport_container.stretch = true
-	side_viewport_container.custom_minimum_size = Vector2(viewport_size)
-	side_viewport_container.size = Vector2(viewport_size)
-	# Position below top view
-	side_viewport_container.position = Vector2(20, 720)
-	
-	side_viewport = SubViewport.new()
-	side_viewport.size = viewport_size
-	side_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	side_viewport.transparent_bg = false
-	side_viewport.handle_input_locally = false
-	side_viewport.gui_disable_input = true
-	
-	side_camera = Camera3D.new()
-	side_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	side_camera.size = 20.0  # Will be adjusted per hole
-	side_camera.near = 0.1
-	side_camera.far = 200.0
-	# Look from the side (along X axis looking at Z)
-	side_camera.rotation_degrees = Vector3(0, -90, 0)
-	
-	side_viewport.add_child(side_camera)
-	side_viewport_container.add_child(side_viewport)
-	control_node.add_child(side_viewport_container)
-	side_viewport_container.visible = false  # Hidden for now
-	
-	# Add a border/label for the side view
-	var side_label = Label.new()
-	side_label.text = "SIDE VIEW"
-	side_label.position = Vector2(5, 5)
-	side_label.add_theme_color_override("font_color", Color.WHITE)
-	side_label.add_theme_color_override("font_shadow_color", Color.BLACK)
-	side_label.add_theme_constant_override("shadow_offset_x", 1)
-	side_label.add_theme_constant_override("shadow_offset_y", 1)
-	side_viewport_container.add_child(side_label)
-
-
-# Update mini cameras to frame the current hole
-func _update_mini_cameras() -> void:
-	if top_camera == null or side_camera == null:
-		return
-	
-	# Calculate bounds of the hole
-	var width = TILE_SIZE
-	var hex_height = TILE_SIZE * sqrt(3.0)
-	
-	# Find min/max positions of the grid
-	var min_x = 0.0
-	var max_x = (grid_width - 1) * width * 1.5
-	var min_z = 0.0
-	var max_z = (grid_height - 1) * hex_height + hex_height / 2.0
-	
-	# Find elevation range
-	var min_y = 0.0
-	var max_y = 0.0
-	for col in range(grid_width):
-		for row in range(grid_height):
-			var elev = get_elevation(col, row)
-			min_y = min(min_y, elev)
-			max_y = max(max_y, elev)
-	
-	# Add some padding
-	var padding = 2.0
-	min_x -= padding
-	max_x += padding
-	min_z -= padding
-	max_z += padding
-	min_y -= 1.0
-	max_y += 3.0
-	
-	# Center of the hole
-	var center_x = (min_x + max_x) / 2.0
-	var center_z = (min_z + max_z) / 2.0
-	var center_y = (min_y + max_y) / 2.0
-	
-	# Size of the hole
-	var size_x = max_x - min_x
-	var size_z = max_z - min_z
-	var size_y = max_y - min_y
-	
-	# --- TOP CAMERA ---
-	# Position above the center looking down
-	top_camera.position = Vector3(center_x, max_y + 50.0, center_z)
-	# Set orthographic size to fit the hole (use the larger dimension)
-	top_camera.size = max(size_x, size_z) * 1.1  # 10% padding
-	
-	# --- SIDE CAMERA ---
-	# Position to the side of the hole looking along the length
-	# We want to look from tee to green, so position on -X side looking toward +X
-	side_camera.position = Vector3(min_x - 50.0, center_y + 5.0, center_z)
-	# Set orthographic size based on height and length
-	side_camera.size = max(size_y + 5.0, size_z) * 0.7
-
-
 # Update the trajectory arc from ball to target
 func _update_trajectory(target_pos: Vector3) -> void:
 	if golf_ball == null:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
 		curved_trajectory_mesh.visible = false
-		real_trajectory_mesh.visible = false
 		return
 	
 	var start_pos = golf_ball.position
 	var end_pos = target_pos
 	
-	# If a shape is selected, calculate the curved end position
-	var curved_end_pos = end_pos
-	var has_curve = current_shape != ShotShape.STRAIGHT
-	if has_curve:
-		var aim_tile = world_to_grid(target_pos)
-		var adjusted_tile = get_shape_adjusted_landing(aim_tile)
-		curved_end_pos = get_tile_surface_position(adjusted_tile)
-		print("Trajectory: aim_tile=%s, adjusted_tile=%s" % [aim_tile, adjusted_tile])
-		print("  end_pos.x=%.1f, curved_end_pos.x=%.1f (diff=%.1f)" % [end_pos.x, curved_end_pos.x, curved_end_pos.x - end_pos.x])
-	
-	# Draw the original aim trajectory (white, dimmer when curve is active)
-	_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, 
-		Color(1.0, 1.0, 1.0, 0.4 if has_curve else 0.8))  # Dimmer when curved
+	# Draw the aim trajectory (white)
+	_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, Color(1.0, 1.0, 1.0, 0.8))
 	trajectory_mesh.visible = true
 	
-	# Draw the curved trajectory if shape is active (cyan, bright)
-	if has_curve:
-		_draw_curved_trajectory_arc(curved_trajectory_mesh, start_pos, end_pos, curved_end_pos,
-			Color(0.2, 1.0, 1.0, 0.9))  # Bright cyan
-		curved_trajectory_mesh.visible = true
-	else:
-		curved_trajectory_mesh.visible = false
+	# Curved trajectory is no longer used - curve is handled by swing meter
+	curved_trajectory_mesh.visible = false
 	
-	# Draw shadow line on ground showing the actual path (curved if shape active)
-	_draw_trajectory_shadow(start_pos, end_pos if not has_curve else curved_end_pos, has_curve)
-	
-	# Calculate and draw the real trajectory (yellow debug arc)
-	# This shows exactly where the ball will land after all modifiers
-	# Toggle with T key - controlled by show_real_trajectory
-	if show_real_trajectory:
-		var real_landing_tile = _calculate_predicted_landing(target_pos)
-		if real_landing_tile.x >= 0:
-			var real_end_pos = get_tile_surface_position(real_landing_tile)
-			var aim_tile = world_to_grid(target_pos)
-			var has_real_curve = real_landing_tile != aim_tile
-			
-			if has_real_curve:
-				# When there's any offset from aim, draw curved arc
-				_draw_curved_trajectory_arc(real_trajectory_mesh, start_pos, end_pos, real_end_pos,
-					Color(1.0, 0.9, 0.0, 0.95))  # Yellow
-			else:
-				# When landing exactly on aim, draw simple arc
-				_draw_trajectory_arc(real_trajectory_mesh, start_pos, real_end_pos,
-					Color(1.0, 0.9, 0.0, 0.95))  # Yellow
-			real_trajectory_mesh.visible = true
-		else:
-			real_trajectory_mesh.visible = false
-	else:
-		real_trajectory_mesh.visible = false
+	# Draw shadow line on ground
+	_draw_trajectory_shadow(start_pos, end_pos, false)
 
 
 func _draw_trajectory_arc(mesh: MeshInstance3D, start_pos: Vector3, end_pos: Vector3, color: Color) -> void:
@@ -3893,7 +3296,6 @@ func _update_tile_highlight() -> void:
 						trajectory_mesh.visible = false
 						trajectory_shadow_mesh.visible = false
 						curved_trajectory_mesh.visible = false
-						real_trajectory_mesh.visible = false
 				return
 	
 	# No valid hover
@@ -3905,7 +3307,6 @@ func _update_tile_highlight() -> void:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
 		curved_trajectory_mesh.visible = false
-		real_trajectory_mesh.visible = false
 
 
 # Convert world position to grid cell coordinates
@@ -4041,7 +3442,6 @@ func generate_hole_with_par(par: int) -> void:
 	_generate_course_features()
 	_generate_grid()
 	_log_hole_info()
-	_update_mini_cameras()
 
 
 # --- Course generation --------------------------------------------------
@@ -4948,7 +4348,6 @@ func _on_regenerate_button_pressed() -> void:
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
-	_update_mini_cameras()
 	
 	# Start a fresh shot
 	_start_new_shot()
@@ -4961,7 +4360,6 @@ func _on_button_pressed() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
-	real_trajectory_mesh.visible = false
 	target_highlight_mesh.visible = false
 	_hide_all_aoe_highlights()
 	
@@ -4973,13 +4371,6 @@ func _on_button_pressed() -> void:
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
-	_update_mini_cameras()
 	
 	# Start a fresh shot
 	_start_new_shot()
-
-
-func _on_debug_trajectory_toggled(toggled_on: bool) -> void:
-	"""Toggle the debug real trajectory arc on/off via UI button."""
-	show_real_trajectory = toggled_on
-	print("Real trajectory debug: %s" % ("ON" if show_real_trajectory else "OFF"))
