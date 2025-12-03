@@ -188,18 +188,123 @@ func _apply_modifiers_on_aoe() -> void:
 
 
 func _resolve_landing_tile() -> void:
-	"""Phase 6: Choose landing tile from AOE (uniform or weighted)"""
-	if current_context.aoe_tiles.is_empty():
-		current_context.landing_tile = current_context.aim_tile
-	elif current_context.aoe_weights.is_empty():
-		# Uniform random selection
-		var idx = randi() % current_context.aoe_tiles.size()
-		current_context.landing_tile = current_context.aoe_tiles[idx]
-	else:
-		# Weighted selection
-		current_context.landing_tile = _weighted_tile_selection()
+	"""Phase 6: Choose landing tile based on swing power and accuracy"""
+	
+	# First, calculate the power-adjusted target
+	# Power affects how far the ball goes (50% power = halfway to aim tile)
+	var power_adjusted_tile = _calculate_power_adjusted_target()
+	
+	# Now apply accuracy - determines spread around the power-adjusted target
+	# High accuracy = land on target, low accuracy = random in AOE
+	current_context.landing_tile = _calculate_accuracy_landing(power_adjusted_tile)
 	
 	landing_resolved.emit(current_context)
+
+
+func _calculate_power_adjusted_target() -> Vector2i:
+	"""Calculate where the ball would land based on swing power.
+	100% power = aim tile, 50% power = halfway between start and aim, etc."""
+	var start = current_context.start_tile
+	var aim = current_context.aim_tile
+	var power = current_context.swing_power
+	var curve = current_context.swing_curve
+	
+	# Lerp between start and aim based on power
+	var target_x = start.x + int(round((aim.x - start.x) * power))
+	var target_y = start.y + int(round((aim.y - start.y) * power))
+	
+	# Apply curve offset perpendicular to shot direction
+	# Curve is in tiles: negative = hook (curves left), positive = slice (curves right)
+	if abs(curve) > 0.1:
+		# Calculate shot direction
+		var dir_x = aim.x - start.x
+		var dir_y = aim.y - start.y
+		var length = sqrt(dir_x * dir_x + dir_y * dir_y)
+		
+		if length > 0:
+			# Perpendicular vector (rotated 90 degrees)
+			# For hex grid, we approximate by shifting x
+			var perp_x = -dir_y / length
+			var perp_y = dir_x / length
+			
+			# Scale curve by shot distance (longer shots curve more)
+			var distance_factor = mini(length / 10.0, 1.5)  # Max 1.5x at long range
+			var curve_tiles = int(round(curve * distance_factor))
+			
+			target_x += int(round(perp_x * curve_tiles))
+			target_y += int(round(perp_y * curve_tiles))
+			
+			print("Curve %.1f tiles applied (distance factor: %.1f)" % [curve_tiles, distance_factor])
+	
+	# Clamp to valid grid bounds if hole_controller available
+	if hole_controller and hole_controller.has_method("get_grid_width"):
+		target_x = clampi(target_x, 0, hole_controller.get_grid_width() - 1)
+		target_y = clampi(target_y, 0, hole_controller.get_grid_height() - 1)
+	
+	print("Power %.0f%%, Curve %.1f: aim [%d,%d] -> adjusted [%d,%d]" % [
+		power * 100, curve, aim.x, aim.y, target_x, target_y
+	])
+	
+	return Vector2i(target_x, target_y)
+
+
+func _calculate_accuracy_landing(target_tile: Vector2i) -> Vector2i:
+	"""Calculate final landing based on accuracy.
+	High accuracy = land on target, low accuracy = random spread."""
+	var accuracy = current_context.swing_accuracy
+	
+	# Perfect accuracy (>= 0.95) = land exactly on target
+	if accuracy >= 0.95:
+		print("Perfect accuracy! Landing on target [%d,%d]" % [target_tile.x, target_tile.y])
+		return target_tile
+	
+	# Build AOE tiles around the power-adjusted target
+	var possible_tiles: Array[Vector2i] = [target_tile]
+	
+	if hole_controller and hole_controller.has_method("get_adjacent_cells"):
+		# Add ring 1 neighbors
+		var ring1 = hole_controller.get_adjacent_cells(target_tile.x, target_tile.y)
+		possible_tiles.append_array(ring1)
+		
+		# If accuracy is really bad, add ring 2
+		if accuracy < 0.5 and hole_controller.has_method("get_outer_ring_cells"):
+			var ring2 = hole_controller.get_outer_ring_cells(target_tile.x, target_tile.y)
+			possible_tiles.append_array(ring2)
+	
+	# Weight tiles based on accuracy - higher accuracy = more weight on center
+	var weights: Dictionary = {}
+	var center_weight = 1.0 + accuracy * 9.0  # 1-10 weight for center based on accuracy
+	weights[target_tile] = center_weight
+	
+	# Ring 1 gets lower weight
+	var ring1_weight = (1.0 - accuracy) * 2.0  # 0-2 weight for ring 1
+	for i in range(1, mini(7, possible_tiles.size())):  # First 6 after center are ring 1
+		weights[possible_tiles[i]] = ring1_weight
+	
+	# Ring 2 gets even lower weight (only if bad accuracy)
+	if accuracy < 0.5 and possible_tiles.size() > 7:
+		var ring2_weight = (0.5 - accuracy) * 2.0  # 0-1 weight for ring 2
+		for i in range(7, possible_tiles.size()):
+			weights[possible_tiles[i]] = ring2_weight
+	
+	# Weighted random selection
+	var total_weight = 0.0
+	for tile in possible_tiles:
+		total_weight += weights.get(tile, 0.1)
+	
+	var roll = randf() * total_weight
+	var cumulative = 0.0
+	
+	for tile in possible_tiles:
+		cumulative += weights.get(tile, 0.1)
+		if roll <= cumulative:
+			print("Accuracy %.0f%%: target [%d,%d] -> landing [%d,%d]" % [
+				accuracy * 100, target_tile.x, target_tile.y, tile.x, tile.y
+			])
+			return tile
+	
+	# Fallback
+	return target_tile
 
 
 func _weighted_tile_selection() -> Vector2i:

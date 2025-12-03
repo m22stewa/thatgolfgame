@@ -1,4 +1,7 @@
-[gd_scene load_steps=7 format=4 uid="uid://by4ow8fifrk3l"]
+[gd_scene load_steps=23 format=4 uid="uid://by4ow8fifrk3l"]
+
+[ext_resource type="Shader" uid="uid://qdjfq8g68pj6" path="res://scenes/swing.gdshader" id="1_8kg14"]
+[ext_resource type="Script" uid="uid://crcl3jj8jp7dj" path="res://scripts/golf_ball.gd" id="2_golf_ball"]
 
 [sub_resource type="Gradient" id="Gradient_p5csl"]
 offsets = PackedFloat32Array(0, 0.5, 0.5, 1)
@@ -9,6 +12,8 @@ gradient = SubResource("Gradient_p5csl")
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_s1xsf"]
 albedo_texture = SubResource("GradientTexture2D_8kg14")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_2nwmu"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_53qt4"]
 resource_name = "Scene_-_Root"
@@ -49,7 +54,72 @@ _surfaces = [{
 blend_shape_mode = 0
 shadow_mesh = SubResource("ArrayMesh_grbdy")
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_s1xsf"]
+noise_type = 2
+fractal_gain = 4.0
+cellular_distance_function = 2
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_70p3a"]
+height = 128
+noise = SubResource("FastNoiseLite_s1xsf")
+seamless = true
+
+[sub_resource type="Gradient" id="Gradient_2nwmu"]
+offsets = PackedFloat32Array(0, 0.1, 0.2)
+colors = PackedColorArray(0.7490196, 0.2509804, 0.7490196, 1, 0, 0.5019608, 0.5019608, 1, 0.6784314, 0.84705883, 0.9019608, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_baqnq"]
+gradient = SubResource("Gradient_2nwmu")
+
+[sub_resource type="Gradient" id="Gradient_phv0k"]
+offsets = PackedFloat32Array(0.5, 0.52, 0.54)
+colors = PackedColorArray(0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_lsbob"]
+gradient = SubResource("Gradient_phv0k")
+
+[sub_resource type="Gradient" id="Gradient_tjkbo"]
+offsets = PackedFloat32Array(0.25, 0.4, 0.6, 0.65, 0.7)
+colors = PackedColorArray(1, 1, 1, 1, 0.49803922, 0.49803922, 0.49803922, 1, 0, 0, 0, 1, 0.49803922, 0.49803922, 0.49803922, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_47x5i"]
+gradient = SubResource("Gradient_tjkbo")
+
+[sub_resource type="Gradient" id="Gradient_1y7y6"]
+offsets = PackedFloat32Array(0.2, 0.5, 0.52)
+colors = PackedColorArray(1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_6jnob"]
+gradient = SubResource("Gradient_1y7y6")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_xl7xk"]
+render_priority = 0
+shader = ExtResource("1_8kg14")
+shader_parameter/progress = 0.30999999307088
+shader_parameter/derive_progress = -1.0
+shader_parameter/ease_progress = 0.0
+shader_parameter/time_scale = 1.499999966472
+shader_parameter/anim_rot_amt = 0.999999977648
+shader_parameter/base_noise = SubResource("NoiseTexture2D_70p3a")
+shader_parameter/width_gradient_mask = SubResource("GradientTexture1D_6jnob")
+shader_parameter/length_gradient_mask = SubResource("GradientTexture1D_47x5i")
+shader_parameter/highlight = SubResource("GradientTexture1D_lsbob")
+shader_parameter/zoom = 0.6
+shader_parameter/rotate_all = 0.0
+shader_parameter/emission_strength = 1.0
+shader_parameter/mix_strength = 1.0
+shader_parameter/color_lookup = SubResource("GradientTexture1D_baqnq")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8kg14"]
+transparency = 1
+cull_mode = 2
+
+[sub_resource type="QuadMesh" id="QuadMesh_s1xsf"]
+material = SubResource("StandardMaterial3D_8kg14")
+size = Vector2(15, 15)
+
 [node name="GolfBall" type="Node3D"]
+script = ExtResource("2_golf_ball")
 
 [node name="Model" type="Node3D" parent="."]
 
@@ -65,6 +135,14 @@ transform = Transform3D(0.0254, 0, 0, 0, 0, -0.0254, 0, 0.0254, 0, 0, 0, 0)
 transform = Transform3D(1, 0, 0, 0, 2.220446e-16, 1, 0, -1, 2.220446e-16, 0, 0, 0)
 
 [node name="GeoSphere01__0" type="MeshInstance3D" parent="Model/Sketchfab_model/golf_ball_FBX/RootNode/GeoSphere01"]
-material_overlay = SubResource("StandardMaterial3D_s1xsf")
+material_override = SubResource("StandardMaterial3D_s1xsf")
+material_overlay = SubResource("ShaderMaterial_2nwmu")
 mesh = SubResource("ArrayMesh_w0vj1")
 skeleton = NodePath("")
+
+[node name="swingAnimation" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+transform = Transform3D(1.8630766, 4.6399302, 0, -4.6399302, 1.8630766, 0, 0, 0, 5, -2.5004272, 32.66902, 0)
+visible = false
+material_override = SubResource("ShaderMaterial_xl7xk")
+mesh = SubResource("QuadMesh_s1xsf")

@@ -84,54 +84,120 @@ var spin_buttons: Dictionary = {}   # SpinType -> Button
 var current_handedness: Handedness = Handedness.RIGHT_HANDED
 var handedness_buttons: Dictionary = {}  # Handedness -> Button
 
-# Club distance limits (in tiles, where 1 tile = 10 yards)
-# Based on average amateur golfer distances:
-# Driver: ~220 yards, 3W: ~200, 5W: ~180, 3i: ~170, 5i: ~160
-# 6i: ~150, 7i: ~140, 8i: ~130, 9i: ~120, PW: ~110, SW: ~90
-const CLUB_DISTANCES = {
-	ClubType.DRIVER: 22,
-	ClubType.WOOD_3: 20,
-	ClubType.WOOD_5: 18,
-	ClubType.IRON_3: 17,
-	ClubType.IRON_5: 16,
-	ClubType.IRON_6: 15,
-	ClubType.IRON_7: 14,
-	ClubType.IRON_8: 13,
-	ClubType.IRON_9: 12,
-	ClubType.PITCHING_WEDGE: 11,
-	ClubType.SAND_WEDGE: 9,
+# ============================================================================
+# CLUB STATS SYSTEM
+# Each club has base stats that can be modified by lie, cards, wind, timing, etc.
+# All modifiers are ADDITIVE (+/- values that stack)
+# ============================================================================
+
+# Complete club stats dictionary
+# distance: max tiles the club can hit
+# accuracy: base AOE rings (0=perfect, higher=worse aim spread)
+# roll: tiles of roll after landing
+# loft: 1-5 scale, affects wind sensitivity & spin potential
+const CLUB_STATS = {
+	ClubType.DRIVER: {
+		"name": "Driver",
+		"distance": 22,
+		"accuracy": 1,      # Hardest to hit straight
+		"roll": 3,          # Hot landing, lots of roll
+		"loft": 1,          # Low loft
+		"arc_height": 12.0,
+	},
+	ClubType.WOOD_3: {
+		"name": "3 Wood",
+		"distance": 20,
+		"accuracy": 1,
+		"roll": 3,
+		"loft": 1,
+		"arc_height": 11.0,
+	},
+	ClubType.WOOD_5: {
+		"name": "5 Wood",
+		"distance": 18,
+		"accuracy": 1,
+		"roll": 2,
+		"loft": 2,
+		"arc_height": 10.0,
+	},
+	ClubType.IRON_3: {
+		"name": "3 Iron",
+		"distance": 17,
+		"accuracy": 1,
+		"roll": 2,
+		"loft": 2,
+		"arc_height": 9.0,
+	},
+	ClubType.IRON_5: {
+		"name": "5 Iron",
+		"distance": 16,
+		"accuracy": 0,
+		"roll": 2,
+		"loft": 2,
+		"arc_height": 8.5,
+	},
+	ClubType.IRON_6: {
+		"name": "6 Iron",
+		"distance": 15,
+		"accuracy": 0,
+		"roll": 1,
+		"loft": 3,
+		"arc_height": 8.0,
+	},
+	ClubType.IRON_7: {
+		"name": "7 Iron",
+		"distance": 14,
+		"accuracy": 0,
+		"roll": 1,
+		"loft": 3,
+		"arc_height": 7.5,
+	},
+	ClubType.IRON_8: {
+		"name": "8 Iron",
+		"distance": 13,
+		"accuracy": 0,
+		"roll": 1,
+		"loft": 3,
+		"arc_height": 7.0,
+	},
+	ClubType.IRON_9: {
+		"name": "9 Iron",
+		"distance": 12,
+		"accuracy": 0,
+		"roll": 1,
+		"loft": 4,
+		"arc_height": 6.5,
+	},
+	ClubType.PITCHING_WEDGE: {
+		"name": "Pitching Wedge",
+		"distance": 11,
+		"accuracy": 0,
+		"roll": 0,
+		"loft": 4,
+		"arc_height": 6.0,
+	},
+	ClubType.SAND_WEDGE: {
+		"name": "Sand Wedge",
+		"distance": 9,
+		"accuracy": 0,
+		"roll": 0,
+		"loft": 5,          # Highest loft
+		"arc_height": 5.0,
+	},
 }
 
-# Club arc heights (longer clubs = higher arc, also affects trajectory visual)
-const CLUB_ARC_HEIGHTS = {
-	ClubType.DRIVER: 12.0,
-	ClubType.WOOD_3: 11.0,
-	ClubType.WOOD_5: 10.0,
-	ClubType.IRON_3: 9.0,
-	ClubType.IRON_5: 8.5,
-	ClubType.IRON_6: 8.0,
-	ClubType.IRON_7: 7.5,
-	ClubType.IRON_8: 7.0,
-	ClubType.IRON_9: 6.5,
-	ClubType.PITCHING_WEDGE: 6.0,
-	ClubType.SAND_WEDGE: 5.0,
-}
+# Legacy constants for backward compatibility (derived from CLUB_STATS)
+var CLUB_DISTANCES: Dictionary = {}
+var CLUB_ARC_HEIGHTS: Dictionary = {}
+var CLUB_BASE_ROLLOUT: Dictionary = {}
 
-# Club base rollout in tiles (natural roll after ball lands)
-# Lower lofted clubs roll more, wedges land soft with minimal roll
-const CLUB_BASE_ROLLOUT = {
-	ClubType.DRIVER: 3,        # Hot landing, lots of roll
-	ClubType.WOOD_3: 3,
-	ClubType.WOOD_5: 2,
-	ClubType.IRON_3: 2,
-	ClubType.IRON_5: 2,
-	ClubType.IRON_6: 1,
-	ClubType.IRON_7: 1,
-	ClubType.IRON_8: 1,
-	ClubType.IRON_9: 1,
-	ClubType.PITCHING_WEDGE: 0,  # High loft, lands soft
-	ClubType.SAND_WEDGE: 0,      # Very high loft, minimal roll
-}
+func _init_club_constants() -> void:
+	"""Initialize legacy club constants from CLUB_STATS"""
+	for club in CLUB_STATS:
+		var stats = CLUB_STATS[club]
+		CLUB_DISTANCES[club] = stats.distance
+		CLUB_ARC_HEIGHTS[club] = stats.arc_height
+		CLUB_BASE_ROLLOUT[club] = stats.roll
 
 # Current selected club
 var current_club: ClubType = ClubType.DRIVER
@@ -220,9 +286,9 @@ var current_yardage: int = 0
 # Par 4: 240-490 yards (typically 280-450)  
 # Par 5: 450-710 yards (typically 470-600)
 const PAR_CONFIG = {
-	3: {"min_yards": 100, "max_yards": 250, "min_width": 8, "max_width": 15},
-	4: {"min_yards": 280, "max_yards": 450, "min_width": 12, "max_width": 25},
-	5: {"min_yards": 470, "max_yards": 600, "min_width": 18, "max_width": 30}
+	3: {"min_yards": 150, "max_yards": 300, "min_width": 10, "max_width": 18},
+	4: {"min_yards": 320, "max_yards": 480, "min_width": 14, "max_width": 28},
+	5: {"min_yards": 500, "max_yards": 650, "min_width": 20, "max_width": 35}
 }
 
 # 2D array for grid data (col, row)
@@ -238,6 +304,10 @@ var tee_position: Vector3 = Vector3.ZERO
 # Stored hole info text for label
 var hole_info_text: String = ""
 
+# External camera/viewport for mouse picking (set by HoleViewer)
+var external_camera: Camera3D = null
+var external_viewport: SubViewport = null
+
 # Tile highlighting - using dictionaries keyed by cell Vector2i for individual access
 var highlight_mesh: MeshInstance3D = null  # Main hover highlight
 var aoe_highlights: Dictionary = {}  # Key: Vector2i cell position, Value: MeshInstance3D
@@ -250,7 +320,13 @@ var tile_nodes: Dictionary = {}  # Key: Vector2i cell position, Value: Node3D (t
 var trajectory_mesh: MeshInstance3D = null
 var trajectory_shadow_mesh: MeshInstance3D = null  # Shadow line on ground
 var curved_trajectory_mesh: MeshInstance3D = null  # Curved trajectory when shape is active
+var real_trajectory_mesh: MeshInstance3D = null    # Yellow debug arc showing actual ball path with all modifiers
 var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary by club)
+
+# Predicted landing for real trajectory
+var predicted_landing_tile: Vector2i = Vector2i(-1, -1)  # Pre-calculated landing spot for debug arc
+var predicted_landing_seed: int = 0  # Seed for deterministic random selection
+var show_real_trajectory: bool = false  # Toggle for yellow debug arc (press T to toggle)
 
 # Target locking
 var target_locked: bool = false
@@ -270,13 +346,22 @@ var side_viewport_container: SubViewportContainer = null
 var shot_manager: ShotManager = null
 var modifier_manager: ModifierManager = null
 var aoe_system: AOESystem = null
+var lie_system: Node = null  # LieSystem
 var shot_ui: ShotUI = null
+var putting_system: Node = null  # PuttingSystem for green play
+var hole_viewer: Node = null  # HoleViewer reference
 
 # Card system components
 var card_system: CardSystemManager = null
 var card_library: CardLibrary = null
 var deck_manager: DeckManager = null
 var hand_ui: HandUI = null
+
+# UI references for lie info panel
+var lie_info_panel: PanelContainer = null
+var lie_name_label: Label = null
+var lie_description_label: RichTextLabel = null
+var lie_modifiers_label: RichTextLabel = null
 
 # Tile data storage - HexTile resources keyed by cell position
 var tile_data: Dictionary = {}  # Key: Vector2i, Value: HexTile
@@ -372,6 +457,14 @@ func get_cell(col: int, row: int) -> int:
 	if col >= 0 and col < grid_width and row >= 0 and row < grid_height:
 		return grid[col][row]
 	return -1
+
+
+func get_grid_width() -> int:
+	return grid_width
+
+
+func get_grid_height() -> int:
+	return grid_height
 
 
 func set_cell(col: int, row: int, value: int) -> void:
@@ -813,6 +906,7 @@ func get_tile_data(cell: Vector2i) -> Dictionary:
 # --- Lifecycle ----------------------------------------------------------
 
 func _ready() -> void:
+	_init_club_constants()  # Initialize legacy club dictionaries from CLUB_STATS
 	_create_highlight_mesh()
 	_create_trajectory_mesh()
 	_create_mini_viewports()
@@ -1079,6 +1173,121 @@ func get_shape_adjusted_landing(aim_tile: Vector2i) -> Vector2i:
 	return adjusted_tile
 
 
+func _calculate_predicted_landing(target_pos: Vector3) -> Vector2i:
+	"""Calculate the predicted landing tile considering ALL modifiers:
+	   - Power: Reduces distance (ball won't reach aimed tile)
+	   - Accuracy: Random offset within AOE based on lie
+	   - Shot Shape: Curve applied to final position
+	   This is used for the yellow debug arc to show exactly where the ball will land."""
+	
+	if golf_ball == null:
+		return Vector2i(-1, -1)
+	
+	var ball_tile = world_to_grid(golf_ball.position)
+	var aim_tile = world_to_grid(target_pos)
+	
+	# Get lie modifiers from shot context (additive system)
+	var power_mod = 0
+	var accuracy_mod = 0
+	if shot_manager and shot_manager.current_context:
+		power_mod = int(shot_manager.current_context.power_mod)
+		accuracy_mod = int(shot_manager.current_context.accuracy_mod)
+		# Debug print when toggle is on
+		if show_real_trajectory:
+			print("DEBUG TRAJ: power_mod=%d, accuracy_mod=%d, ball=%s, aim=%s" % [power_mod, accuracy_mod, ball_tile, aim_tile])
+	
+	# STEP 1: Apply POWER reduction - ball goes shorter distance
+	# Calculate the aimed distance and reduce it by power modifier (tiles)
+	var aim_distance_x = aim_tile.x - ball_tile.x
+	var aim_distance_y = aim_tile.y - ball_tile.y
+	var aim_distance = sqrt(aim_distance_x * aim_distance_x + aim_distance_y * aim_distance_y)
+	
+	# Apply power mod to distance (negative = shorter)
+	var modified_distance = maxf(1.0, aim_distance + power_mod)
+	var distance_ratio = modified_distance / maxf(1.0, aim_distance)
+	
+	var actual_distance_x = int(round(aim_distance_x * distance_ratio))
+	var actual_distance_y = int(round(aim_distance_y * distance_ratio))
+	
+	# Calculate power-reduced landing tile
+	var power_adjusted_tile = Vector2i(
+		ball_tile.x + actual_distance_x,
+		ball_tile.y + actual_distance_y
+	)
+	
+	# Clamp to grid bounds
+	power_adjusted_tile.x = clampi(power_adjusted_tile.x, 0, grid_width - 1)
+	power_adjusted_tile.y = clampi(power_adjusted_tile.y, 0, grid_height - 1)
+	
+	# STEP 2: Apply SHOT SHAPE curve to the power-adjusted tile
+	var shape_adjusted_tile = get_shape_adjusted_landing(power_adjusted_tile)
+	
+	# STEP 3: Apply ACCURACY - select from AOE around the shape-adjusted tile
+	# Higher accuracy_mod = more AOE rings = less accurate
+	var aoe_tiles: Array[Vector2i] = []
+	var aoe_weights: Dictionary = {}
+	
+	# Always include the center (shape-adjusted target)
+	if _is_valid_landing_tile(shape_adjusted_tile):
+		aoe_tiles.append(shape_adjusted_tile)
+		aoe_weights[shape_adjusted_tile] = 3.0  # Center has highest weight
+	
+	# Add ring 1 tiles if accuracy is imperfect (accuracy_mod >= 1)
+	if accuracy_mod >= 1:
+		var ring1_tiles = get_adjacent_cells(shape_adjusted_tile.x, shape_adjusted_tile.y)
+		for tile in ring1_tiles:
+			if _is_valid_landing_tile(tile) and tile not in aoe_tiles:
+				aoe_tiles.append(tile)
+				# Weight decreases as accuracy gets worse
+				aoe_weights[tile] = 2.0 / (1.0 + accuracy_mod)
+	
+	# Add ring 2 tiles if accuracy is very poor (accuracy_mod >= 2)
+	if accuracy_mod >= 2:
+		var ring2_tiles = get_outer_ring_cells(shape_adjusted_tile.x, shape_adjusted_tile.y)
+		for tile in ring2_tiles:
+			if _is_valid_landing_tile(tile) and tile not in aoe_tiles:
+				aoe_tiles.append(tile)
+				aoe_weights[tile] = 1.0 / (1.0 + accuracy_mod)
+	
+	# STEP 4: Deterministic random selection based on aim position
+	# This ensures the arc is stable while aiming at the same spot
+	if aoe_tiles.is_empty():
+		predicted_landing_tile = shape_adjusted_tile
+		return shape_adjusted_tile
+	
+	# Create a deterministic seed from target position
+	var seed_val = int(target_pos.x * 1000) ^ int(target_pos.z * 7919)
+	seed(seed_val)
+	
+	# Weighted random selection
+	var total_weight = 0.0
+	for tile in aoe_tiles:
+		total_weight += aoe_weights.get(tile, 1.0)
+	
+	var roll = randf() * total_weight
+	var cumulative = 0.0
+	
+	for tile in aoe_tiles:
+		cumulative += aoe_weights.get(tile, 1.0)
+		if roll <= cumulative:
+			randomize()  # Restore randomness for other systems
+			predicted_landing_tile = tile
+			return tile
+	
+	# Fallback
+	randomize()
+	predicted_landing_tile = aoe_tiles[-1]
+	return aoe_tiles[-1]
+
+
+func _is_valid_landing_tile(tile: Vector2i) -> bool:
+	"""Check if a tile is a valid landing spot (in bounds and not water)."""
+	if tile.x < 0 or tile.x >= grid_width or tile.y < 0 or tile.y >= grid_height:
+		return false
+	var surface = get_cell(tile.x, tile.y)
+	return surface != -1 and surface != SurfaceType.WATER
+
+
 func get_shape_adjusted_world_position(aim_tile: Vector2i) -> Vector3:
 	"""Get the world position of the shape-adjusted landing tile."""
 	var adjusted_tile = get_shape_adjusted_landing(aim_tile)
@@ -1240,8 +1449,89 @@ func _get_club_name(club: ClubType) -> String:
 
 
 func get_current_club_distance() -> int:
-	"""Get max distance in tiles for current club"""
+	"""Get max distance in tiles for current club, modified by current lie"""
+	var base_distance = CLUB_DISTANCES.get(current_club, 5)
+	
+	# Apply lie power modifier if we have a shot context with lie info
+	if shot_manager and shot_manager.current_context:
+		var power_mod = int(shot_manager.current_context.power_mod)
+		return maxi(1, base_distance + power_mod)
+	
+	return base_distance
+
+
+func get_current_club_base_distance() -> int:
+	"""Get unmodified max distance in tiles for current club"""
 	return CLUB_DISTANCES.get(current_club, 5)
+
+
+func get_current_shot_stats() -> Dictionary:
+	"""Get complete shot stats: base club stats + all modifiers = final stats"""
+	var club_stats = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7])
+	
+	# Base stats from club
+	var base = {
+		"distance": club_stats.distance,
+		"accuracy": club_stats.accuracy,
+		"roll": club_stats.roll,
+		"loft": club_stats.loft,
+		"curve": 0,  # Base curve is 0 (straight shot)
+	}
+	
+	# Modifiers from all sources (lie, cards, wind, etc.)
+	var mods = {
+		"distance_mod": 0,
+		"accuracy_mod": 0,
+		"roll_mod": 0,
+		"curve_mod": 0,
+	}
+	
+	# Get modifiers from shot context (lie effects, cards, etc.)
+	if shot_manager and shot_manager.current_context:
+		var ctx = shot_manager.current_context
+		mods.distance_mod = int(ctx.power_mod)
+		mods.accuracy_mod = int(ctx.accuracy_mod)
+		mods.roll_mod = int(ctx.roll_mod)
+		mods.curve_mod = ctx.curve_mod
+	
+	# Final calculated stats
+	var final = {
+		"distance": maxi(1, base.distance + mods.distance_mod),
+		"accuracy": maxi(0, base.accuracy + mods.accuracy_mod),
+		"roll": maxi(0, base.roll + mods.roll_mod),
+		"curve": base.curve + mods.curve_mod,
+		"loft": base.loft,
+	}
+	
+	return {
+		"club_name": club_stats.name,
+		"base": base,
+		"mods": mods,
+		"final": final,
+	}
+
+
+func _set_club(club_type: ClubType) -> void:
+	"""Set the current club and update visuals."""
+	current_club = club_type
+	trajectory_height = CLUB_ARC_HEIGHTS.get(current_club, 5.0)
+	_update_club_button_visuals()
+	_update_dim_overlays()
+	_refresh_stats_panel()
+	print("Club set: %s (max %d tiles / %d yards)" % [
+		_get_club_name(current_club), 
+		get_current_club_distance(),
+		get_current_club_distance() * int(YARDS_PER_CELL)
+	])
+
+
+func _refresh_stats_panel() -> void:
+	"""Refresh the lie info panel with current club stats."""
+	if shot_manager and shot_manager.current_context and lie_system:
+		var ctx = shot_manager.current_context
+		if ctx.start_tile.x >= 0:
+			var lie_info = lie_system.calculate_lie(self, ctx.start_tile)
+			_update_lie_info_panel(lie_info)
 
 
 func get_tile_distance(from: Vector2i, to: Vector2i) -> int:
@@ -1373,66 +1663,136 @@ func _clear_dim_overlays() -> void:
 func _process(delta: float) -> void:
 	_update_tile_highlight()
 	_process_ball_spin(delta)
+	_update_ball_shadow()
 
 
 func _input(event: InputEvent) -> void:
+	# Toggle debug real trajectory with T key
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_T:
+			show_real_trajectory = not show_real_trajectory
+			print("Real trajectory debug: %s" % ("ON" if show_real_trajectory else "OFF"))
+	
+	# Only process mouse clicks if not handled by UI
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# Don't process if mouse is over UI (let UI handle it)
+			if _is_mouse_over_ui():
+				return
+			
 			# Lock target to currently hovered cell
-			if hovered_cell.x >= 0 and hovered_cell.y >= 0:
-				# Check if target is available (in range AND forward)
-				if golf_ball:
-					if not is_tile_available(hovered_cell):
-						var ball_tile = world_to_grid(golf_ball.position)
-						var tile_dist = get_tile_distance(ball_tile, hovered_cell)
-						var max_dist = get_current_club_distance()
-						
-						if tile_dist > max_dist:
-							print("Target too far! %d tiles > %s max of %d tiles" % [
-								tile_dist, _get_club_name(current_club), max_dist
-							])
-						elif not is_forward_from_ball(hovered_cell):
-							print("Cannot shoot backward! Target must be toward the hole.")
-						return
-				
-				locked_cell = hovered_cell
-				target_locked = true
-				
-				# Calculate locked target position
-				var width = TILE_SIZE
-				var hex_height = TILE_SIZE * sqrt(3.0)
-				var x_pos = locked_cell.x * width * 1.5
-				var z_pos = locked_cell.y * hex_height + (locked_cell.x % 2) * (hex_height / 2.0)
-				var y_pos = get_elevation(locked_cell.x, locked_cell.y)
-				locked_target_pos = Vector3(x_pos, y_pos, z_pos)
-				
-				# Show white target highlight on the locked cell (original aim point)
-				target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
-				target_highlight_mesh.rotation.y = PI / 6.0
-				target_highlight_mesh.visible = true
-				
-				# Calculate shape-adjusted landing tile
-				var adjusted_landing = get_shape_adjusted_landing(locked_cell)
-				
-				# Update shot manager with the shape-adjusted landing tile
-				if shot_manager and shot_manager.is_shot_in_progress:
-					shot_manager.set_aim_target(adjusted_landing)
-				
-				# Update UI with target info (show adjusted landing info)
-				if shot_ui and golf_ball:
-					var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
-					var ball_tile = world_to_grid(golf_ball.position)
-					var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
-					shot_ui.update_target_info(terrain, distance)
-				
-				# Display debug info for the clicked tile
-				_display_tile_debug_info(locked_cell)
-				if adjusted_landing != locked_cell:
-					print("Shape %s: Aim [%d,%d] -> Landing [%d,%d]" % [
-						_get_shape_name(current_shape),
-						locked_cell.x, locked_cell.y,
-						adjusted_landing.x, adjusted_landing.y
-					])
+			_try_lock_target(hovered_cell)
+
+
+func _is_mouse_over_ui() -> bool:
+	"""Check if mouse is over any UI element"""
+	# Get all Control nodes that might block input
+	var viewport = get_viewport()
+	if viewport == null:
+		return false
+	
+	# Check if any GUI element has focus or mouse is over it
+	var focused = viewport.gui_get_focus_owner()
+	if focused != null:
+		return true
+	
+	# Check hovered control
+	var gui_path = viewport.gui_get_hovered_control()
+	if gui_path != null:
+		return true
+	
+	return false
+
+
+func _try_lock_target(cell: Vector2i) -> void:
+	"""Attempt to lock target to the specified cell"""
+	if cell.x < 0 or cell.y < 0:
+		return
+	
+	# Check if forward from ball
+	if golf_ball:
+		if not is_forward_from_ball(cell):
+			print("Cannot shoot backward! Target must be toward the hole.")
+			return
+	
+	# Lock to this cell
+	locked_cell = cell
+	target_locked = true
+	
+	# Calculate locked target position
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	var x_pos = locked_cell.x * width * 1.5
+	var z_pos = locked_cell.y * hex_height + (locked_cell.x % 2) * (hex_height / 2.0)
+	var y_pos = get_elevation(locked_cell.x, locked_cell.y)
+	locked_target_pos = Vector3(x_pos, y_pos, z_pos)
+	
+	# Position highlights on locked cell
+	highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	highlight_mesh.rotation.y = PI / 6.0
+	highlight_mesh.visible = true
+	
+	target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	target_highlight_mesh.rotation.y = PI / 6.0
+	target_highlight_mesh.visible = true
+	
+	# Update AOE highlights around the locked cell
+	_update_aoe_for_cell(locked_cell)
+	
+	# Update trajectory
+	_update_trajectory(locked_target_pos)
+	
+	# Calculate shape-adjusted landing tile and update shot manager
+	var adjusted_landing = get_shape_adjusted_landing(locked_cell)
+	if shot_manager and shot_manager.is_shot_in_progress:
+		shot_manager.set_aim_target(adjusted_landing)
+	
+	# Update UI
+	if shot_ui and golf_ball:
+		var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
+		var ball_tile = world_to_grid(golf_ball.position)
+		var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
+		shot_ui.update_target_info(terrain, distance)
+
+
+func _update_aoe_for_cell(cell: Vector2i) -> void:
+	"""Update AOE highlights around a cell"""
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	
+	_hide_all_aoe_highlights()
+	
+	var aoe_offset = get_shape_aoe_offset()
+	var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
+	aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
+	
+	# Show ring 1 AOE
+	var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
+	for neighbor in neighbors:
+		if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
+			var n_surface = get_cell(neighbor.x, neighbor.y)
+			if n_surface != -1 and n_surface != SurfaceType.WATER:
+				var highlight = _get_or_create_aoe_highlight(neighbor, 1)
+				var n_x = neighbor.x * width * 1.5
+				var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
+				var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
+				highlight.position = Vector3(n_x, n_y, n_z)
+				highlight.rotation.y = PI / 6.0
+				highlight.visible = true
+	
+	# Show ring 2 AOE
+	var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
+	for outer_cell in outer_cells:
+		if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
+			var o_surface = get_cell(outer_cell.x, outer_cell.y)
+			if o_surface != -1 and o_surface != SurfaceType.WATER:
+				var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
+				var o_x = outer_cell.x * width * 1.5
+				var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
+				var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+				highlight.position = Vector3(o_x, o_y, o_z)
+				highlight.rotation.y = PI / 6.0
+				highlight.visible = true
 
 
 ## Public function to set aim target from external sources (like HoleViewer)
@@ -1443,21 +1803,11 @@ func set_aim_cell(cell: Vector2i) -> bool:
 		print("HexGrid: Invalid aim cell - out of bounds: ", cell)
 		return false
 	
-	# Check if target is available (in range AND forward)
+	# Check if target is forward from ball
 	if golf_ball:
-		if not is_tile_available(cell):
-			var ball_tile = world_to_grid(golf_ball.position)
-			var tile_dist = get_tile_distance(ball_tile, cell)
-			var max_dist = get_current_club_distance()
-			
-			if tile_dist > max_dist:
-				print("Target too far! %d tiles > %s max of %d tiles" % [
-					tile_dist, _get_club_name(current_club), max_dist
-				])
-				return false
-			elif not is_forward_from_ball(cell):
-				print("Cannot shoot backward! Target must be toward the hole.")
-				return false
+		if not is_forward_from_ball(cell):
+			print("Cannot shoot backward! Target must be toward the hole.")
+			return false
 	
 	# Lock target to this cell
 	locked_cell = cell
@@ -1471,10 +1821,21 @@ func set_aim_cell(cell: Vector2i) -> bool:
 	var y_pos = get_elevation(locked_cell.x, locked_cell.y)
 	locked_target_pos = Vector3(x_pos, y_pos, z_pos)
 	
+	# Position highlight mesh on the locked cell
+	highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	highlight_mesh.rotation.y = PI / 6.0
+	highlight_mesh.visible = true
+	
 	# Show white target highlight on the locked cell (original aim point)
 	target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
 	target_highlight_mesh.rotation.y = PI / 6.0
 	target_highlight_mesh.visible = true
+	
+	# Update AOE highlights around the locked cell
+	_update_aoe_for_cell(locked_cell)
+	
+	# Update trajectory
+	_update_trajectory(locked_target_pos)
 	
 	# Calculate shape-adjusted landing tile
 	var adjusted_landing = get_shape_adjusted_landing(locked_cell)
@@ -1502,10 +1863,139 @@ func set_aim_cell(cell: Vector2i) -> bool:
 	return true
 
 
-## Set hovered cell for highlighting (from external sources)
+## Set hovered cell for highlighting (from external sources like HoleViewer)
 func set_hover_cell(cell: Vector2i) -> void:
-	"""Set the currently hovered cell for highlighting"""
+	"""Set the currently hovered cell and update all highlighting"""
+	# Validate cell bounds
+	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+		if not target_locked:
+			hovered_cell = Vector2i(-1, -1)
+			highlight_mesh.visible = false
+			_hide_all_aoe_highlights()
+			trajectory_mesh.visible = false
+			trajectory_shadow_mesh.visible = false
+			curved_trajectory_mesh.visible = false
+			real_trajectory_mesh.visible = false
+		return
+	
+	var surface = get_cell(cell.x, cell.y)
+	if surface == -1 or surface == SurfaceType.WATER:
+		if not target_locked:
+			hovered_cell = Vector2i(-1, -1)
+			highlight_mesh.visible = false
+			_hide_all_aoe_highlights()
+		return
+	
+	# Always track hovered_cell for click detection
 	hovered_cell = cell
+	
+	# If target is locked, don't update visuals - keep it on locked cell
+	if target_locked:
+		_update_trajectory(locked_target_pos)
+		return
+	
+	# Check if cell is forward from ball
+	var is_forward = is_forward_from_ball(cell)
+	
+	# Hide all previous AOE highlights before showing new ones
+	_hide_all_aoe_highlights()
+	
+	# Don't show any highlight for tiles behind the ball
+	if not is_forward:
+		highlight_mesh.visible = false
+		hovered_cell = Vector2i(-1, -1)
+		return
+	
+	# Check if cell is in range
+	var in_range = true
+	if golf_ball:
+		var ball_tile = world_to_grid(golf_ball.position)
+		var tile_dist = get_tile_distance(ball_tile, cell)
+		var max_dist = get_current_club_distance()
+		in_range = tile_dist <= max_dist
+	
+	# Position highlight mesh at the cell
+	var width = TILE_SIZE
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	var x_pos = cell.x * width * 1.5
+	var z_pos = cell.y * hex_height + (cell.x % 2) * (hex_height / 2.0)
+	var y_pos = get_elevation(cell.x, cell.y) + 0.5
+	
+	highlight_mesh.position = Vector3(x_pos, y_pos, z_pos)
+	highlight_mesh.rotation.y = PI / 6.0
+	highlight_mesh.visible = true
+	
+	# Change highlight color based on range
+	var mat = highlight_mesh.material_override as StandardMaterial3D
+	if mat:
+		if in_range:
+			mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Gold = in range
+		else:
+			mat.albedo_color = Color(1.0, 0.2, 0.2, 0.6)  # Red = out of range
+	
+	# Only show AOE and trajectory if in range
+	if in_range:
+		# Get AOE offset based on shot shape
+		var aoe_offset = get_shape_aoe_offset()
+		var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
+		aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
+		
+		# Update adjacent highlights (ring 1)
+		var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
+		for neighbor in neighbors:
+			if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
+				var n_surface = get_cell(neighbor.x, neighbor.y)
+				if n_surface != -1 and n_surface != SurfaceType.WATER:
+					var highlight = _get_or_create_aoe_highlight(neighbor, 1)
+					var n_x = neighbor.x * width * 1.5
+					var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
+					var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
+					highlight.position = Vector3(n_x, n_y, n_z)
+					highlight.rotation.y = PI / 6.0
+					highlight.visible = true
+		
+		# Update outer ring highlights (ring 2)
+		var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
+		for outer_cell in outer_cells:
+			if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
+				var o_surface = get_cell(outer_cell.x, outer_cell.y)
+				if o_surface != -1 and o_surface != SurfaceType.WATER:
+					var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
+					var o_x = outer_cell.x * width * 1.5
+					var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
+					var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+					highlight.position = Vector3(o_x, o_y, o_z)
+					highlight.rotation.y = PI / 6.0
+					highlight.visible = true
+		
+		# Update trajectory arc
+		if target_locked:
+			_update_trajectory(locked_target_pos)
+		else:
+			var target_y = get_elevation(cell.x, cell.y)
+			_update_trajectory(Vector3(x_pos, target_y, z_pos))
+	else:
+		# Out of range - hide trajectory unless locked
+		if not target_locked:
+			trajectory_mesh.visible = false
+			trajectory_shadow_mesh.visible = false
+			curved_trajectory_mesh.visible = false
+			real_trajectory_mesh.visible = false
+
+
+## Set the external camera/viewport for mouse picking (called by HoleViewer)
+func set_external_camera(cam: Camera3D, vp: SubViewport, viewer: Node = null) -> void:
+	external_camera = cam
+	external_viewport = vp
+	if viewer:
+		hole_viewer = viewer
+		# Setup putting system with hole viewer
+		if putting_system and putting_system.has_method("setup"):
+			putting_system.setup(self, hole_viewer)
+		# Tell hole_viewer about putting system
+		if hole_viewer.has_method("set_putting_system"):
+			hole_viewer.set_putting_system(putting_system)
+	print("HexGrid: External camera set from HoleViewer")
 
 
 # Display debug information about a tile in the info label
@@ -1611,6 +2101,11 @@ func _init_shot_system() -> void:
 	modifier_manager.name = "ModifierManager"
 	add_child(modifier_manager)
 	
+	# Create lie system
+	lie_system = LieSystem.new()
+	lie_system.name = "LieSystem"
+	add_child(lie_system)
+	
 	# Create shot manager
 	shot_manager = ShotManager.new()
 	shot_manager.name = "ShotManager"
@@ -1629,6 +2124,9 @@ func _init_shot_system() -> void:
 	
 	# Initialize card system
 	_init_card_system()
+	
+	# Initialize putting system
+	_init_putting_system()
 	
 	# Look for ShotUI in the scene tree
 	_find_and_setup_ui()
@@ -1662,6 +2160,95 @@ func _init_card_system() -> void:
 	print("Card system initialized with starter deck")
 
 
+func _init_putting_system() -> void:
+	"""Initialize putting system for green play"""
+	# Load and create putting system
+	var PuttingSystemClass = load("res://scripts/putting_system.gd")
+	if PuttingSystemClass:
+		putting_system = PuttingSystemClass.new()
+		putting_system.name = "PuttingSystem"
+		add_child(putting_system)
+		
+		# Connect signals
+		putting_system.putting_mode_entered.connect(_on_putting_mode_entered)
+		putting_system.putting_mode_exited.connect(_on_putting_mode_exited)
+		putting_system.putt_started.connect(_on_putt_started)
+		putting_system.putt_completed.connect(_on_putt_completed)
+		
+		print("Putting system initialized")
+	else:
+		push_warning("Could not load putting_system.gd")
+
+
+func _on_putting_mode_entered() -> void:
+	"""Called when entering putting mode"""
+	print("HexGrid: Ball is on the green - putting mode active")
+	# Hide regular shot UI elements
+	_hide_shot_visuals()
+
+
+func _on_putting_mode_exited() -> void:
+	"""Called when exiting putting mode"""
+	print("HexGrid: Exited putting mode")
+	# Show regular shot UI elements again
+	_show_shot_visuals()
+
+
+func _on_putt_started(target_tile: Vector2i, power: float) -> void:
+	"""Called when a putt is executed"""
+	print("HexGrid: Putt started - target=[%d,%d], power=%.2f" % [target_tile.x, target_tile.y, power])
+
+
+func _on_putt_completed(final_tile: Vector2i) -> void:
+	"""Called when putt roll completes"""
+	print("HexGrid: Putt completed at [%d,%d]" % [final_tile.x, final_tile.y])
+	
+	# Check if still on/near green - if so, stay in putting mode
+	var surface = get_cell(final_tile.x, final_tile.y)
+	var near_green = _is_near_green(final_tile, 2)
+	if surface == SurfaceType.GREEN or surface == SurfaceType.FLAG or near_green:
+		# Still on/near green, ready for next putt
+		pass
+	else:
+		# Off the green area, exit putting mode
+		if putting_system:
+			putting_system.exit_putting_mode()
+
+
+func _hide_shot_visuals() -> void:
+	"""Hide trajectory arc, AOE highlights for putting mode"""
+	if trajectory_mesh:
+		trajectory_mesh.visible = false
+	if trajectory_shadow_mesh:
+		trajectory_shadow_mesh.visible = false
+	if curved_trajectory_mesh:
+		curved_trajectory_mesh.visible = false
+	if real_trajectory_mesh:
+		real_trajectory_mesh.visible = false
+	if target_highlight_mesh:
+		target_highlight_mesh.visible = false
+	_hide_all_aoe_highlights()
+	_clear_dim_overlays()
+
+
+func _show_shot_visuals() -> void:
+	"""Restore shot visuals after putting mode"""
+	# Visuals will be restored when next shot starts
+	_update_dim_overlays()
+
+
+func _is_near_green(tile: Vector2i, max_distance: int) -> bool:
+	"""Check if a tile is within max_distance tiles of any green tile"""
+	for col in range(grid_width):
+		for row in range(grid_height):
+			var surface = get_cell(col, row)
+			if surface == SurfaceType.GREEN or surface == SurfaceType.FLAG:
+				var dist = get_tile_distance(tile, Vector2i(col, row))
+				if dist <= max_distance:
+					return true
+	return false
+
+
 func _find_and_setup_ui() -> void:
 	"""Find ShotUI and HandUI nodes and connect them to systems"""
 	# Try to find UI nodes in the Control node
@@ -1669,6 +2256,19 @@ func _find_and_setup_ui() -> void:
 	if control:
 		shot_ui = control.get_node_or_null("ShotUI")
 		hand_ui = control.get_node_or_null("HandUI")
+		
+		# Find lie info panel
+		lie_info_panel = control.get_node_or_null("LieInfoPanel")
+		if lie_info_panel:
+			lie_name_label = lie_info_panel.get_node_or_null("VBoxContainer/LieName")
+			lie_description_label = lie_info_panel.get_node_or_null("VBoxContainer/LieDescription")
+			lie_modifiers_label = lie_info_panel.get_node_or_null("VBoxContainer/LieModifiers")
+			# Ensure BBCode is enabled for rich text
+			if lie_description_label:
+				lie_description_label.bbcode_enabled = true
+			if lie_modifiers_label:
+				lie_modifiers_label.bbcode_enabled = true
+			print("Lie info panel connected")
 	
 	# Also try as direct children of scene root
 	if shot_ui == null:
@@ -1715,6 +2315,25 @@ func _start_new_shot() -> void:
 	
 	# Get ball's current tile
 	var ball_tile = world_to_grid(golf_ball.position)
+	var ball_surface = get_cell(ball_tile.x, ball_tile.y)
+	
+	# Check if ball is on or near green - enter putting mode
+	# Putting mode activates on green, flag, OR within 2 tiles of green (fringe/approach)
+	var should_putt = ball_surface == SurfaceType.GREEN or ball_surface == SurfaceType.FLAG
+	if not should_putt:
+		should_putt = _is_near_green(ball_tile, 2)
+	
+	if should_putt:
+		if putting_system:
+			putting_system.golf_ball = golf_ball
+			putting_system.setup(self, hole_viewer)
+			putting_system.enter_putting_mode()
+			return
+	
+	# Normal shot mode
+	if putting_system and putting_system.is_putting_mode:
+		putting_system.exit_putting_mode()
+	
 	shot_manager.start_shot(golf_ball, ball_tile)
 	
 	# Update dim overlays for new ball position
@@ -1734,13 +2353,147 @@ func _calculate_distance_yards(from: Vector2i, to: Vector2i) -> int:
 
 
 func _on_shot_started(context: ShotContext) -> void:
-	"""Called when shot begins - update UI"""
+	"""Called when shot begins - calculate lie and update UI"""
 	print("Shot %d started from tile [%d, %d]" % [context.shot_index, context.start_tile.x, context.start_tile.y])
+	
+	# Calculate lie effects for starting position
+	if lie_system and context.start_tile.x >= 0:
+		var lie_info = lie_system.calculate_lie(self, context.start_tile)
+		lie_system.apply_lie_to_shot(context, lie_info)
+		
+		# Update lie info panel in Control overlay
+		_update_lie_info_panel(lie_info)
+		
+		# Also update shot_ui if it has the method
+		if shot_ui and shot_ui.has_method("update_lie_info"):
+			shot_ui.update_lie_info(lie_info)
+		
+		var power_mod = lie_info.get("power_mod", 0)
+		var accuracy_mod = lie_info.get("accuracy_mod", 0)
+		print("Lie: %s (Power: %+d tiles, Accuracy: %+d AOE)" % [
+			lie_info.get("display_name", "Unknown"),
+			power_mod,
+			accuracy_mod
+		])
 	
 	# Update UI with current terrain
 	if shot_ui and context.start_tile.x >= 0:
 		var terrain = get_cell(context.start_tile.x, context.start_tile.y)
 		shot_ui.update_current_terrain(terrain)
+
+
+func _update_lie_info_panel(lie_info: Dictionary) -> void:
+	"""Update the lie info panel in the Control overlay with stats table"""
+	if lie_info_panel == null:
+		return
+	
+	# Update lie name with color
+	if lie_name_label:
+		var lie_color = lie_info.get("color", Color.WHITE)
+		lie_name_label.text = lie_info.get("display_name", "Unknown")
+		lie_name_label.add_theme_color_override("font_color", lie_color)
+	
+	# Update description
+	if lie_description_label:
+		lie_description_label.text = "[i]%s[/i]" % lie_info.get("description", "")
+	
+	# Build stats table showing Base | Mod | Final
+	if lie_modifiers_label:
+		var stats = get_current_shot_stats()
+		var base = stats.base
+		var mods = stats.mods
+		var final = stats.final
+		
+		var lines = []
+		lines.append("[b]%s[/b]" % stats.club_name)
+		lines.append("")
+		lines.append("[code]Stat     Base  Mod  Final[/code]")
+		lines.append("[code]─────────────────────────[/code]")
+		
+		# Distance row
+		lines.append(_format_stat_row("Distance", base.distance, mods.distance_mod, final.distance, true))
+		
+		# Accuracy row (lower is better, so positive mod is bad)
+		lines.append(_format_stat_row("Accuracy", base.accuracy, mods.accuracy_mod, final.accuracy, false))
+		
+		# Roll row
+		lines.append(_format_stat_row("Roll", base.roll, mods.roll_mod, final.roll, true))
+		
+		# Curve row
+		lines.append(_format_stat_row("Curve", base.curve, mods.curve_mod, final.curve, true))
+		
+		# Add scoring bonuses if present
+		var chip_bonus = lie_info.get("chip_bonus", 0)
+		var mult_bonus = lie_info.get("mult_bonus", 0.0)
+		if chip_bonus != 0 or mult_bonus != 0.0:
+			lines.append("")
+			lines.append("[u]Scoring:[/u]")
+			if chip_bonus != 0:
+				var color = "lime" if chip_bonus > 0 else "red"
+				lines.append("[color=%s]Chips: %s%d[/color]" % [color, "+" if chip_bonus > 0 else "", chip_bonus])
+			if mult_bonus != 0.0:
+				var color = "lime" if mult_bonus > 0 else "red"
+				lines.append("[color=%s]Mult: %s%.1f[/color]" % [color, "+" if mult_bonus > 0 else "", mult_bonus])
+		
+		lie_modifiers_label.text = "\n".join(lines)
+
+
+func _format_stat_row(stat_name: String, base_val: float, mod_val: float, final_val: float, positive_is_good: bool) -> String:
+	"""Format a row in the stats table with color coding"""
+	# Pad stat name to 8 chars
+	var name_padded = stat_name.substr(0, 8).rpad(8)
+	
+	# Format base value
+	var base_str = str(int(base_val)).rpad(4)
+	
+	# Format mod with color
+	var mod_str = ""
+	var mod_color = "gray"
+	if mod_val != 0:
+		var is_good = (mod_val > 0) == positive_is_good
+		mod_color = "lime" if is_good else "red"
+		var sign = "+" if mod_val > 0 else ""
+		mod_str = "%s%d" % [sign, int(mod_val)]
+	else:
+		mod_str = "0"
+	mod_str = mod_str.rpad(4)
+	
+	# Format final with color based on comparison to base
+	var final_str = str(int(final_val))
+	var final_color = "white"
+	if final_val > base_val:
+		final_color = "lime" if positive_is_good else "red"
+	elif final_val < base_val:
+		final_color = "red" if positive_is_good else "lime"
+	
+	return "[code]%s %s[color=%s]%s[/color] [color=%s]%s[/color][/code]" % [
+		name_padded, base_str, mod_color, mod_str, final_color, final_str
+	]
+
+
+func _format_lie_modifier_additive(stat_name: String, value: float, positive_is_good: bool) -> String:
+	"""Format an additive modifier with color coding"""
+	if value == 0:
+		return "[color=white]%s: 0[/color]" % stat_name
+	
+	var is_good = (value > 0) == positive_is_good
+	var color = "lime" if is_good else ("orange" if abs(value) <= 2 else "red")
+	var sign = "+" if value > 0 else ""
+	
+	if abs(value) == int(abs(value)):
+		return "[color=%s]%s: %s%d[/color]" % [color, stat_name, sign, int(value)]
+	else:
+		return "[color=%s]%s: %s%.1f[/color]" % [color, stat_name, sign, value]
+
+
+func _format_lie_modifier(stat_name: String, value: int) -> String:
+	"""Format a modifier with color coding"""
+	var color = "white"
+	if value > 100:
+		color = "lime"
+	elif value < 100:
+		color = "orange" if value >= 70 else "red"
+	return "[color=%s]%s: %d%%[/color]" % [color, stat_name, value]
 
 
 func _on_aoe_computed(context: ShotContext) -> void:
@@ -1789,6 +2542,7 @@ func _on_shot_completed(context: ShotContext) -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
+	real_trajectory_mesh.visible = false
 	
 	# Update dim overlays now that ball has moved
 	_update_dim_overlays()
@@ -1822,6 +2576,7 @@ func _trigger_hole_complete() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
+	real_trajectory_mesh.visible = false
 	
 	# Trigger confetti on the flag
 	_play_hole_confetti()
@@ -2340,6 +3095,33 @@ func _process_ball_spin(delta: float) -> void:
 	golf_ball.rotate(spin_axis, spin_speed * delta)
 
 
+func _update_ball_shadow() -> void:
+	"""Update the ball's ground shadow position during flight"""
+	if golf_ball == null:
+		return
+	
+	# Only show shadow when ball is actively in flight (spinning)
+	var is_in_flight = golf_ball.has_meta("is_spinning") and golf_ball.get_meta("is_spinning")
+	if not is_in_flight:
+		golf_ball.hide_shadow()
+		return
+	
+	# Get the ground height below the ball
+	var ball_grid_pos = world_to_grid(golf_ball.global_position)
+	var ground_y = get_elevation(ball_grid_pos.x, ball_grid_pos.y)
+	
+	# Calculate height above ground
+	var height = golf_ball.global_position.y - ground_y
+	
+	# Hide shadow if ball is close to ground (aggressive threshold)
+	if height < 2.0:
+		golf_ball.hide_shadow()
+		return
+	
+	# Update the shadow position and visibility
+	golf_ball.update_shadow(ground_y)
+
+
 func _calculate_arc_position(start: Vector3, end: Vector3, t: float, peak_height: float) -> Vector3:
 	"""Calculate position along a parabolic arc at time t (0 to 1).
 	   The curve is already baked into the end position, so this just does the height arc."""
@@ -2568,6 +3350,23 @@ func _create_trajectory_mesh() -> void:
 	
 	add_child(curved_trajectory_mesh)
 	
+	# Create real trajectory mesh (yellow for debug - shows actual ball path with all modifiers)
+	real_trajectory_mesh = MeshInstance3D.new()
+	real_trajectory_mesh.mesh = ImmediateMesh.new()
+	
+	var real_mat = StandardMaterial3D.new()
+	real_mat.albedo_color = Color(1.0, 0.9, 0.0, 1.0)  # Yellow
+	real_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	real_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	real_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	real_mat.no_depth_test = true
+	real_mat.vertex_color_use_as_albedo = true
+	real_trajectory_mesh.material_override = real_mat
+	real_trajectory_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	real_trajectory_mesh.custom_aabb = AABB(Vector3(-100, -100, -100), Vector3(200, 200, 200))
+	
+	add_child(real_trajectory_mesh)
+	
 	# Create trajectory shadow mesh (dark line on ground)
 	trajectory_shadow_mesh = MeshInstance3D.new()
 	trajectory_shadow_mesh.mesh = ImmediateMesh.new()
@@ -2736,6 +3535,7 @@ func _update_trajectory(target_pos: Vector3) -> void:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
 		curved_trajectory_mesh.visible = false
+		real_trajectory_mesh.visible = false
 		return
 	
 	var start_pos = golf_ball.position
@@ -2766,6 +3566,30 @@ func _update_trajectory(target_pos: Vector3) -> void:
 	
 	# Draw shadow line on ground showing the actual path (curved if shape active)
 	_draw_trajectory_shadow(start_pos, end_pos if not has_curve else curved_end_pos, has_curve)
+	
+	# Calculate and draw the real trajectory (yellow debug arc)
+	# This shows exactly where the ball will land after all modifiers
+	# Toggle with T key - controlled by show_real_trajectory
+	if show_real_trajectory:
+		var real_landing_tile = _calculate_predicted_landing(target_pos)
+		if real_landing_tile.x >= 0:
+			var real_end_pos = get_tile_surface_position(real_landing_tile)
+			var aim_tile = world_to_grid(target_pos)
+			var has_real_curve = real_landing_tile != aim_tile
+			
+			if has_real_curve:
+				# When there's any offset from aim, draw curved arc
+				_draw_curved_trajectory_arc(real_trajectory_mesh, start_pos, end_pos, real_end_pos,
+					Color(1.0, 0.9, 0.0, 0.95))  # Yellow
+			else:
+				# When landing exactly on aim, draw simple arc
+				_draw_trajectory_arc(real_trajectory_mesh, start_pos, real_end_pos,
+					Color(1.0, 0.9, 0.0, 0.95))  # Yellow
+			real_trajectory_mesh.visible = true
+		else:
+			real_trajectory_mesh.visible = false
+	else:
+		real_trajectory_mesh.visible = false
 
 
 func _draw_trajectory_arc(mesh: MeshInstance3D, start_pos: Vector3, end_pos: Vector3, color: Color) -> void:
@@ -2940,12 +3764,24 @@ func _calculate_trajectory_point(start_pos: Vector3, aim_pos: Vector3, curved_en
 
 # Update tile highlight based on mouse position
 func _update_tile_highlight() -> void:
-	var camera = get_viewport().get_camera_3d()
+	# Use external camera if set (from HoleViewer), otherwise fall back to main viewport
+	var camera: Camera3D = null
+	var mouse_pos: Vector2
+	
+	if external_camera and external_viewport:
+		camera = external_camera
+		# Get mouse position relative to the external viewport's container
+		# The HoleViewer will update hovered_cell directly via set_hover_cell
+		# So we skip mouse-based updates when using external camera
+		return
+	else:
+		camera = get_viewport().get_camera_3d()
+		mouse_pos = get_viewport().get_mouse_position()
+	
 	if not camera:
 		highlight_mesh.visible = false
 		return
 	
-	var mouse_pos = get_viewport().get_mouse_position()
 	var ray_origin = camera.project_ray_origin(mouse_pos)
 	var ray_dir = camera.project_ray_normal(mouse_pos)
 	
@@ -2960,7 +3796,13 @@ func _update_tile_highlight() -> void:
 		if cell.x >= 0 and cell.x < grid_width and cell.y >= 0 and cell.y < grid_height:
 			var surface = get_cell(cell.x, cell.y)
 			if surface != -1 and surface != SurfaceType.WATER:
+				# Always track hovered_cell for click detection
 				hovered_cell = cell
+				
+				# If target is locked, don't update visuals - keep highlight and AOE on locked cell
+				if target_locked:
+					_update_trajectory(locked_target_pos)
+					return
 				
 				# Check if cell is forward from ball (or if flag is behind, allow all directions)
 				var is_forward = is_forward_from_ball(cell)
@@ -3051,6 +3893,7 @@ func _update_tile_highlight() -> void:
 						trajectory_mesh.visible = false
 						trajectory_shadow_mesh.visible = false
 						curved_trajectory_mesh.visible = false
+						real_trajectory_mesh.visible = false
 				return
 	
 	# No valid hover
@@ -3062,6 +3905,7 @@ func _update_tile_highlight() -> void:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
 		curved_trajectory_mesh.visible = false
+		real_trajectory_mesh.visible = false
 
 
 # Convert world position to grid cell coordinates
@@ -4117,6 +4961,7 @@ func _on_button_pressed() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
+	real_trajectory_mesh.visible = false
 	target_highlight_mesh.visible = false
 	_hide_all_aoe_highlights()
 	
@@ -4132,3 +4977,9 @@ func _on_button_pressed() -> void:
 	
 	# Start a fresh shot
 	_start_new_shot()
+
+
+func _on_debug_trajectory_toggled(toggled_on: bool) -> void:
+	"""Toggle the debug real trajectory arc on/off via UI button."""
+	show_real_trajectory = toggled_on
+	print("Real trajectory debug: %s" % ("ON" if show_real_trajectory else "OFF"))

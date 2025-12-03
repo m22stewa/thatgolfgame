@@ -2,7 +2,7 @@ extends Control
 class_name HoleViewer
 
 ## Main hole viewing camera - 3/4 overhead perspective
-## Handles panning, zooming, ball tracking, and tile selection
+## Handles panning, zooming, rotating, ball tracking, and tile selection
 
 signal tile_clicked(tile_coords: Vector2i)
 signal tile_hovered(tile_coords: Vector2i)
@@ -14,26 +14,39 @@ var viewport_container: SubViewportContainer = null
 
 # Camera settings
 @export var camera_height: float = 25.0
-@export var camera_angle: float = 60.0  # Degrees from horizontal (90 = top-down, 45 = more angled)
-@export var min_zoom: float = 10.0
-@export var max_zoom: float = 50.0
-@export var zoom_speed: float = 2.0
+@export var camera_angle: float = 55.0  # Degrees from horizontal (90 = top-down, 45 = more angled)
+@export var min_zoom: float = 15.0
+@export var max_zoom: float = 80.0
+@export var zoom_speed: float = 3.0
 @export var pan_speed: float = 0.5
-@export var follow_speed: float = 3.0  # How fast camera follows ball
+@export var rotation_speed: float = 0.005  # Radians per pixel of mouse movement
+@export var follow_speed: float = 5.0  # How fast camera follows ball
+@export var flight_follow_speed: float = 8.0  # Faster tracking during flight
 
 # Camera state
 var target_position: Vector3 = Vector3.ZERO  # Where camera is looking at (on ground plane)
-var current_zoom: float = 25.0
-var target_zoom: float = 25.0
+var current_zoom: float = 40.0
+var target_zoom: float = 40.0
+var camera_yaw: float = 0.0  # Rotation around Y axis (0 = looking north/up the hole)
+var target_yaw: float = 0.0
 var is_panning: bool = false
+var is_rotating: bool = false
 var pan_start_mouse: Vector2 = Vector2.ZERO
 var pan_start_position: Vector3 = Vector3.ZERO
+var rotation_start_mouse: Vector2 = Vector2.ZERO
+var rotation_start_yaw: float = 0.0
 
 # Ball tracking
 var ball_node: Node3D = null
-var is_tracking_ball: bool = false
-var ball_flight_complete: bool = true
+var is_tracking_ball: bool = true  # Start with tracking enabled
+var ball_in_flight: bool = false
+var last_ball_position: Vector3 = Vector3.ZERO
+var ball_velocity: Vector3 = Vector3.ZERO
 var track_after_flight: bool = true
+
+# Flight camera behavior
+@export var flight_zoom_out: float = 10.0  # Extra zoom during flight
+@export var flight_look_ahead: float = 0.3  # How much to look ahead of ball during flight
 
 # Hole reference
 var hex_grid: Node = null
@@ -41,6 +54,16 @@ var hole_bounds: Rect2 = Rect2()
 
 # Mouse state
 var hovered_tile: Vector2i = Vector2i(-999, -999)
+
+# Putting mode state
+var is_putting_mode: bool = false
+var putting_system: Node = null
+var normal_camera_angle: float = 55.0  # Store normal angle to restore
+var normal_zoom: float = 40.0  # Store normal zoom to restore
+
+# Putting mode camera settings
+const PUTTING_CAMERA_ANGLE: float = 85.0  # Near top-down
+const PUTTING_ZOOM: float = 20.0  # Closer zoom on green
 
 
 func _ready() -> void:
@@ -57,7 +80,8 @@ func _setup_viewport() -> void:
 	viewport_container.name = "ViewportContainer"
 	viewport_container.set_anchors_preset(Control.PRESET_FULL_RECT)
 	viewport_container.stretch = true
-	viewport_container.mouse_filter = Control.MOUSE_FILTER_STOP
+	# IMPORTANT: Use PASS so we can handle input on the parent Control
+	viewport_container.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(viewport_container)
 	
 	# Create SubViewport
@@ -105,6 +129,10 @@ func _find_references() -> void:
 	
 	if hex_grid:
 		print("HoleViewer: Found HexGrid at ", hex_grid.get_path())
+		# Register our camera with hex_grid so it can be used for picking
+		# Pass self so hex_grid can set up putting system connection
+		if hex_grid.has_method("set_external_camera"):
+			hex_grid.set_external_camera(camera, viewport, self)
 		_calculate_hole_bounds()
 		_center_on_hole()
 	else:
@@ -178,79 +206,220 @@ func _calculate_hole_bounds() -> void:
 
 
 func _center_on_hole() -> void:
-	"""Center camera on the hole"""
+	"""Position camera to show hole - camera transform handles forward shift"""
 	if hole_bounds.size.length() > 0:
-		# Center on the hole (center x, but closer to the tee which is near the top/start of z)
+		# Center on the hole's X, and start at the tee (low Z)
 		target_position = Vector3(
 			hole_bounds.position.x + hole_bounds.size.x / 2,
 			0,
-			hole_bounds.position.y + hole_bounds.size.y * 0.4  # Slightly toward the tee
+			hole_bounds.position.y  # Start at tee position
 		)
 		
-		# Set zoom to fit hole width
-		var max_dim = max(hole_bounds.size.x, hole_bounds.size.y * 0.6)
-		target_zoom = clamp(max_dim * 0.8, min_zoom, max_zoom)
+		# Set zoom to show a good portion of the hole
+		var max_dim = max(hole_bounds.size.x * 2, hole_bounds.size.y * 0.5)
+		target_zoom = clamp(max_dim, min_zoom, max_zoom)
 		current_zoom = target_zoom
+		
 		print("HoleViewer: Centered on hole, zoom = ", current_zoom)
 
 
 func _process(delta: float) -> void:
-	_handle_ball_tracking(delta)
+	# Skip ball tracking in putting mode - camera stays fixed on green
+	if not is_putting_mode:
+		_handle_ball_tracking(delta)
 	_smooth_camera_movement(delta)
 	_update_camera_transform()
 	_update_hovered_tile()
 
 
 func _handle_ball_tracking(delta: float) -> void:
-	"""Handle camera following the ball"""
+	"""Handle camera following the ball - optimized to only move on landing"""
 	if not ball_node or not is_instance_valid(ball_node):
 		_find_ball()
 		return
 	
-	if is_tracking_ball and ball_flight_complete:
-		# Smoothly move toward ball position
-		var ball_pos = ball_node.global_position
+	var ball_pos = ball_node.global_position
+	
+	# Simple velocity check (avoid per-frame division)
+	var pos_delta = ball_pos - last_ball_position
+	var speed_sq = pos_delta.length_squared()  # Avoid sqrt for performance
+	last_ball_position = ball_pos
+	
+	# Detect if ball is in flight (speed^2 > 1.0 means speed > 1.0)
+	var was_in_flight = ball_in_flight
+	ball_in_flight = speed_sq > 1.0
+	
+	# Only act on state changes - not every frame
+	if ball_in_flight and not was_in_flight:
+		_on_ball_flight_started()
+	elif not ball_in_flight and was_in_flight:
+		_on_ball_flight_ended()
+		# Move camera to ball position when it lands (not during flight)
+		if is_tracking_ball:
+			target_position = Vector3(ball_pos.x, 0, ball_pos.z)
+	
+	# Only do smooth tracking when ball is at rest and tracking is enabled
+	# Skip tracking during flight to reduce per-frame calculations
+	if is_tracking_ball and not ball_in_flight:
 		var target = Vector3(ball_pos.x, 0, ball_pos.z)
-		target_position = target_position.lerp(target, delta * follow_speed)
+		# Only lerp if we're not already close enough
+		var dist_sq = (target_position - target).length_squared()
+		if dist_sq > 0.1:  # Only move if more than ~0.3 units away
+			target_position = target_position.lerp(target, delta * follow_speed)
+
+
+func _on_ball_flight_started() -> void:
+	"""Called when ball starts moving"""
+	# Don't change zoom during flight - reduces calculations
+	# Just mark that we're tracking
+	is_tracking_ball = true
+
+
+func _on_ball_flight_ended() -> void:
+	"""Called when ball stops"""
+	# Camera will snap to ball position in _handle_ball_tracking
+	if track_after_flight:
+		is_tracking_ball = true
 
 
 func _smooth_camera_movement(delta: float) -> void:
-	"""Smooth interpolation for zoom"""
-	current_zoom = lerp(current_zoom, target_zoom, delta * 8.0)
+	"""Smooth interpolation for zoom and rotation - only when needed"""
+	# Only lerp if values are different (avoid unnecessary calculations)
+	if abs(current_zoom - target_zoom) > 0.01:
+		current_zoom = lerp(current_zoom, target_zoom, delta * 8.0)
+	else:
+		current_zoom = target_zoom
+	
+	if abs(camera_yaw - target_yaw) > 0.001:
+		camera_yaw = lerp_angle(camera_yaw, target_yaw, delta * 8.0)
+	else:
+		camera_yaw = target_yaw
 
+
+# Cache for camera transform to avoid recalculating every frame
+var _last_cam_pos: Vector3 = Vector3.ZERO
+var _last_target_pos: Vector3 = Vector3.ZERO
+var _last_zoom: float = 0.0
+var _last_yaw: float = 0.0
+var _last_angle: float = 0.0
 
 func _update_camera_transform() -> void:
-	"""Update camera position and rotation based on current state"""
+	"""Update camera position and rotation based on current state - cached"""
 	if not camera:
 		return
 	
-	# Calculate camera position
-	# Camera looks at target_position from an angle
+	# Skip update if nothing changed (big performance win)
+	if target_position == _last_target_pos and current_zoom == _last_zoom and camera_yaw == _last_yaw and camera_angle == _last_angle:
+		return
+	
+	# Cache current values
+	_last_target_pos = target_position
+	_last_zoom = current_zoom
+	_last_yaw = camera_yaw
+	_last_angle = camera_angle
+	
+	# Calculate camera position with rotation
 	var angle_rad = deg_to_rad(camera_angle)
 	var horizontal_dist = current_zoom * cos(angle_rad)
 	var vertical_dist = current_zoom * sin(angle_rad)
 	
-	# Position camera behind and above the target (looking from south)
+	# Apply yaw rotation to camera offset
+	var offset_x = sin(camera_yaw) * horizontal_dist
+	var offset_z = -cos(camera_yaw) * horizontal_dist  # Negative to look from behind
+	
+	# Shift camera forward (positive Z) to put tee at bottom of view
+	# This offset moves the camera's view forward toward the green
+	var forward_shift = horizontal_dist * 0.6  # Shift forward by 60% of view distance
+	
 	var cam_pos = Vector3(
-		target_position.x,
+		target_position.x + offset_x,
 		vertical_dist,
-		target_position.z + horizontal_dist
+		target_position.z + offset_z + forward_shift
 	)
 	
 	camera.global_position = cam_pos
-	camera.look_at(target_position, Vector3.UP)
+	camera.look_at(Vector3(target_position.x, 0, target_position.z + forward_shift), Vector3.UP)
 
 
-func _gui_input(event: InputEvent) -> void:
-	# Handle mouse input for panning and zooming
+func _is_mouse_inside() -> bool:
+	"""Check if mouse is inside the HoleViewer bounds"""
+	var mouse_pos = get_global_mouse_position()
+	var rect = get_global_rect()
+	return rect.has_point(mouse_pos)
+
+
+func _is_mouse_over_ui_control() -> bool:
+	"""Check if mouse is over a UI control that should consume clicks (buttons, etc)"""
+	var mouse_pos = get_global_mouse_position()
+	
+	# Get all controls under mouse and check if any should consume input
+	var parent_control = get_parent()
+	if parent_control is Control:
+		# Check all sibling controls
+		for child in parent_control.get_children():
+			if child == self:
+				continue
+			if child is Control and child.visible:
+				if _control_wants_input(child, mouse_pos):
+					return true
+	return false
+
+
+func _control_wants_input(control: Control, mouse_pos: Vector2) -> bool:
+	"""Recursively check if a control or its children want mouse input"""
+	# Check if this control is a clickable type and contains the mouse
+	var rect = control.get_global_rect()
+	if rect.has_point(mouse_pos):
+		# Buttons always consume clicks
+		if control is BaseButton:
+			return true
+		# Check children recursively
+		for child in control.get_children():
+			if child is Control and child.visible:
+				if _control_wants_input(child, mouse_pos):
+					return true
+	return false
+
+
+func _input(event: InputEvent) -> void:
+	# Always handle motion if we're already panning/rotating (even if mouse leaves bounds)
+	if event is InputEventMouseMotion:
+		if is_panning or is_rotating:
+			_handle_mouse_motion(event)
+			get_viewport().set_input_as_handled()
+		return
+	
+	# For button events, check if mouse is inside our bounds
+	if not _is_mouse_inside():
+		return
+	
+	# Don't handle clicks if mouse is over a UI button
+	if event is InputEventMouseButton and event.pressed:
+		if _is_mouse_over_ui_control():
+			return
+	
 	if event is InputEventMouseButton:
 		_handle_mouse_button(event)
-	elif event is InputEventMouseMotion:
-		_handle_mouse_motion(event)
+		get_viewport().set_input_as_handled()
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
-	if event.button_index == MOUSE_BUTTON_RIGHT or event.button_index == MOUSE_BUTTON_MIDDLE:
+	# In putting mode, handle differently
+	if is_putting_mode:
+		_handle_putting_mouse_button(event)
+		return
+	
+	# Middle mouse = rotate
+	if event.button_index == MOUSE_BUTTON_MIDDLE:
+		if event.pressed:
+			is_rotating = true
+			rotation_start_mouse = event.position
+			rotation_start_yaw = target_yaw
+		else:
+			is_rotating = false
+	
+	# Right mouse = pan
+	elif event.button_index == MOUSE_BUTTON_RIGHT:
 		if event.pressed:
 			is_panning = true
 			pan_start_mouse = event.position
@@ -258,6 +427,7 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 		else:
 			is_panning = false
 	
+	# Scroll wheel = zoom
 	elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
 		if event.pressed:
 			target_zoom = clamp(target_zoom - zoom_speed, min_zoom, max_zoom)
@@ -266,25 +436,59 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 		if event.pressed:
 			target_zoom = clamp(target_zoom + zoom_speed, min_zoom, max_zoom)
 	
+	# Left click = select tile
 	elif event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_handle_tile_click(event.position)
 
 
+func _handle_putting_mouse_button(event: InputEventMouseButton) -> void:
+	"""Handle mouse input during putting mode"""
+	# Right click in putting mode = cancel aim
+	if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.pressed and putting_system:
+			putting_system.cancel_aim()
+		return
+	
+	# Left click = aim/charge/release
+	if event.button_index == MOUSE_BUTTON_LEFT:
+		if putting_system:
+			putting_system.handle_input(event)
+		return
+	
+	# Scroll wheel still works for zoom
+	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+		if event.pressed:
+			target_zoom = clamp(target_zoom - zoom_speed, min_zoom, max_zoom)
+	elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		if event.pressed:
+			target_zoom = clamp(target_zoom + zoom_speed, min_zoom, max_zoom)
+
+
 func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
-	if is_panning:
-		# Calculate pan delta in world space
+	if is_rotating:
+		# Calculate rotation delta
+		var delta_x = event.position.x - rotation_start_mouse.x
+		target_yaw = rotation_start_yaw + delta_x * rotation_speed
+		# Stop tracking ball when manually rotating
+		is_tracking_ball = false
+	
+	elif is_panning:
+		# Calculate pan delta in world space, accounting for camera rotation
 		var delta = event.position - pan_start_mouse
 		
-		# Scale by zoom level (pan more when zoomed out)
+		# Scale by zoom level
 		var scale = current_zoom * pan_speed * 0.01
 		
-		# Apply pan (inverted for natural feel)
-		target_position = pan_start_position + Vector3(
-			-delta.x * scale,
-			0,
-			-delta.y * scale
-		)
+		# Transform pan direction by camera yaw
+		var pan_x = -delta.x * scale
+		var pan_z = delta.y * scale
+		
+		# Rotate the pan vector by camera yaw
+		var rotated_x = pan_x * cos(camera_yaw) - pan_z * sin(camera_yaw)
+		var rotated_z = pan_x * sin(camera_yaw) + pan_z * cos(camera_yaw)
+		
+		target_position = pan_start_position + Vector3(rotated_x, 0, rotated_z)
 		
 		# Stop tracking ball when manually panning
 		is_tracking_ball = false
@@ -324,9 +528,12 @@ func _update_hovered_tile() -> void:
 		hovered_tile = tile_coords
 		if tile_coords.x != -999:
 			tile_hovered.emit(tile_coords)
-			# Update hex_grid hover for highlighting
-			if hex_grid and hex_grid.has_method("set_hover_cell"):
-				hex_grid.set_hover_cell(tile_coords)
+			
+			# In putting mode, aim is handled by putting_system's own raycasting
+			if not is_putting_mode:
+				# Update hex_grid hover for highlighting (shows AOE)
+				if hex_grid and hex_grid.has_method("set_hover_cell"):
+					hex_grid.set_hover_cell(tile_coords)
 
 
 func _screen_to_world(screen_pos: Vector2) -> Variant:
@@ -389,11 +596,8 @@ func _world_to_tile(world_pos: Vector3) -> Vector2i:
 
 func center_on_position(world_pos: Vector3, smooth: bool = true) -> void:
 	"""Center the camera on a world position"""
-	if smooth:
-		target_position = Vector3(world_pos.x, 0, world_pos.z)
-	else:
-		target_position = Vector3(world_pos.x, 0, world_pos.z)
-		# Immediate update
+	target_position = Vector3(world_pos.x, 0, world_pos.z)
+	if not smooth:
 		_update_camera_transform()
 
 
@@ -411,10 +615,17 @@ func set_zoom(zoom_level: float, smooth: bool = true) -> void:
 		_update_camera_transform()
 
 
+func set_camera_rotation(yaw_degrees: float, smooth: bool = true) -> void:
+	"""Set the camera rotation (yaw) in degrees"""
+	target_yaw = deg_to_rad(yaw_degrees)
+	if not smooth:
+		camera_yaw = target_yaw
+		_update_camera_transform()
+
+
 func start_tracking_ball() -> void:
 	"""Start following the ball"""
 	is_tracking_ball = true
-	ball_flight_complete = true
 
 
 func stop_tracking_ball() -> void:
@@ -422,26 +633,30 @@ func stop_tracking_ball() -> void:
 	is_tracking_ball = false
 
 
-func on_ball_flight_started() -> void:
-	"""Called when ball starts flying - camera watches but doesn't follow yet"""
-	ball_flight_complete = false
-	# Could add camera behavior here like zooming out to see trajectory
-
-
-func on_ball_flight_ended() -> void:
-	"""Called when ball stops - camera can now smoothly move to ball"""
-	ball_flight_complete = true
-	if track_after_flight:
-		is_tracking_ball = true
-
-
 func reset_view() -> void:
-	"""Reset camera to show entire hole"""
-	_center_on_hole()
-	is_tracking_ball = false
+	"""Reset camera to show the ball with default rotation"""
+	target_yaw = 0.0
+	is_tracking_ball = true
+	if ball_node and is_instance_valid(ball_node):
+		center_on_ball(true)
+	else:
+		_center_on_hole()
 
 
-func get_viewport() -> SubViewport:
+func look_at_flag() -> void:
+	"""Rotate camera to look toward the flag/hole"""
+	if hex_grid and "flag_position" in hex_grid:
+		var flag_pos = hex_grid.flag_position
+		var ball_pos = target_position
+		if ball_node and is_instance_valid(ball_node):
+			ball_pos = Vector3(ball_node.global_position.x, 0, ball_node.global_position.z)
+		
+		# Calculate angle from ball to flag
+		var dir = flag_pos - ball_pos
+		target_yaw = atan2(dir.x, dir.z)
+
+
+func get_hole_viewport() -> SubViewport:
 	"""Get the SubViewport for rendering"""
 	return viewport
 
@@ -450,3 +665,57 @@ func add_to_viewport(node: Node3D) -> void:
 	"""Add a 3D node to be rendered in this viewport"""
 	if viewport:
 		viewport.add_child(node)
+
+
+# --- Putting Mode ---
+
+func enter_putting_mode(green_center: Vector2i, green_bounds: Rect2i) -> void:
+	"""Switch to putting mode camera - top-down view centered on green"""
+	if is_putting_mode:
+		return
+	
+	is_putting_mode = true
+	print("HoleViewer: Entering putting mode")
+	
+	# Store current camera settings
+	normal_camera_angle = camera_angle
+	normal_zoom = current_zoom
+	
+	# Switch to near top-down view
+	camera_angle = PUTTING_CAMERA_ANGLE
+	target_zoom = PUTTING_ZOOM
+	
+	# Center on green
+	if hex_grid and green_center.x >= 0:
+		var green_world_pos = hex_grid.get_tile_world_position(green_center)
+		target_position = Vector3(green_world_pos.x, 0, green_world_pos.z)
+	
+	# Look straight at the green (no yaw rotation for putting)
+	target_yaw = 0.0
+	
+	# Disable ball tracking in putting mode - we stay centered on green
+	is_tracking_ball = false
+
+
+func exit_putting_mode() -> void:
+	"""Exit putting mode and restore normal camera"""
+	if not is_putting_mode:
+		return
+	
+	is_putting_mode = false
+	print("HoleViewer: Exiting putting mode")
+	
+	# Restore normal camera settings
+	camera_angle = normal_camera_angle
+	target_zoom = normal_zoom
+	
+	# Re-enable ball tracking
+	is_tracking_ball = true
+	
+	# Center on ball
+	center_on_ball(true)
+
+
+func set_putting_system(system: Node) -> void:
+	"""Set reference to the putting system"""
+	putting_system = system

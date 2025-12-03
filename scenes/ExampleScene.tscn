@@ -17,12 +17,12 @@ sky = SubResource("Sky_tjwej")
 tonemap_mode = 2
 glow_enabled = true
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_faato"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nveol"]
 diffuse_mode = 3
 albedo_color = Color(0.415686, 0.615686, 0.223529, 1)
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_hfsug"]
-material = SubResource("StandardMaterial3D_faato")
+material = SubResource("StandardMaterial3D_nveol")
 size = Vector2(10, 10)
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_4o0t6"]
@@ -32,21 +32,23 @@ fractal_octaves = 2
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_tc6wy"]
 width = 1024
 height = 1024
-seamless = true
 noise = SubResource("FastNoiseLite_4o0t6")
+seamless = true
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_nkg8p"]
 render_priority = 0
 shader = ExtResource("1_rcxw7")
 shader_parameter/top_color = Color(0.627451, 0.803922, 0.282353, 1)
 shader_parameter/bottom_color = Color(0.415686, 0.615686, 0.223529, 1)
+shader_parameter/ambient_occlusion_factor = 0.3
+shader_parameter/specular_strength = 0.4
 shader_parameter/player_displacement_strength = 0.3
 shader_parameter/player_displacement_size = 0.94
 shader_parameter/wind_direction = Vector3(1, -0.7, -0.5)
 shader_parameter/wind_strength = 0.23
+shader_parameter/wind_noise = SubResource("NoiseTexture2D_tc6wy")
 shader_parameter/wind_noise_size = 0.03
 shader_parameter/wind_noise_speed = 0.13
-shader_parameter/wind_noise = SubResource("NoiseTexture2D_tc6wy")
 
 [sub_resource type="MultiMesh" id="MultiMesh_i4gsv"]
 transform_format = 1
@@ -76,7 +78,6 @@ mesh = SubResource("PlaneMesh_hfsug")
 
 [node name="GrassInstance3D" type="MultiMeshInstance3D" parent="."]
 material_override = SubResource("ShaderMaterial_nkg8p")
-instance_shader_parameters/player_position = null
 multimesh = SubResource("MultiMesh_i4gsv")
 
 [node name="GrassSourceMesh" type="MeshInstance3D" parent="."]

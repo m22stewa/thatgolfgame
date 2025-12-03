@@ -13,6 +13,13 @@ var start_tile: Vector2i = Vector2i(-1, -1)   # Tile where shot starts
 var aim_tile: Vector2i = Vector2i(-1, -1)     # Tile chosen by player
 var landing_tile: Vector2i = Vector2i(-1, -1) # Final landing tile (resolved from AOE)
 
+# Lie information - affects shot modifiers (additive: 0 = no change, +/- values modify)
+var power_mod: float = 0.0                   # Power modifier (e.g., -2 = 2 tiles less distance)
+var accuracy_mod: float = 0.0                # Accuracy modifier (e.g., +1 = 1 extra AOE ring)
+var spin_mod: float = 0.0                    # Spin effectiveness modifier
+var curve_mod: float = 0.0                   # Curve/shape effectiveness modifier
+var roll_mod: float = 0.0                    # Roll distance modifier (tiles)
+
 # AOE (Area of Effect) data
 var aoe_tiles: Array[Vector2i] = []           # All tiles in AOE
 var aoe_radius: int = 1                       # Base AOE radius in hex rings
@@ -35,6 +42,11 @@ var curve_strength: float = 0.0               # How much ball curves mid-flight
 var curve_delay: float = 0.0                  # Distance before curve activates
 var did_curve: bool = false                   # Whether ball curved this shot
 
+# Swing meter results (0.0 to 1.0)
+var swing_power: float = 1.0                  # Power from swing meter (1.0 = full power)
+var swing_accuracy: float = 1.0               # Accuracy from swing meter (1.0 = perfect)
+var swing_curve: float = 0.0                  # Curve from swing meter (-1 to +1, 0 = straight)
+
 # Scoring
 var base_chips: int = 0                       # Base chips from distance/path
 var chips: int = 0                            # Modified chips
@@ -55,6 +67,11 @@ func reset() -> void:
 	start_tile = Vector2i(-1, -1)
 	aim_tile = Vector2i(-1, -1)
 	landing_tile = Vector2i(-1, -1)
+	power_mod = 0.0
+	accuracy_mod = 0.0
+	spin_mod = 0.0
+	curve_mod = 0.0
+	roll_mod = 0.0
 	aoe_tiles.clear()
 	aoe_radius = 1
 	aoe_shape = "circle"
@@ -69,6 +86,9 @@ func reset() -> void:
 	curve_strength = 0.0
 	curve_delay = 0.0
 	did_curve = false
+	swing_power = 1.0
+	swing_accuracy = 1.0
+	swing_curve = 0.0
 	base_chips = 0
 	chips = 0
 	mult = 1.0

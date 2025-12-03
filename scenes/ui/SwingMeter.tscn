@@ -1,0 +1,125 @@
+[gd_scene load_steps=3 format=3 uid="uid://d0p11qbqfw7jg"]
+
+[ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="1_6b7h6"]
+[ext_resource type="Script" uid="uid://dv1uvjmdh16cy" path="res://scripts/swing_meter.gd" id="1_script"]
+
+[node name="SwingMeter" type="Control"]
+layout_mode = 3
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -450.0
+offset_top = -263.0
+offset_right = -10.0
+offset_bottom = -153.0
+grow_horizontal = 0
+grow_vertical = 0
+theme = ExtResource("1_6b7h6")
+script = ExtResource("1_script")
+
+[node name="Background" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Background"]
+layout_mode = 2
+
+[node name="StateLabel" type="Label" parent="Background/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Click to Swing!"
+horizontal_alignment = 1
+
+[node name="TrackContainer" type="MarginContainer" parent="Background/VBox"]
+layout_mode = 2
+
+[node name="Track" type="ColorRect" parent="Background/VBox/TrackContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 40)
+layout_mode = 2
+color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="NegativeZone" type="ColorRect" parent="Background/VBox/TrackContainer/Track"]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 20.0
+grow_vertical = 2
+color = Color(0.5, 0.5, 0.5, 1)
+
+[node name="PowerFill" type="ColorRect" parent="Background/VBox/TrackContainer/Track"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_left = 60.0
+offset_right = 60.0
+grow_vertical = 2
+color = Color(0.2, 0.6, 0.2, 1)
+
+[node name="AccuracyFill" type="ColorRect" parent="Background/VBox/TrackContainer/Track"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+grow_vertical = 2
+color = Color(0.5, 0.85, 0.5, 1)
+
+[node name="PowerMarker" type="ColorRect" parent="Background/VBox/TrackContainer/Track"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -3.0
+offset_top = -24.0
+offset_right = 3.0
+offset_bottom = 24.0
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="AccuracyZone" type="ColorRect" parent="Background/VBox/TrackContainer/Track"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_right = 60.0
+grow_vertical = 2
+color = Color(0.15, 0.4, 0.15, 1)
+
+[node name="Marker" type="ColorRect" parent="Background/VBox/TrackContainer/Track"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -4.0
+offset_top = -24.0
+offset_right = 4.0
+offset_bottom = 24.0
+grow_vertical = 2
+color = Color(0.1, 0.1, 0.1, 1)
+
+[node name="HBox" type="HBoxContainer" parent="Background/VBox"]
+layout_mode = 2
+
+[node name="PowerLabel" type="Label" parent="Background/VBox/HBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Power: 0%"
+
+[node name="AccuracyLabel" type="Label" parent="Background/VBox/HBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
