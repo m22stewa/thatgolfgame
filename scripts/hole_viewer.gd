@@ -33,6 +33,7 @@ var is_panning: bool = false
 var is_rotating: bool = false
 var pan_start_mouse: Vector2 = Vector2.ZERO
 var pan_start_position: Vector3 = Vector3.ZERO
+var pan_grab_world_pos: Vector3 = Vector3.ZERO  # World position where pan grab started
 var rotation_start_mouse: Vector2 = Vector2.ZERO
 var rotation_start_yaw: float = 0.0
 
@@ -424,6 +425,12 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			is_panning = true
 			pan_start_mouse = event.position
 			pan_start_position = target_position
+			# Record the world position we're "grabbing"
+			var grab_pos = _screen_to_world(event.position)
+			if grab_pos != null:
+				pan_grab_world_pos = grab_pos
+			else:
+				pan_grab_world_pos = target_position
 		else:
 			is_panning = false
 	
@@ -474,21 +481,16 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 		is_tracking_ball = false
 	
 	elif is_panning:
-		# Calculate pan delta in world space, accounting for camera rotation
-		var delta = event.position - pan_start_mouse
+		# Convert screen delta to world delta using ground plane projection
+		# Get world positions at start and current mouse positions
+		var start_world = _screen_to_world(pan_start_mouse)
+		var current_world = _screen_to_world(event.position)
 		
-		# Scale by zoom level
-		var scale = current_zoom * pan_speed * 0.01
-		
-		# Transform pan direction by camera yaw
-		var pan_x = -delta.x * scale
-		var pan_z = delta.y * scale
-		
-		# Rotate the pan vector by camera yaw
-		var rotated_x = pan_x * cos(camera_yaw) - pan_z * sin(camera_yaw)
-		var rotated_z = pan_x * sin(camera_yaw) + pan_z * cos(camera_yaw)
-		
-		target_position = pan_start_position + Vector3(rotated_x, 0, rotated_z)
+		if start_world != null and current_world != null:
+			# Calculate world-space delta between the two screen positions
+			var world_delta = Vector3(current_world) - Vector3(start_world)
+			# Move camera in opposite direction to create grab effect
+			target_position = pan_start_position - Vector3(world_delta.x, 0, world_delta.z)
 		
 		# Stop tracking ball when manually panning
 		is_tracking_ball = false

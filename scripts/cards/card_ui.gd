@@ -11,6 +11,7 @@ signal card_played(card_ui: CardUI)
 signal card_drag_started(card_ui: CardUI)
 signal card_drag_ended(card_ui: CardUI)
 signal card_dropped(card_ui: CardUI, global_pos: Vector2)
+signal card_inspect_requested(card_ui: CardUI)  # Click without drag
 
 # Card data
 var card_instance: CardInstance = null
@@ -28,20 +29,28 @@ var drag_offset: Vector2 = Vector2.ZERO
 var drag_start_position: Vector2 = Vector2.ZERO
 var return_position: Vector2 = Vector2.ZERO
 var return_rotation: float = 0.0
+var mouse_down_position: Vector2 = Vector2.ZERO  # For click vs drag detection
+var is_mouse_down: bool = false
+const DRAG_THRESHOLD: float = 8.0  # Pixels to move before it's a drag
 
 # Physics-like drag
 var velocity: Vector2 = Vector2.ZERO
-var drag_smoothing: float = 15.0
+var drag_smoothing: float = 20.0  # Faster response to mouse
 var wiggle_amount: float = 0.0
-var wiggle_speed: float = 12.0
-var wiggle_decay: float = 8.0
+var wiggle_speed: float = 8.0     # Slower wiggle oscillation
+var wiggle_decay: float = 12.0    # Faster decay
 
 # Animation
 var target_position: Vector2 = Vector2.ZERO
 var target_rotation: float = 0.0
 var target_scale: Vector2 = Vector2.ONE
-var animation_speed: float = 10.0
+var animation_speed: float = 12.0  # Snappier animations
 var hand_index: int = 0  # Position in hand for gap calculation
+
+# Inspection mode - card reacts to mouse
+var is_inspecting: bool = false
+var inspect_center: Vector2 = Vector2.ZERO  # Center position during inspection
+var inspect_tilt_amount: float = 5.0  # Max tilt in degrees (subtle 3D effect)
 
 # Child node references
 @onready var background: ColorRect = $Background
@@ -92,29 +101,33 @@ func _process_drag(delta: float) -> void:
 	# Get mouse position relative to parent
 	var mouse_pos = get_parent().get_local_mouse_position() - drag_offset
 	
-	# Calculate velocity for wiggle effect
+	# Calculate velocity for subtle tilt effect
 	var old_pos = position
 	
 	# Smooth lerp to mouse position
 	position = position.lerp(mouse_pos, delta * drag_smoothing)
 	
-	# Calculate velocity and add wiggle based on movement
+	# Calculate velocity and add subtle tilt based on horizontal movement
 	velocity = (position - old_pos) / delta
-	wiggle_amount += velocity.x * 0.001
-	wiggle_amount = clamp(wiggle_amount, -0.3, 0.3)
+	wiggle_amount += velocity.x * 0.0003  # Much smaller multiplier
+	wiggle_amount = clamp(wiggle_amount, -0.1, 0.1)  # Smaller max rotation
 	
-	# Apply wiggle rotation
-	var wiggle_rotation = sin(Time.get_ticks_msec() * 0.001 * wiggle_speed) * wiggle_amount
-	rotation = wiggle_rotation
+	# Apply smooth tilt (no oscillation, just direct tilt based on movement)
+	rotation = lerp(rotation, wiggle_amount, delta * 10.0)
 	
-	# Decay wiggle
-	wiggle_amount = move_toward(wiggle_amount, 0.0, delta * wiggle_decay * 0.1)
+	# Decay tilt when not moving
+	wiggle_amount = move_toward(wiggle_amount, 0.0, delta * wiggle_decay * 0.3)
 	
-	# Dragging scale
-	scale = scale.lerp(Vector2(1.1, 1.1), delta * animation_speed)
+	# Dragging scale - subtle lift
+	scale = scale.lerp(Vector2(1.05, 1.05), delta * animation_speed)
 
 
 func _process_idle(delta: float) -> void:
+	# Handle inspection mode mouse reaction
+	if is_inspecting:
+		_process_inspection(delta)
+		return
+	
 	# Smooth animation toward target
 	position = position.lerp(target_position, delta * animation_speed)
 	rotation = lerp(rotation, target_rotation, delta * animation_speed)
@@ -122,6 +135,48 @@ func _process_idle(delta: float) -> void:
 	
 	# Decay any remaining wiggle
 	wiggle_amount = move_toward(wiggle_amount, 0.0, delta * wiggle_decay)
+
+
+func _process_inspection(delta: float) -> void:
+	"""Handle mouse reaction during card inspection - simulated 3D tilt effect"""
+	# Ensure pivot is at center for rotation
+	pivot_offset = custom_minimum_size / 2.0
+	
+	# Get mouse position relative to card center (in screen space)
+	var mouse_pos = get_global_mouse_position()
+	var card_global_center = global_position + (custom_minimum_size * scale.x) / 2.0
+	var offset_from_center = mouse_pos - card_global_center
+	
+	# Normalize the offset based on scaled card size (extended beyond card for smooth falloff)
+	var card_half_size = (custom_minimum_size * target_scale.x) / 2.0
+	var normalized_x = clamp(offset_from_center.x / (card_half_size.x * 1.5), -1.0, 1.0)
+	var normalized_y = clamp(offset_from_center.y / (card_half_size.y * 1.5), -1.0, 1.0)
+	
+	# Simulate 3D rotation using 2D transforms:
+	# We combine rotation and non-uniform scaling to create a perspective effect
+	
+	var tilt_strength = inspect_tilt_amount
+	
+	# Primary rotation based on horizontal mouse position (Y-axis rotation feel)
+	# Plus subtle twist when mouse is in corners
+	var base_rotation = normalized_x * tilt_strength * 0.5
+	var corner_twist = normalized_x * normalized_y * tilt_strength * 0.15
+	var target_rot = deg_to_rad(base_rotation + corner_twist)
+	
+	# Perspective scaling to simulate depth (very subtle):
+	# - Horizontal: side closer to mouse appears slightly larger
+	# - Vertical: top/bottom closer to mouse appears slightly larger
+	var perspective_x = 1.0 + (normalized_x * 0.02)  # 0.98 to 1.02
+	var perspective_y = 1.0 + (normalized_y * 0.02)  # 0.98 to 1.02
+	var final_scale = Vector2(
+		target_scale.x * perspective_x,
+		target_scale.y * perspective_y
+	)
+	
+	# Smooth animation
+	position = position.lerp(target_position, delta * animation_speed)
+	rotation = lerp(rotation, target_rot, delta * 10.0)
+	scale = scale.lerp(final_scale, delta * 10.0)
 
 
 func setup(instance: CardInstance) -> void:
@@ -215,7 +270,7 @@ func set_hand_position(index: int, total_cards: int, hand_width: float, skip_ind
 
 
 func set_hovered(hovered: bool) -> void:
-	if is_dragging:
+	if is_dragging or is_inspecting:
 		return
 		
 	is_hovered = hovered
@@ -293,7 +348,7 @@ func _on_mouse_entered() -> void:
 
 
 func _on_mouse_exited() -> void:
-	if not is_dragging and not is_selected:
+	if not is_dragging and not is_selected and not is_inspecting:
 		set_hovered(false)
 	card_hovered.emit(self, false)
 
@@ -302,14 +357,25 @@ func _on_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				if is_playable:
-					# Start drag
-					start_drag(get_parent().get_local_mouse_position())
+				# Record mouse down position for click vs drag detection
+				is_mouse_down = true
+				mouse_down_position = event.global_position
 			else:
 				if is_dragging:
 					# End drag
 					end_drag()
+				elif is_mouse_down:
+					# This was a click (not a drag) - request inspection
+					card_inspect_requested.emit(self)
+				is_mouse_down = false
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			# Right click to play selected card
 			if is_selected and is_playable:
 				card_played.emit(self)
+	
+	elif event is InputEventMouseMotion:
+		# Check if we should start dragging (moved beyond threshold)
+		if is_mouse_down and not is_dragging and is_playable:
+			var distance = event.global_position.distance_to(mouse_down_position)
+			if distance > DRAG_THRESHOLD:
+				start_drag(get_parent().get_local_mouse_position())

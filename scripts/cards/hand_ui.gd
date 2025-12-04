@@ -24,10 +24,23 @@ const NUM_SLOTS: int = 3
 
 # Layout settings
 @export var hand_width: float = 600.0
-@export var card_size: Vector2 = Vector2(100, 150)
-@export var hand_y_offset: float = 5.0  # From bottom of screen
+@export var card_size: Vector2 = Vector2(160, 240)  # Larger cards for readability
+@export var hand_y_offset: float = 10.0  # From bottom of screen
 @export var slot_spacing: float = 20.0  # Space between slots
-@export var slot_y_offset: float = 170.0  # How far above hand the slots are
+@export var slot_y_offset: float = 260.0  # How far above hand the slots are
+
+# Arc layout settings
+@export var arc_height: float = 30.0  # How much the arc curves up in the center
+@export var arc_rotation: float = 12.0  # Max rotation in degrees at edges (positive = fan out)
+@export var card_overlap: float = 0.3  # 0 = no overlap, 1 = full overlap
+
+# Inspection overlay
+var inspection_overlay: ColorRect = null
+var inspected_card: CardUI = null
+var inspected_card_original_parent: Node = null
+var inspected_card_return_position: Vector2 = Vector2.ZERO
+var inspected_card_return_rotation: float = 0.0
+var inspected_card_return_scale: Vector2 = Vector2.ONE
 
 # Slot visual settings
 @export var slot_color: Color = Color(0.15, 0.2, 0.15, 0.6)
@@ -50,6 +63,9 @@ func _ready() -> void:
 	slotted_cards.resize(NUM_SLOTS)
 	for i in NUM_SLOTS:
 		slotted_cards[i] = null
+	
+	# Create inspection overlay (hidden initially)
+	_create_inspection_overlay()
 	
 	# Create card slots
 	_create_card_slots()
@@ -206,6 +222,7 @@ func _create_card_ui(card_instance: CardInstance) -> CardUI:
 	card_ui.card_drag_started.connect(_on_card_drag_started)
 	card_ui.card_drag_ended.connect(_on_card_drag_ended)
 	card_ui.card_dropped.connect(_on_card_dropped)
+	card_ui.card_inspect_requested.connect(_on_card_inspect_requested)
 	
 	card_uis.append(card_ui)
 	return card_ui
@@ -295,7 +312,7 @@ func _clear_all_slots() -> void:
 
 
 func _arrange_cards(skip_dragging: bool = true) -> void:
-	"""Position cards in a fan layout in the hand area"""
+	"""Position cards in an arc layout in the hand area"""
 	# Filter out any invalid cards first
 	var valid_cards: Array[CardUI] = []
 	for card_ui in card_uis:
@@ -303,24 +320,74 @@ func _arrange_cards(skip_dragging: bool = true) -> void:
 			valid_cards.append(card_ui)
 	card_uis = valid_cards
 	
-	var total = card_uis.size()
+	var display_count = card_uis.size()
+	if skip_dragging and dragging_card and is_instance_valid(dragging_card):
+		display_count -= 1
 	
 	var current_index = 0
-	for i in total:
+	for i in card_uis.size():
 		var card_ui = card_uis[i]
 		if not is_instance_valid(card_ui):
 			continue
-		if card_ui == dragging_card:
+		if skip_dragging and card_ui == dragging_card:
 			continue
-		card_ui.set_hand_position(current_index, total - (1 if dragging_card and is_instance_valid(dragging_card) else 0), hand_width, -1)
+		
+		_set_card_arc_position(card_ui, current_index, display_count)
 		current_index += 1
 
 
+func _set_card_arc_position(card_ui: CardUI, index: int, total: int) -> void:
+	"""Position a card in an arc formation"""
+	if total <= 0:
+		return
+	
+	# Calculate normalized position (-1 to 1, center is 0)
+	var t: float = 0.0
+	if total > 1:
+		t = (float(index) / float(total - 1)) * 2.0 - 1.0  # -1 to 1
+	
+	# Calculate card spacing - overlap more with more cards
+	var base_spacing = card_size.x * (1.0 - card_overlap)
+	var total_width = base_spacing * (total - 1) if total > 1 else 0
+	total_width = min(total_width, hand_width - card_size.x)  # Cap at hand width
+	
+	# X position: spread cards evenly
+	var center_x = hand_width / 2.0
+	var x = center_x + (t * total_width / 2.0) - card_size.x / 2.0
+	
+	# Y position: arc curve (center cards are raised, edge cards are lower)
+	# Use a parabola: at t=0 (center), y=0; at t=±1 (edges), y=arc_height
+	var y = arc_height * (t * t)  # 0 at center, arc_height at edges
+	
+	# Rotation: fan OUT from center (left cards tilt left, right cards tilt right)
+	var rotation_deg = t * arc_rotation  # Positive so cards fan outward
+	
+	# Set targets
+	card_ui.target_position = Vector2(x, y)
+	card_ui.target_rotation = deg_to_rad(rotation_deg)
+	card_ui.return_position = card_ui.target_position
+	card_ui.return_rotation = card_ui.target_rotation
+	card_ui.hand_index = index
+	
+	# Z-index: center cards are on top
+	var center_dist = abs(index - (total - 1) / 2.0)
+	card_ui.z_index = int(total - center_dist)
+	
+	if not card_ui.is_dragging and not card_ui.is_selected:
+		card_ui.target_scale = Vector2.ONE
+
+
 func _update_layout() -> void:
-	"""Update hand position based on screen size"""
+	"""Update hand position based on screen size - positioned to the right of HoleViewer (800px)"""
 	var screen_size = get_viewport_rect().size
+	
+	# HoleViewer takes up 800px on the left, hand goes in remaining space
+	const HOLE_VIEWER_WIDTH = 800.0
+	var right_panel_width = screen_size.x - HOLE_VIEWER_WIDTH
+	
+	# Center the hand in the right panel area
 	position = Vector2(
-		(screen_size.x - hand_width) / 2,
+		HOLE_VIEWER_WIDTH + (right_panel_width - hand_width) / 2,
 		screen_size.y - card_size.y - hand_y_offset
 	)
 	
@@ -496,6 +563,130 @@ func _on_card_clicked(card_ui: CardUI) -> void:
 
 func _on_card_hovered(card_ui: CardUI, hovering: bool) -> void:
 	pass
+
+
+func _on_card_inspect_requested(card_ui: CardUI) -> void:
+	"""Show card in fullscreen inspection view"""
+	# If clicking the currently inspected card, close inspection
+	if inspected_card == card_ui:
+		_close_inspection()
+		return
+	
+	# If already inspecting a different card, close first
+	if inspected_card != null:
+		_close_inspection()
+		# Small delay then open new one
+		await get_tree().create_timer(0.2).timeout
+	
+	_show_inspection(card_ui)
+
+
+func _create_inspection_overlay() -> void:
+	"""Create the semi-transparent overlay for card inspection"""
+	inspection_overlay = ColorRect.new()
+	inspection_overlay.name = "InspectionOverlay"
+	inspection_overlay.color = Color(0, 0, 0, 0.7)
+	inspection_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	inspection_overlay.visible = false
+	inspection_overlay.z_index = 200
+	
+	# Make it cover the full screen (we'll update size in _process or resize)
+	inspection_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	
+	# Connect click to close inspection
+	inspection_overlay.gui_input.connect(_on_overlay_input)
+	
+	# Add to scene tree at a high level
+	add_child(inspection_overlay)
+
+
+func _on_overlay_input(event: InputEvent) -> void:
+	"""Handle clicks on the overlay to close inspection"""
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_close_inspection()
+
+
+func _show_inspection(card_ui: CardUI) -> void:
+	"""Animate card to center of screen for inspection"""
+	if not is_instance_valid(card_ui):
+		return
+	
+	inspected_card = card_ui
+	
+	# Store return state
+	inspected_card_return_position = card_ui.target_position
+	inspected_card_return_rotation = card_ui.target_rotation
+	inspected_card_return_scale = card_ui.target_scale
+	
+	# Update overlay to cover full screen
+	var screen_size = get_viewport_rect().size
+	inspection_overlay.position = -global_position  # Offset to cover full screen from our position
+	inspection_overlay.size = screen_size
+	
+	# Show overlay with fade
+	inspection_overlay.modulate.a = 0.0
+	inspection_overlay.visible = true
+	var overlay_tween = create_tween()
+	overlay_tween.tween_property(inspection_overlay, "modulate:a", 1.0, 0.2)
+	
+	# Scale up the card (3.0x = triple size)
+	var inspect_scale = 3.0
+	
+	# Set pivot to center of card (unscaled)
+	card_ui.pivot_offset = card_size / 2.0
+	
+	# Calculate where the card's top-left corner needs to be
+	# so that its CENTER lands at screen center
+	# Screen center in local coords:
+	var screen_center_local = (screen_size / 2.0) - global_position
+	
+	# The card's center (after scaling) will be at: position + pivot_offset
+	# We want: position + pivot_offset = screen_center_local
+	# So: position = screen_center_local - pivot_offset
+	# But pivot_offset is in unscaled coords, and position is also unscaled
+	var target_pos = screen_center_local - card_ui.pivot_offset
+	
+	# Animate card to center
+	card_ui.z_index = 250  # Above overlay
+	card_ui.target_position = target_pos
+	card_ui.target_rotation = 0.0
+	card_ui.target_scale = Vector2(inspect_scale, inspect_scale)
+	
+	# Enable inspection mode for mouse reaction
+	card_ui.is_inspecting = true
+	card_ui.inspect_center = screen_center_local
+	
+	# Disable dragging while inspecting
+	card_ui.is_dragging = false
+	card_ui.is_mouse_down = false
+
+
+func _close_inspection() -> void:
+	"""Return inspected card to hand"""
+	if inspected_card == null or not is_instance_valid(inspected_card):
+		inspection_overlay.visible = false
+		inspected_card = null
+		return
+	
+	# Fade out overlay
+	var overlay_tween = create_tween()
+	overlay_tween.tween_property(inspection_overlay, "modulate:a", 0.0, 0.15)
+	overlay_tween.tween_callback(func(): inspection_overlay.visible = false)
+	
+	# Disable inspection mode
+	inspected_card.is_inspecting = false
+	
+	# Return card to hand position
+	inspected_card.target_position = inspected_card_return_position
+	inspected_card.target_rotation = inspected_card_return_rotation
+	inspected_card.target_scale = inspected_card_return_scale
+	inspected_card.z_index = 0
+	
+	inspected_card = null
+	
+	# Re-arrange to fix z-indices
+	_arrange_cards(false)
 
 
 func _on_card_ui_played(card_ui: CardUI) -> void:

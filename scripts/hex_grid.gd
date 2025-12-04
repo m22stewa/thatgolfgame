@@ -244,6 +244,7 @@ var tile_nodes: Dictionary = {}  # Key: Vector2i cell position, Value: Node3D (t
 # Trajectory line
 var trajectory_mesh: MeshInstance3D = null
 var trajectory_shadow_mesh: MeshInstance3D = null  # Shadow line on ground
+var curved_trajectory_mesh: MeshInstance3D = null  # Curved trajectory for hook/slice
 var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary by club)
 
 # Target locking
@@ -3523,8 +3524,7 @@ func _generate_course_features() -> void:
 			for row in range(start_row_l, end_row_l):
 				var depth_l = 2 + randi() % (max_depth - 1)
 				for col in range(0, depth_l):
-					if randf() < 0.85 or col == 0:
-						set_cell(col, row, SurfaceType.WATER)
+					set_cell(col, row, SurfaceType.WATER)
 
 		elif edge == 1:
 			var start_row_r = randi() % int(grid_height * 0.3)
@@ -3533,8 +3533,7 @@ func _generate_course_features() -> void:
 			for row in range(start_row_r, end_row_r):
 				var depth_r = 2 + randi() % (max_depth - 1)
 				for col in range(grid_width - depth_r, grid_width):
-					if randf() < 0.85 or col == grid_width - 1:
-						set_cell(col, row, SurfaceType.WATER)
+					set_cell(col, row, SurfaceType.WATER)
 
 		elif edge == 2:
 			var start_col_t = randi() % int(grid_width * 0.3)
@@ -3543,8 +3542,7 @@ func _generate_course_features() -> void:
 			for col in range(start_col_t, end_col_t):
 				var depth_t = 2 + randi() % (max_depth - 1)
 				for row in range(0, depth_t):
-					if randf() < 0.85 or row == 0:
-						set_cell(col, row, SurfaceType.WATER)
+					set_cell(col, row, SurfaceType.WATER)
 
 		else:
 			var start_col_b = randi() % int(grid_width * 0.3)
@@ -3553,8 +3551,7 @@ func _generate_course_features() -> void:
 			for col in range(start_col_b, end_col_b):
 				var depth_b = 2 + randi() % (max_depth - 1)
 				for row in range(grid_height - depth_b, grid_height):
-					if randf() < 0.85 or row == grid_height - 1:
-						set_cell(col, row, SurfaceType.WATER)
+					set_cell(col, row, SurfaceType.WATER)
 
 	# Place tee at top center
 	var tee_col = int(grid_width / 2)
@@ -3655,6 +3652,7 @@ func _generate_course_features() -> void:
 						var surf_here = get_cell(fx, fy)
 						if surf_here != SurfaceType.GREEN \
 						and surf_here != SurfaceType.TEE \
+						and surf_here != SurfaceType.WATER \
 						and not is_adjacent_to_green \
 						and not is_adjacent_to_tee:
 							set_cell(fx, fy, SurfaceType.FAIRWAY)
@@ -3979,7 +3977,7 @@ func _trim_organic_edges() -> void:
 	for col in range(grid_width):
 		for row in range(grid_height):
 			var surf = get_cell(col, row)
-			if surf == -1 or surf == SurfaceType.TEE or surf == SurfaceType.GREEN or surf == SurfaceType.FAIRWAY or surf == SurfaceType.FLAG:
+			if surf == -1 or surf == SurfaceType.TEE or surf == SurfaceType.GREEN or surf == SurfaceType.FAIRWAY or surf == SurfaceType.FLAG or surf == SurfaceType.WATER:
 				continue
 			
 			# Count empty neighbors
@@ -4005,12 +4003,18 @@ func _trim_organic_edges() -> void:
 
 
 # Remove water cells that are not connected to land (floating water)
+# Exception: water at grid edges is always kept (edge water features)
 func _cleanup_floating_water() -> void:
 	var water_to_remove: Array = []
 	
 	for col in range(grid_width):
 		for row in range(grid_height):
 			if get_cell(col, row) != SurfaceType.WATER:
+				continue
+			
+			# Water at grid edges is always kept (edge water bodies are intentional features)
+			var is_edge_water = col <= 1 or col >= grid_width - 2 or row <= 1 or row >= grid_height - 2
+			if is_edge_water:
 				continue
 			
 			# Check if this water cell is adjacent to any land (non-empty, non-water)

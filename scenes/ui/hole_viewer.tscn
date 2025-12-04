@@ -9,7 +9,7 @@ anchor_bottom = 1.0
 offset_right = 800.0
 grow_vertical = 2
 script = ExtResource("1_hole_viewer")
-pan_speed = 0.4
+pan_speed = 0.05
 follow_speed = 4.0
 
 [node name="Border" type="ReferenceRect" parent="."]

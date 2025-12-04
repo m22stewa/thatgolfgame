@@ -1,15 +1,22 @@
-[gd_scene load_steps=3 format=3 uid="uid://c7ppupfhd4nsq"]
+[gd_scene load_steps=5 format=3 uid="uid://c7ppupfhd4nsq"]
 
 [ext_resource type="Script" uid="uid://d07rvvcm5vxy5" path="res://scripts/cards/card_ui.gd" id="1_card_ui"]
-[ext_resource type="Texture2D" uid="uid://b7g14kdv74gq4" path="res://textures/full-frame-shot-green-rug.jpg" id="2_1kpl7"]
+[ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="1_fbbsm"]
+[ext_resource type="Texture2D" uid="uid://vl0mjpdp7k02" path="res://textures/card.png" id="2_1kpl7"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_fbbsm"]
+font_size = 13
+font_color = Color(0, 0, 0, 1)
+shadow_size = 0
 
 [node name="CardUI" type="Control"]
-custom_minimum_size = Vector2(100, 150)
+custom_minimum_size = Vector2(160, 240)
 layout_mode = 3
 anchors_preset = 0
-offset_right = 208.0
-offset_bottom = 309.0
-pivot_offset = Vector2(50, 75)
+offset_right = 160.0
+offset_bottom = 240.0
+pivot_offset = Vector2(80, 120)
+theme = ExtResource("1_fbbsm")
 script = ExtResource("1_card_ui")
 
 [node name="Background" type="ColorRect" parent="."]
@@ -18,62 +25,72 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_right = 6.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 color = Color(0.2, 0.3, 0.2, 1)
 
 [node name="TextureRect" type="TextureRect" parent="."]
-layout_mode = 0
-offset_right = 208.0
-offset_bottom = 304.0
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 texture = ExtResource("2_1kpl7")
-expand_mode = 5
+expand_mode = 1
 
 [node name="RarityIndicator" type="ColorRect" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
-offset_bottom = 6.0
+offset_bottom = 16.0
 grow_horizontal = 2
 mouse_filter = 2
 color = Color(0.6, 0.6, 0.6, 1)
 
 [node name="CardName" type="Label" parent="."]
-layout_mode = 0
-offset_left = 4.0
-offset_top = 10.0
-offset_right = 96.0
-offset_bottom = 32.0
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 8.0
+offset_top = 20.0
+offset_right = -8.0
+offset_bottom = 42.0
+grow_horizontal = 2
+text = "lorem ipsum"
+label_settings = SubResource("LabelSettings_fbbsm")
 horizontal_alignment = 1
 autowrap_mode = 2
 
 [node name="Description" type="RichTextLabel" parent="."]
-layout_mode = 0
-offset_left = 6.0
-offset_top = 35.0
-offset_right = 94.0
-offset_bottom = 125.0
+layout_mode = 1
+offset_left = 29.0
+offset_top = 142.0
+offset_right = 133.0
+offset_bottom = 210.0
 mouse_filter = 2
+theme_override_colors/default_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/normal_font_size = 12
 bbcode_enabled = true
-fit_content = true
+text = "lorem ipsum"
 scroll_active = false
 
 [node name="CostLabel" type="Label" parent="."]
 visible = false
 layout_mode = 0
-offset_left = 70.0
-offset_top = 130.0
-offset_right = 96.0
-offset_bottom = 146.0
+offset_left = 6.0
+offset_top = 5.0
+offset_right = 32.0
+offset_bottom = 28.0
 horizontal_alignment = 2
 
 [node name="TypeIcon" type="TextureRect" parent="."]
 visible = false
 layout_mode = 0
-offset_left = 4.0
-offset_top = 130.0
-offset_right = 20.0
-offset_bottom = 146.0
+offset_left = 31.0
+offset_top = 2.0
+offset_right = 47.0
+offset_bottom = 18.0
 mouse_filter = 2

@@ -53,6 +53,10 @@ var current_state: State = State.IDLE
 var marker_position: float = 0.0  # 0.0 = left edge, 1.0 = right edge
 var power_value: float = 0.0  # 0.0 to 1.0 (actual power percentage)
 var accuracy_value: float = 0.0  # How far from accuracy zone center
+var dwell_timer: float = 0.0  # Brief pause at 100% power before returning
+
+# Dwell time at 100% power (seconds) - gives player time to react
+const POWER_DWELL_TIME: float = 0.15
 
 # Track dimensions (set on ready)
 var track_width: float = 400.0
@@ -251,10 +255,13 @@ func _update_power_phase(delta: float) -> void:
 	var current_power = (marker_position - zero_point) / power_zone_size
 	current_power = clamp(current_power, 0.0, 1.0)
 	
-	# If marker reaches 100% (right edge), start returning
+	# If marker reaches 100% (right edge), pause briefly then start returning
 	if marker_position >= 1.0:
-		current_state = State.POWER_RETURN
-		_update_state_label("Set Power!")
+		dwell_timer += delta
+		if dwell_timer >= POWER_DWELL_TIME:
+			current_state = State.POWER_RETURN
+			dwell_timer = 0.0
+			_update_state_label("Set Power!")
 	
 	_update_marker_visual()
 	if power_label:
@@ -370,6 +377,7 @@ func _reset_meter() -> void:
 	marker_position = zero_point  # Start at the zero point (0% power)
 	power_value = 0.0
 	accuracy_value = 0.0
+	dwell_timer = 0.0
 	
 	if marker:
 		marker.position.x = zero_point * track_width - marker.size.x / 2.0
@@ -412,7 +420,7 @@ func configure_for_shot(club_difficulty: float, lie_difficulty: float, power_cap
 	# Speed: harder shots have faster meters
 	# Base: 280-380 pixels/sec depending on difficulty
 	swing_speed = lerp(280.0, 380.0, combined)
-	return_speed = swing_speed * 1.15  # Return slightly faster
+	return_speed = swing_speed * 1.05  # Return slightly faster
 	
 	# Power cap from lie
 	max_power = clamp(power_cap, 0.1, 1.0)
