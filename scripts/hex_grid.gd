@@ -253,6 +253,10 @@ var locked_cell: Vector2i = Vector2i(-1, -1)
 var locked_target_pos: Vector3 = Vector3.ZERO
 var target_highlight_mesh: MeshInstance3D = null  # White highlight on active/locked cell
 
+# Animation state
+var pending_next_shot: bool = false  # True if player has pre-aimed during animation
+var current_ball_tween: Tween = null  # Reference to current ball animation tween
+
 # Shot system components
 var shot_manager: ShotManager = null
 var modifier_manager: ModifierManager = null
@@ -1292,6 +1296,28 @@ func _process(delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# Handle animation skip/fast-forward
+	if shot_manager and shot_manager.is_animating:
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+				# Single click during animation = fast forward
+				if shot_manager.animation_speed < shot_manager.FAST_FORWARD_SPEED:
+					shot_manager.fast_forward_animation()
+					print("Fast-forwarding animation (3x)")
+				else:
+					# Already fast-forwarding, skip to end
+					shot_manager.skip_animation()
+					_skip_current_animation()
+					print("Skipping animation")
+				return
+		elif event is InputEventKey:
+			if event.pressed and event.keycode == KEY_SPACE:
+				# Space bar = skip animation entirely
+				shot_manager.skip_animation()
+				_skip_current_animation()
+				print("Skipping animation (Space)")
+				return
+	
 	# Only process mouse clicks if not handled by UI
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -2124,6 +2150,10 @@ func _on_shot_completed(context: ShotContext) -> void:
 	target_locked = false
 	target_highlight_mesh.visible = false
 	
+	# Mark animation as started
+	if shot_manager:
+		shot_manager.start_animation()
+	
 	# Animate ball flight to landing position, then bounces
 	if golf_ball and context.landing_tile.x >= 0:
 		var ball_tile = world_to_grid(golf_ball.position)
@@ -2147,6 +2177,10 @@ func _on_shot_completed(context: ShotContext) -> void:
 		
 		print("Final tile after bounces: [%d, %d]" % [final_tile.x, final_tile.y])
 	
+	# Mark animation as ended
+	if shot_manager:
+		shot_manager.end_animation()
+	
 	# Hide trajectory after landing
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
@@ -2160,9 +2194,18 @@ func _on_shot_completed(context: ShotContext) -> void:
 		print("HOLE COMPLETE!")
 		# UI handles showing hole complete popup via signal
 	else:
-		# Start next shot after score popup finishes
-		await get_tree().create_timer(2.5).timeout
+		# Short delay for score popup, then start next shot (reduced from 2.5s)
+		await get_tree().create_timer(0.8).timeout
 		_start_new_shot()
+
+
+func _skip_current_animation() -> void:
+	"""Skip the current ball animation by killing the tween"""
+	if current_ball_tween and current_ball_tween.is_valid():
+		# Get the final position from the tween if possible
+		current_ball_tween.custom_step(100.0)  # Fast forward to end
+		current_ball_tween.kill()
+		current_ball_tween = null
 
 
 var hole_complete_triggered: bool = false  # Prevent multiple triggers
@@ -2173,6 +2216,10 @@ func _trigger_hole_complete() -> void:
 		return  # Already triggered
 	
 	hole_complete_triggered = true
+	
+	# End animation state
+	if shot_manager:
+		shot_manager.end_animation()
 	
 	# Stop ball spin
 	if golf_ball:
@@ -2189,8 +2236,8 @@ func _trigger_hole_complete() -> void:
 	_play_hole_confetti()
 	
 	# TODO: Show hole complete UI, calculate final score, etc.
-	# For now, just wait and regenerate
-	await get_tree().create_timer(2.0).timeout
+	# For now, just wait and regenerate (reduced from 2.0s)
+	await get_tree().create_timer(1.2).timeout
 	
 	# Reset for next hole
 	hole_complete_triggered = false
@@ -2212,9 +2259,10 @@ func _play_hole_confetti() -> void:
 			elif confetti is GPUParticles3D or confetti is CPUParticles3D:
 				confetti.emitting = true
 			
-			# Hide after 2 seconds
+			# Hide after 2 seconds (check if still valid - may be freed on regenerate)
 			await get_tree().create_timer(2.0).timeout
-			confetti.visible = false
+			if is_instance_valid(confetti):
+				confetti.visible = false
 
 
 func _get_carry_position(from_tile: Vector2i, target_tile: Vector2i, bounce_count: int) -> Vector2i:
@@ -2358,6 +2406,9 @@ func _animate_ball_bounce_to_tile(start_pos: Vector3, end_pos: Vector3, bounce_n
 	if golf_ball == null:
 		return
 	
+	# Get animation speed multiplier
+	var speed_mult = shot_manager.get_animation_speed() if shot_manager else 1.0
+	
 	var distance = start_pos.distance_to(end_pos)
 	
 	# Bounce height decreases with each bounce (first bounce highest)
@@ -2366,7 +2417,7 @@ func _animate_ball_bounce_to_tile(start_pos: Vector3, end_pos: Vector3, bounce_n
 	var bounce_height = clamp(0.8 * height_factor, 0.15, 0.8)
 	
 	# Duration also decreases slightly with each bounce
-	var base_duration = clamp(distance * 0.15, 0.2, 0.5)
+	var base_duration = clamp(distance * 0.15, 0.2, 0.5) / speed_mult
 	var duration = base_duration * (0.7 + 0.3 * height_factor)
 	
 	# Keep ball spinning during bounces
@@ -2375,13 +2426,13 @@ func _animate_ball_bounce_to_tile(start_pos: Vector3, end_pos: Vector3, bounce_n
 	if spin_axis.length() < 0.1:
 		spin_axis = Vector3.RIGHT
 	
-	var spin_speed = 8.0 * height_factor  # Spin slows down with bounces
+	var spin_speed = 8.0 * height_factor * speed_mult  # Spin slows down with bounces
 	golf_ball.set_meta("spin_axis", spin_axis)
 	golf_ball.set_meta("spin_speed", spin_speed)
 	golf_ball.set_meta("is_spinning", true)
 	
 	# Animate the bounce arc
-	var tween = create_tween()
+	current_ball_tween = create_tween()
 	var steps = 15
 	var step_duration = duration / steps
 	
@@ -2398,19 +2449,20 @@ func _animate_ball_bounce_to_tile(start_pos: Vector3, end_pos: Vector3, bounce_n
 		
 		# Easing: fast up, slow at peak, fast down
 		if t < 0.3:
-			tween.set_ease(Tween.EASE_OUT)
-			tween.set_trans(Tween.TRANS_QUAD)
+			current_ball_tween.set_ease(Tween.EASE_OUT)
+			current_ball_tween.set_trans(Tween.TRANS_QUAD)
 		elif t > 0.7:
-			tween.set_ease(Tween.EASE_IN)
-			tween.set_trans(Tween.TRANS_QUAD)
+			current_ball_tween.set_ease(Tween.EASE_IN)
+			current_ball_tween.set_trans(Tween.TRANS_QUAD)
 		else:
-			tween.set_ease(Tween.EASE_IN_OUT)
-			tween.set_trans(Tween.TRANS_SINE)
+			current_ball_tween.set_ease(Tween.EASE_IN_OUT)
+			current_ball_tween.set_trans(Tween.TRANS_SINE)
 		
-		tween.tween_property(golf_ball, "position", pos, step_duration)
+		current_ball_tween.tween_property(golf_ball, "position", pos, step_duration)
 	
-	await tween.finished
+	await current_ball_tween.finished
 	golf_ball.position = end_pos
+	current_ball_tween = null
 
 
 func _apply_spin_effect(from_tile: Vector2i, roll_dir: Vector2i) -> Vector2i:
@@ -2482,14 +2534,17 @@ func _animate_ball_roll(start_pos: Vector3, end_pos: Vector3, is_spin_roll: bool
 	if golf_ball == null:
 		return
 	
+	# Get animation speed multiplier
+	var speed_mult = shot_manager.get_animation_speed() if shot_manager else 1.0
+	
 	var distance = start_pos.distance_to(end_pos)
 	
 	# Spin rolls are slower and more deliberate
 	var roll_duration: float
 	if is_spin_roll:
-		roll_duration = clamp(distance * 0.25, 0.4, 0.8)  # Slower for spin
+		roll_duration = clamp(distance * 0.25, 0.4, 0.8) / speed_mult  # Slower for spin
 	else:
-		roll_duration = clamp(distance * 0.12, 0.15, 0.4)  # Quick natural roll
+		roll_duration = clamp(distance * 0.12, 0.15, 0.4) / speed_mult  # Quick natural roll
 	
 	# Calculate roll spin (ball rotates forward along ground) - MUCH slower
 	var travel_dir = (end_pos - start_pos).normalized()
@@ -2501,16 +2556,17 @@ func _animate_ball_roll(start_pos: Vector3, end_pos: Vector3, is_spin_roll: bool
 	var total_rotations = distance * 0.3  # Much slower spin
 	var spin_speed = (total_rotations * TAU) / roll_duration
 	golf_ball.set_meta("spin_axis", spin_axis)
-	golf_ball.set_meta("spin_speed", spin_speed)
+	golf_ball.set_meta("spin_speed", spin_speed * speed_mult)
 	golf_ball.set_meta("is_spinning", true)
 	
 	# Tween position along ground with smooth deceleration
-	var tween = create_tween()
-	tween.set_ease(Tween.EASE_OUT)
-	tween.set_trans(Tween.TRANS_QUAD)
-	tween.tween_property(golf_ball, "position", end_pos, roll_duration)
+	current_ball_tween = create_tween()
+	current_ball_tween.set_ease(Tween.EASE_OUT)
+	current_ball_tween.set_trans(Tween.TRANS_QUAD)
+	current_ball_tween.tween_property(golf_ball, "position", end_pos, roll_duration)
 	
-	await tween.finished
+	await current_ball_tween.finished
+	current_ball_tween = null
 	
 	# Don't stop spin here - let it continue into next roll segment for smoothness
 	# Spin will be stopped after all rolling is complete
@@ -2587,13 +2643,32 @@ func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
 
 func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> void:
 	"""Animate ball flight with a smooth bounce-and-roll transition at landing.
-	   The ball lands, does a small bounce, and is ready to roll."""
+	   The ball lands, does a small bounce, and is ready to roll.
+	   Uses curved flight path when swing_curve is non-zero."""
 	if golf_ball == null:
 		return
 	
+	# Get animation speed multiplier
+	var speed_mult = shot_manager.get_animation_speed() if shot_manager else 1.0
+	
+	# Get curve amount from shot context (if available)
+	var curve_amount: float = 0.0
+	var curve_type: String = "draw"
+	if shot_manager and shot_manager.current_context:
+		curve_amount = shot_manager.current_context.swing_curve
+		# Also add any card-based curve effects
+		curve_amount += shot_manager.current_context.curve_strength
+		curve_amount += shot_manager.current_context.curve_mod
+		
+		# Determine curve type based on direction
+		if curve_amount < 0:
+			curve_type = "draw"  # Hook/Draw curves left
+		else:
+			curve_type = "fade"  # Slice/Fade curves right
+	
 	# Calculate flight parameters based on distance
 	var distance = start_pos.distance_to(end_pos)
-	var flight_duration = clamp(distance * 0.08, 0.5, 2.5)
+	var flight_duration = clamp(distance * 0.08, 0.5, 2.5) / speed_mult
 	
 	# Peak height based on distance and club arc height
 	var peak_height = clamp(trajectory_height * 1.5, 2.0, 15.0)
@@ -2603,39 +2678,59 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 	if height_diff > 0:
 		peak_height += height_diff * 0.5
 	
-	# Calculate spin direction (ball spins in direction of travel)
+	# Scale curve by distance - longer shots curve more visibly
+	# Each unit of curve = roughly 0.5 world units of lateral movement at peak
+	var scaled_curve = curve_amount * distance * 0.15
+	
+	# Calculate spin direction (ball spins in direction of travel, with tilt for curve)
 	var travel_dir = (end_pos - start_pos).normalized()
 	var spin_axis = travel_dir.cross(Vector3.UP).normalized()
 	if spin_axis.length() < 0.1:
 		spin_axis = Vector3.RIGHT
 	
+	# Tilt spin axis based on curve (adds sidespin appearance)
+	if abs(curve_amount) > 0.1:
+		var tilt_amount = curve_amount * 0.3  # Subtle tilt
+		spin_axis = spin_axis.rotated(travel_dir, tilt_amount)
+	
 	# Start ball spin animation (slower, more realistic)
 	var total_rotations = clamp(distance * 0.2, 1.0, 8.0)  # Fewer rotations
 	var spin_speed = (total_rotations * TAU) / flight_duration
 	golf_ball.set_meta("spin_axis", spin_axis)
-	golf_ball.set_meta("spin_speed", spin_speed)
+	golf_ball.set_meta("spin_speed", spin_speed * speed_mult)  # Speed up spin too
 	golf_ball.set_meta("is_spinning", true)
 	
+	# Print curve info for debugging
+	if abs(curve_amount) > 0.1:
+		print("Shot curve: %.2f (%s), scaled lateral: %.1f units" % [curve_amount, curve_type, scaled_curve])
+	
 	# Create tween for flight arc
-	var tween = create_tween()
-	var steps = 25
+	current_ball_tween = create_tween()
+	var steps = 30  # More steps for smoother curves
 	var step_duration = flight_duration / steps
 	
 	for i in range(1, steps + 1):
 		var t = float(i) / float(steps)
-		var arc_pos = _calculate_arc_position(start_pos, end_pos, t, peak_height)
+		
+		# Use curved arc if there's significant curve, otherwise straight
+		var arc_pos: Vector3
+		if abs(scaled_curve) > 0.3:
+			arc_pos = _calculate_curved_arc_position(start_pos, end_pos, t, peak_height, scaled_curve, curve_type)
+		else:
+			arc_pos = _calculate_arc_position(start_pos, end_pos, t, peak_height)
 		
 		if t < 0.5:
-			tween.set_trans(Tween.TRANS_SINE)
-			tween.set_ease(Tween.EASE_OUT)
+			current_ball_tween.set_trans(Tween.TRANS_SINE)
+			current_ball_tween.set_ease(Tween.EASE_OUT)
 		else:
-			tween.set_trans(Tween.TRANS_QUAD)
-			tween.set_ease(Tween.EASE_IN)
+			current_ball_tween.set_trans(Tween.TRANS_QUAD)
+			current_ball_tween.set_ease(Tween.EASE_IN)
 		
-		tween.tween_property(golf_ball, "position", arc_pos, step_duration)
+		current_ball_tween.tween_property(golf_ball, "position", arc_pos, step_duration)
 	
-	await tween.finished
+	await current_ball_tween.finished
 	golf_ball.position = end_pos
+	current_ball_tween = null
 	
 	# Skip the landing bounce - go straight into the bounce rollout
 	# The first bounce in _apply_bounce_rollout will handle the transition
@@ -2740,6 +2835,73 @@ func _calculate_arc_position(start: Vector3, end: Vector3, t: float, peak_height
 	var arc_height = 4.0 * peak_height * t * (1.0 - t)
 	
 	# Start from the higher of the two elevations for the arc base
+	var base_y = lerp(start.y, end.y, t)
+	pos.y = base_y + arc_height
+	
+	return pos
+
+
+func _calculate_curved_arc_position(start: Vector3, end: Vector3, t: float, peak_height: float, curve_amount: float, curve_type: String = "draw") -> Vector3:
+	"""Calculate position along a curved parabolic arc at time t (0 to 1).
+	   curve_amount: lateral offset at landing (positive = right, negative = left)
+	   
+	   The ball follows a curved path from start to end, where the curve builds
+	   progressively throughout the flight (not a banana that goes out and back).
+	   
+	   Real golf curve physics:
+	   - Ball starts relatively straight (initial velocity dominates)
+	   - Sidespin effect increases as ball slows down
+	   - Curve accelerates in the second half of flight
+	   - Ball lands at the offset position (curve_amount applied to end)
+	"""
+	# The end position already has the curve offset baked in from shot calculation
+	# We need to animate a smooth curve FROM start TO end, not through a side point
+	
+	# Calculate shot direction vector (horizontal only)
+	var shot_dir = Vector3(end.x - start.x, 0, end.z - start.z).normalized()
+	
+	# Perpendicular vector (90 degrees to the right of shot direction)
+	var perp = Vector3(-shot_dir.z, 0, shot_dir.x)
+	
+	# For a proper golf curve:
+	# - At t=0: ball is at start, no lateral offset
+	# - At t=1: ball is at end (which includes full curve offset)
+	# - During flight: ball curves progressively, with more curve late
+	#
+	# We use a quadratic bezier-like curve where the control point is
+	# offset in the OPPOSITE direction of the curve (since the ball
+	# starts straight and curves toward the end)
+	
+	# Calculate how much the ball should "lag" behind the straight line
+	# Early in flight: ball is closer to the straight-to-original-aim line
+	# Late in flight: ball curves toward the actual end position
+	
+	# Curve profile: starts straight, accelerates curve in second half
+	# Using smoothstep-like curve for natural acceleration
+	var curve_progress: float
+	if curve_type == "push" or curve_type == "pull":
+		# Push/Pull: Linear curve from start
+		curve_progress = t
+	else:
+		# Draw/Fade/Hook/Slice: Slow start, fast finish
+		# This makes the ball appear to start straight then curve hard
+		curve_progress = t * t * (3.0 - 2.0 * t)  # Smoothstep
+		# Make it even more back-loaded for dramatic curve
+		curve_progress = pow(curve_progress, 0.7)  # Bias toward end
+	
+	# The "straight line" aim point (where ball would go without curve)
+	# This is offset from the end by the negative of the curve amount
+	var straight_aim = end - perp * curve_amount
+	
+	# Interpolate between straight path and curved path
+	var straight_pos = start.lerp(straight_aim, t)
+	var curved_end_pos = start.lerp(end, t)
+	
+	# Blend from straight trajectory toward curved end based on progress
+	var pos = straight_pos.lerp(curved_end_pos, curve_progress)
+	
+	# Parabolic arc for Y (peaks at t=0.5)
+	var arc_height = 4.0 * peak_height * t * (1.0 - t)
 	var base_y = lerp(start.y, end.y, t)
 	pos.y = base_y + arc_height
 	
@@ -2985,15 +3147,27 @@ func _update_trajectory(target_pos: Vector3) -> void:
 	var start_pos = golf_ball.position
 	var end_pos = target_pos
 	
-	# Draw the aim trajectory (white)
-	_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, Color(1.0, 1.0, 1.0, 0.8))
+	# Check if there's any pre-applied curve from cards/modifiers
+	var pre_curve: float = 0.0
+	if shot_manager and shot_manager.current_context:
+		pre_curve = shot_manager.current_context.curve_strength + shot_manager.current_context.curve_mod
+	
+	# Draw the aim trajectory
+	if abs(pre_curve) > 0.1:
+		# Show curved trajectory preview if cards add curve
+		var distance = start_pos.distance_to(end_pos)
+		var scaled_curve = pre_curve * distance * 0.15
+		_draw_trajectory_arc_curved(trajectory_mesh, start_pos, end_pos, scaled_curve, Color(1.0, 1.0, 1.0, 0.8))
+	else:
+		# Straight trajectory (curve comes from swing meter later)
+		_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, Color(1.0, 1.0, 1.0, 0.8))
 	trajectory_mesh.visible = true
 	
-	# Curved trajectory is no longer used - curve is handled by swing meter
+	# Curved trajectory mesh not used anymore
 	curved_trajectory_mesh.visible = false
 	
 	# Draw shadow line on ground
-	_draw_trajectory_shadow(start_pos, end_pos, false)
+	_draw_trajectory_shadow(start_pos, end_pos, abs(pre_curve) > 0.1)
 
 
 func _draw_trajectory_arc(mesh: MeshInstance3D, start_pos: Vector3, end_pos: Vector3, color: Color) -> void:
@@ -3041,6 +3215,84 @@ func _draw_trajectory_arc(mesh: MeshInstance3D, start_pos: Vector3, end_pos: Vec
 		
 		var left_pos = center_pos - right_dir * ribbon_width
 		var right_pos = center_pos + right_dir * ribbon_width
+		
+		im.surface_add_vertex(left_pos)
+		im.surface_add_vertex(right_pos)
+	
+	im.surface_end()
+
+
+func _draw_trajectory_arc_curved(mesh: MeshInstance3D, start_pos: Vector3, end_pos: Vector3, curve_amount: float, color: Color) -> void:
+	"""Draw a curved parabolic arc trajectory ribbon (for draw/fade shots).
+	   The curve starts straight and progressively curves toward the end position."""
+	var im: ImmediateMesh = mesh.mesh
+	im.clear_surfaces()
+	
+	var segments = 35  # More segments for smoother curve
+	var ribbon_width = 0.12
+	var invisible_amount = 0.10
+	var fade_amount = 0.15
+	
+	# Calculate perpendicular direction for curve offset
+	var shot_dir = Vector3(end_pos.x - start_pos.x, 0, end_pos.z - start_pos.z).normalized()
+	var perp = Vector3(-shot_dir.z, 0, shot_dir.x)  # 90 degrees to the right
+	
+	# The "straight line" aim point (where ball would go without curve)
+	var straight_aim = end_pos - perp * curve_amount
+	
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	
+	for i in range(segments + 1):
+		var t = float(i) / float(segments)
+		
+		# Calculate alpha with invisible sections and fades
+		var alpha = 0.0
+		if t < invisible_amount:
+			alpha = 0.0
+		elif t < invisible_amount + fade_amount:
+			alpha = (t - invisible_amount) / fade_amount
+		elif t > (1.0 - invisible_amount):
+			alpha = 0.0
+		elif t > (1.0 - invisible_amount - fade_amount):
+			alpha = (1.0 - invisible_amount - t) / fade_amount
+		else:
+			alpha = 1.0
+		
+		im.surface_set_color(Color(color.r, color.g, color.b, alpha * color.a))
+		
+		# Curve progress: starts straight, accelerates curve late
+		var curve_progress = t * t * (3.0 - 2.0 * t)  # Smoothstep
+		curve_progress = pow(curve_progress, 0.7)  # Bias toward end
+		
+		# Blend from straight path toward curved end
+		var straight_pos = start_pos.lerp(straight_aim, t)
+		var curved_end_lerp = start_pos.lerp(end_pos, t)
+		var center_pos = straight_pos.lerp(curved_end_lerp, curve_progress)
+		
+		# Height arc
+		var arc_height = sin(t * PI) * trajectory_height
+		center_pos.y = lerp(start_pos.y, end_pos.y, t) + arc_height
+		
+		# Calculate tangent for ribbon orientation (derivative of curve)
+		var tangent: Vector3
+		if t < 0.99:
+			var next_t = t + 0.02
+			var next_progress = next_t * next_t * (3.0 - 2.0 * next_t)
+			next_progress = pow(next_progress, 0.7)
+			var next_straight = start_pos.lerp(straight_aim, next_t)
+			var next_curved = start_pos.lerp(end_pos, next_t)
+			var next_pos = next_straight.lerp(next_curved, next_progress)
+			tangent = (next_pos - center_pos).normalized()
+		else:
+			tangent = (end_pos - center_pos).normalized()
+		tangent.y = 0
+		if tangent.length() < 0.001:
+			tangent = shot_dir
+		tangent = tangent.normalized()
+		var local_right = tangent.cross(Vector3.UP).normalized()
+		
+		var left_pos = center_pos - local_right * ribbon_width
+		var right_pos = center_pos + local_right * ribbon_width
 		
 		im.surface_add_vertex(left_pos)
 		im.surface_add_vertex(right_pos)

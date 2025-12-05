@@ -534,8 +534,8 @@ func _on_shot_completed(context: ShotContext) -> void:
 	
 	# Check for hole complete
 	if context.has_metadata("reached_flag"):
-		# Wait for score popup to finish
-		await get_tree().create_timer(2.5).timeout
+		# Wait for score popup to finish (reduced from 2.5s)
+		await get_tree().create_timer(1.0).timeout
 		show_hole_complete(shots_this_hole, current_par, total_points)
 
 

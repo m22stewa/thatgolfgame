@@ -26,6 +26,12 @@ var current_context: ShotContext = null
 
 # Shot state
 var is_shot_in_progress: bool = false
+var is_animating: bool = false  # True while ball is in flight/bouncing
+
+# Animation speed control
+var animation_speed: float = 1.0  # Multiplier for animation speed (1.0 = normal, 2.0 = 2x speed)
+const FAST_FORWARD_SPEED: float = 3.0  # Speed when fast-forwarding
+const SKIP_SPEED: float = 10.0  # Speed when skipping (near instant)
 
 
 func _ready() -> void:
@@ -119,6 +125,47 @@ func cancel_shot() -> void:
 	if is_shot_in_progress:
 		current_context.reset()
 		is_shot_in_progress = false
+		is_animating = false
+		animation_speed = 1.0
+
+
+func start_animation() -> void:
+	"""Mark that ball animation has started"""
+	is_animating = true
+	animation_speed = 1.0
+
+
+func end_animation() -> void:
+	"""Mark that ball animation has finished"""
+	is_animating = false
+	animation_speed = 1.0
+
+
+func fast_forward_animation() -> void:
+	"""Speed up current animation to 3x"""
+	if is_animating:
+		animation_speed = FAST_FORWARD_SPEED
+
+
+func skip_animation() -> void:
+	"""Skip to end of animation (near instant)"""
+	if is_animating:
+		animation_speed = SKIP_SPEED
+
+
+func get_animation_speed() -> float:
+	"""Get current animation speed multiplier"""
+	return animation_speed if is_animating else 1.0
+
+
+func can_aim() -> bool:
+	"""Check if player can aim (allowed during animation for pre-aiming)"""
+	return is_shot_in_progress or is_animating
+
+
+func can_confirm_shot() -> bool:
+	"""Check if player can confirm a shot (not during animation)"""
+	return is_shot_in_progress and not is_animating
 
 
 func get_current_context() -> ShotContext:
