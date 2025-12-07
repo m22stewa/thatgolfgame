@@ -1,14 +1,22 @@
-[gd_scene load_steps=28 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=58 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
 [ext_resource type="PackedScene" uid="uid://bm4yp6kkayc83" path="res://scenes/hole-generator.tscn" id="4_81eei"]
+[ext_resource type="PackedScene" uid="uid://dsma18qptjtff" path="res://scenes/WindWidget.tscn" id="4_fkwjp"]
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_2xvcl"]
 [ext_resource type="Shader" uid="uid://cwotan7qgy7bh" path="res://scenes/tilt.gdshader" id="5_q0ffo"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="5_shot_ui"]
 [ext_resource type="PackedScene" uid="uid://d26l5mg54l7s2" path="res://scenes/ui/hand_ui.tscn" id="6_hand_ui"]
+[ext_resource type="Shader" uid="uid://dw8e21t3mum1l" path="res://scripts/weather-rain.gdshader" id="6_ynlb6"]
 [ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="7_hole_viewer"]
+[ext_resource type="Shader" uid="uid://chnhearr3oxlt" path="res://scripts/screenTransition.gdshader" id="7_mitcx"]
+[ext_resource type="Shader" uid="uid://cxfr44i8gar3k" path="res://scripts/clouds-topdown.gdshader" id="7_xe5jh"]
+[ext_resource type="Shader" uid="uid://b2d6hfrj0p11" path="res://scripts/mainBG.gdshader" id="8_1crsh"]
 [ext_resource type="Shader" uid="uid://d03cyebunvl18" path="res://scripts/floor.gdshader" id="8_q0ffo"]
+[ext_resource type="Shader" uid="uid://d0ig6thf42v6r" path="res://scripts/celebration.gdshader" id="9_06m3i"]
+[ext_resource type="FontFile" uid="uid://csixfh5trj68q" path="res://theme/Unbounded-VariableFont_wght.ttf" id="9_pyvcl"]
+[ext_resource type="Shader" uid="uid://b4a5pybeu403q" path="res://scripts/ice.gdshader" id="10_jfa70"]
 
 [sub_resource type="Gradient" id="Gradient_81eei"]
 
@@ -55,9 +63,17 @@ albedo_color = Color(0.3, 0.5, 0.9, 0.5)
 transparency = 1
 albedo_color = Color(0.9, 0.4, 0.3, 0.5)
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_floor"]
-transparency = 1
-albedo_color = Color(0.5, 0.5, 0.5, 0.3)
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_pyvcl"]
+noise_type = 3
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_fkwjp"]
+noise = SubResource("FastNoiseLite_pyvcl")
+seamless = true
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_pyvcl"]
+shader = ExtResource("8_1crsh")
+shader_parameter/timeScaleFactor = 0.04
+shader_parameter/noise_texture = SubResource("NoiseTexture2D_fkwjp")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_2xvcl"]
 shader = ExtResource("5_q0ffo")
@@ -80,17 +96,151 @@ corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
-[sub_resource type="Gradient" id="Gradient_q0ffo"]
-interpolation_mode = 2
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ynlb6"]
+shader = ExtResource("6_ynlb6")
+shader_parameter/rain_amount = 1.0
+shader_parameter/blue_amount = 0.4570000217075
 
-[sub_resource type="GradientTexture2D" id="GradientTexture2D_2xvcl"]
-gradient = SubResource("Gradient_q0ffo")
-fill_from = Vector2(0, 0.52991456)
-fill_to = Vector2(0.82905984, 0.73789173)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_06m3i"]
+shader = ExtResource("7_mitcx")
+shader_parameter/spacing = 25.0
+shader_parameter/animation_progress = 0.0
+shader_parameter/dot_size = 1.0
+shader_parameter/dot_color = Color(0, 0.06666667, 0.0627451, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_jfa70"]
+shader = ExtResource("9_06m3i")
+shader_parameter/s11 = 0.8
+shader_parameter/s33 = 0.13
+shader_parameter/s55 = 0.16
+shader_parameter/s77 = 0.9
+shader_parameter/s99 = 6.5
+shader_parameter/Praticle_num = 30
+shader_parameter/Range = 0.75
+shader_parameter/speed = 0.909999983385
+shader_parameter/gravity = 0.5
+shader_parameter/TimeStep = 2
+shader_parameter/ShneyMagnitude = 1.0
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_jfa70"]
+frequency = 0.0089
+fractal_type = 3
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_pyvcl"]
+noise = SubResource("FastNoiseLite_jfa70")
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_fkwjp"]
+noise_type = 2
+frequency = 0.0083
+fractal_type = 3
+fractal_lacunarity = 1.19
+fractal_gain = 0.645
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_eulkx"]
+noise = SubResource("FastNoiseLite_fkwjp")
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_do8f8"]
+noise_type = 4
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_dn5wk"]
+noise = SubResource("FastNoiseLite_do8f8")
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_6uaqo"]
+noise_type = 2
+frequency = 0.0179
+fractal_type = 2
+fractal_octaves = 6
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6l36g"]
+resource_local_to_scene = true
+noise = SubResource("FastNoiseLite_6uaqo")
+seamless = true
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_uydiq"]
+noise_type = 0
+frequency = 0.0151
+fractal_type = 2
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_n8abc"]
+noise = SubResource("FastNoiseLite_uydiq")
+seamless = true
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_eulkx"]
+shader = ExtResource("10_jfa70")
+shader_parameter/coverage_texture = SubResource("NoiseTexture2D_eulkx")
+shader_parameter/crack_texture = SubResource("NoiseTexture2D_6l36g")
+shader_parameter/crack_normal = SubResource("NoiseTexture2D_dn5wk")
+shader_parameter/bump_normal = SubResource("NoiseTexture2D_pyvcl")
+shader_parameter/warp_normal = SubResource("NoiseTexture2D_n8abc")
+shader_parameter/pointer = Vector2(1, 1)
+shader_parameter/coverage = 1.6170000768075
+shader_parameter/distort = 0.014000000665
+shader_parameter/bumpiness = 0.2430000115425
+shader_parameter/crack_intensity = 0.8130000386175
+shader_parameter/diffusion = 1.0
+shader_parameter/tint_color = Color(0.042574584, 0.22548234, 0.36198097, 1)
+shader_parameter/tint_amount = 0.4070000193325
+
+[sub_resource type="Animation" id="Animation_pyvcl"]
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:material:shader_parameter/coverage")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [1.6170000768075]
+}
+
+[sub_resource type="Animation" id="Animation_jfa70"]
+resource_name = "new_animation"
+length = 4.9215
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:material:shader_parameter/coverage")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 4.8333335),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 1.6170000768075]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_fkwjp"]
+_data = {
+&"RESET": SubResource("Animation_pyvcl"),
+&"new_animation": SubResource("Animation_jfa70")
+}
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_xe5jh"]
+noise_type = 2
+cellular_distance_function = 1
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_mitcx"]
+noise = SubResource("FastNoiseLite_xe5jh")
+seamless = true
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_1crsh"]
+shader = ExtResource("7_xe5jh")
+shader_parameter/noise_texture = SubResource("NoiseTexture2D_mitcx")
+shader_parameter/density = 0.25
+shader_parameter/speed = Vector2(0.007, 0.01)
+
+[sub_resource type="Gradient" id="Gradient_06m3i"]
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_jfa70"]
+gradient = SubResource("Gradient_06m3i")
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_ynlb6"]
-noise_type = 5
-frequency = 0.1433
+noise_type = 2
+frequency = 0.0503
 offset = Vector3(0, 161.85, 0)
 
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_xe5jh"]
@@ -101,10 +251,10 @@ seamless = true
 render_priority = 0
 shader = ExtResource("8_q0ffo")
 shader_parameter/texture_emission = SubResource("NoiseTexture2D_xe5jh")
-shader_parameter/emission_color = SubResource("GradientTexture2D_2xvcl")
-shader_parameter/depth_scale = 0.06
+shader_parameter/emission_color = SubResource("GradientTexture2D_jfa70")
+shader_parameter/depth_scale = 0.025
 shader_parameter/discard_boundaries = false
-shader_parameter/emission_energy = 1.5
+shader_parameter/emission_energy = 2.275
 shader_parameter/uv1_scale = Vector2(1, 1)
 shader_parameter/uv1_offset = Vector2(0, 0)
 
@@ -153,13 +303,6 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, -0.5, 32.5)
 size = Vector3(35, 0.1, 65)
 material = SubResource("StandardMaterial3D_par5")
 
-[node name="floor" type="CSGBox3D" parent="."]
-unique_name_in_owner = true
-transform = Transform3D(-1, -8.742278e-08, -3.821371e-15, 0, -4.371139e-08, 1, -8.742278e-08, 1, 4.371139e-08, 5, -1, 15)
-visible = false
-size = Vector3(10, 30, 1)
-material = SubResource("StandardMaterial3D_floor")
-
 [node name="Control" type="Control" parent="."]
 layout_mode = 3
 anchors_preset = 15
@@ -178,6 +321,39 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.08, 0.1, 0.12, 1)
 
+[node name="mainBG" type="ColorRect" parent="Control"]
+visible = false
+material = SubResource("ShaderMaterial_pyvcl")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 805.0
+offset_top = 1079.3389
+offset_right = -31.661133
+offset_bottom = 1119.0923
+grow_horizontal = 2
+grow_vertical = 2
+rotation = -1.5707964
+
+[node name="HoleViewer" parent="Control" instance=ExtResource("7_hole_viewer")]
+layout_mode = 1
+min_zoom = 20.0
+max_zoom = 100.0
+
+[node name="tiltshift" type="ColorRect" parent="Control"]
+material = SubResource("ShaderMaterial_2xvcl")
+layout_mode = 0
+offset_right = 800.0
+offset_bottom = 1080.0
+
+[node name="WindWidget" parent="Control" instance=ExtResource("4_fkwjp")]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 54.0
+offset_right = 168.0
+offset_bottom = 182.0
+
 [node name="ShotUI" parent="Control" instance=ExtResource("5_shot_ui")]
 layout_mode = 1
 
@@ -187,39 +363,21 @@ anchors_preset = 12
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 757.0
+offset_left = 758.0
 offset_top = -200.0
-offset_right = 0.53234863
+offset_right = 1.5323486
 grow_horizontal = 2
 grow_vertical = 0
 scale = Vector2(1.0007037, 1)
 slot_spacing = 20.0
 
-[node name="HoleViewer" parent="Control" instance=ExtResource("7_hole_viewer")]
-layout_mode = 1
-
-[node name="tiltshift" type="ColorRect" parent="Control"]
-material = SubResource("ShaderMaterial_2xvcl")
-layout_mode = 0
-offset_right = 798.0
-offset_bottom = 1080.0
-
-[node name="Label" type="Label" parent="Control"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 0
-offset_left = 30.0
-offset_top = 105.0
-offset_right = 306.0
-offset_bottom = 245.0
-
 [node name="LieInfoPanel" type="PanelContainer" parent="Control"]
 unique_name_in_owner = true
 layout_mode = 0
-offset_left = 30.0
-offset_top = 97.0
-offset_right = 234.0
-offset_bottom = 335.0
+offset_left = 1665.0
+offset_top = 190.0
+offset_right = 1869.0
+offset_bottom = 428.0
 theme_override_styles/panel = SubResource("StyleBoxFlat_lieinfo")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/LieInfoPanel"]
@@ -263,10 +421,10 @@ fit_content = true
 
 [node name="HFlowContainer" type="HFlowContainer" parent="Control"]
 layout_mode = 0
-offset_left = 1158.0
-offset_top = 91.0
-offset_right = 1591.0
-offset_bottom = 172.0
+offset_left = 931.0
+offset_top = 168.0
+offset_right = 1364.0
+offset_bottom = 249.0
 
 [node name="Button" type="Button" parent="Control/HFlowContainer"]
 layout_mode = 2
@@ -321,6 +479,112 @@ offset_bottom = 170.0
 theme = ExtResource("5_2xvcl")
 text = "Generate new hole"
 
+[node name="CanvasLayer" type="CanvasLayer" parent="Control"]
+
+[node name="shoteffects-water" type="ColorRect" parent="Control/CanvasLayer"]
+unique_name_in_owner = true
+visible = false
+material = SubResource("ShaderMaterial_ynlb6")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 0)
+
+[node name="sceen-transition" type="ColorRect" parent="Control/CanvasLayer"]
+unique_name_in_owner = true
+material = SubResource("ShaderMaterial_06m3i")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="LoadingMessage" type="Control" parent="Control/CanvasLayer/sceen-transition"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="Control/CanvasLayer/sceen-transition/LoadingMessage"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -271.0
+offset_top = -28.75
+offset_right = 271.0
+offset_bottom = 28.75
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("5_2xvcl")
+theme_override_fonts/font = ExtResource("9_pyvcl")
+theme_override_font_sizes/font_size = 66
+text = "Generating new hole..."
+
+[node name="ColorRect" type="ColorRect" parent="Control/CanvasLayer/sceen-transition/LoadingMessage"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -117.0
+offset_right = 20.0
+offset_bottom = -77.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="fireworks" type="ColorRect" parent="Control/CanvasLayer"]
+visible = false
+material = SubResource("ShaderMaterial_jfa70")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Ice" type="ColorRect" parent="Control/CanvasLayer"]
+visible = false
+material = SubResource("ShaderMaterial_eulkx")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Control/CanvasLayer/Ice"]
+libraries = {
+&"": SubResource("AnimationLibrary_fkwjp")
+}
+autoplay = "new_animation"
+
+[node name="CloudsTopdown" type="ColorRect" parent="Control"]
+material = SubResource("ShaderMaterial_1crsh")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -1120.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
 [node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]
 
 [node name="HexGrid" type="Node3D" parent="HoleGenerator"]
@@ -331,7 +595,14 @@ visible = false
 script = ExtResource("3_tryan")
 
 [node name="textureFloor" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.48046875, -2.3483582, 0.37156677)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.86548185, 0)
+material_overlay = SubResource("ShaderMaterial_q0ffo")
+gi_mode = 2
+mesh = SubResource("PlaneMesh_q0ffo")
+
+[node name="shadowcatcher" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0)
+visible = false
 material_overlay = SubResource("ShaderMaterial_q0ffo")
 mesh = SubResource("PlaneMesh_q0ffo")
 

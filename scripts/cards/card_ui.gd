@@ -118,8 +118,8 @@ func _process_drag(delta: float) -> void:
 	# Decay tilt when not moving
 	wiggle_amount = move_toward(wiggle_amount, 0.0, delta * wiggle_decay * 0.3)
 	
-	# Dragging scale - subtle lift
-	scale = scale.lerp(Vector2(1.05, 1.05), delta * animation_speed)
+	# Dragging scale - card grows when picked up
+	scale = scale.lerp(Vector2(1.4, 1.4), delta * animation_speed)
 
 
 func _process_idle(delta: float) -> void:

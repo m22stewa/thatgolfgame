@@ -64,7 +64,6 @@ func _auto_setup() -> void:
 		card_library.name = "CardLibrary"
 		add_child(card_library)
 	
-	print("CardSystemManager: Setup complete")
 	card_system_ready.emit()
 
 
@@ -104,7 +103,6 @@ func _setup_hand_ui() -> void:
 		hand_ui.setup(deck_manager)
 		hand_ui.card_played.connect(_on_ui_card_played)
 		hand_ui.card_selected.connect(_on_ui_card_selected)
-		print("CardSystemManager: HandUI connected")
 
 
 # --- Public API ---
@@ -121,7 +119,6 @@ func initialize_starter_deck() -> void:
 		deck_manager.add_to_deck(card)
 	
 	deck_manager.shuffle_deck()
-	print("CardSystemManager: Starter deck initialized with %d cards" % starter_cards.size())
 
 
 func draw_starting_hand(count: int = 5) -> void:
@@ -129,7 +126,6 @@ func draw_starting_hand(count: int = 5) -> void:
 	if deck_manager:
 		for i in count:
 			deck_manager.draw_card()
-		print("CardSystemManager: Drew %d cards" % count)
 
 
 func play_card(card_instance: CardInstance) -> bool:
@@ -147,7 +143,6 @@ func play_card(card_instance: CardInstance) -> bool:
 	# Move card from hand to discard (DeckManager handles this)
 	deck_manager.play_card(card_instance)
 	
-	print("CardSystemManager: Played card '%s'" % card_instance.data.card_name)
 	return true
 
 
@@ -220,7 +215,6 @@ func _apply_joker_cards(context: ShotContext) -> void:
 				var card_mod = CardModifier.new(card)
 				modifier_manager.add_modifier(card_mod)
 				active_card_modifiers.append(card_mod)
-				print("CardSystemManager: Joker '%s' active" % card.data.card_name)
 
 
 # --- UI Event Handlers ---

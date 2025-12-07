@@ -1,0 +1,60 @@
+[gd_scene load_steps=8 format=3 uid="uid://d1ainf01k8fjh"]
+
+[ext_resource type="Shader" uid="uid://de6xtbbn1ibxo" path="res://scripts/flag.gdshader" id="1_6j6w7"]
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_6j6w7"]
+noise_type = 3
+frequency = 0.0085
+fractal_lacunarity = 1.285
+fractal_gain = 1.115
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_6j6w7"]
+noise = SubResource("FastNoiseLite_6j6w7")
+seamless = true
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sbv0s"]
+render_priority = 0
+shader = ExtResource("1_6j6w7")
+shader_parameter/wave_size = 1.5010000712975
+shader_parameter/face_distortion = 0.0
+shader_parameter/time_scale = Vector2(0.3, 0)
+shader_parameter/uv_offset_scale = Vector2(-0.2, -0.1)
+shader_parameter/peak_color = Color(0.0627451, 0.48235294, 0.1764706, 1)
+shader_parameter/valley_color = Color(0, 0.7332466, 0, 1)
+shader_parameter/color_mix = 1.0
+shader_parameter/uv_offset_texture = SubResource("NoiseTexture2D_6j6w7")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ksec4"]
+transparency = 1
+cull_mode = 2
+albedo_color = Color(1, 1, 1, 0)
+
+[sub_resource type="QuadMesh" id="QuadMesh_ssbv6"]
+lightmap_size_hint = Vector2i(9, 7)
+material = SubResource("StandardMaterial3D_ksec4")
+size = Vector2(3, 2)
+subdivide_width = 15
+subdivide_depth = 15
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_sbv0s"]
+albedo_color = Color(0.6858353, 0.68583524, 0.6858352, 1)
+
+[node name="Windflag" type="Node3D"]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.5, 0, 0)
+material_override = SubResource("ShaderMaterial_sbv0s")
+mesh = SubResource("QuadMesh_ssbv6")
+
+[node name="CSGCylinder3D" type="CSGCylinder3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.101846695, -0.04448569, 0)
+radius = 0.067871094
+height = 2.309082
+material = SubResource("StandardMaterial3D_sbv0s")
+
+[node name="CSGSphere3D" type="CSGSphere3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.101846695, 1.1654198, 0)
+radius = 0.1648941
+radial_segments = 24
+rings = 12
+material = SubResource("StandardMaterial3D_sbv0s")

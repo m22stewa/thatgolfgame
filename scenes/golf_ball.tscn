@@ -1,19 +1,7 @@
-[gd_scene load_steps=23 format=4 uid="uid://by4ow8fifrk3l"]
+[gd_scene load_steps=19 format=4 uid="uid://by4ow8fifrk3l"]
 
 [ext_resource type="Shader" uid="uid://qdjfq8g68pj6" path="res://scenes/swing.gdshader" id="1_8kg14"]
 [ext_resource type="Script" uid="uid://crcl3jj8jp7dj" path="res://scripts/golf_ball.gd" id="2_golf_ball"]
-
-[sub_resource type="Gradient" id="Gradient_p5csl"]
-offsets = PackedFloat32Array(0, 0.5, 0.5, 1)
-colors = PackedColorArray(0.11764706, 0.26666668, 1, 1, 0.11764706, 0.26666668, 1, 1, 0.7092365, 0.70749086, 1.540184e-06, 1, 0.70980394, 0.7058824, 0, 1)
-
-[sub_resource type="GradientTexture2D" id="GradientTexture2D_8kg14"]
-gradient = SubResource("Gradient_p5csl")
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_s1xsf"]
-albedo_texture = SubResource("GradientTexture2D_8kg14")
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_2nwmu"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_53qt4"]
 resource_name = "Scene_-_Root"
@@ -135,8 +123,6 @@ transform = Transform3D(0.0254, 0, 0, 0, 0, -0.0254, 0, 0.0254, 0, 0, 0, 0)
 transform = Transform3D(1, 0, 0, 0, 2.220446e-16, 1, 0, -1, 2.220446e-16, 0, 0, 0)
 
 [node name="GeoSphere01__0" type="MeshInstance3D" parent="Model/Sketchfab_model/golf_ball_FBX/RootNode/GeoSphere01"]
-material_override = SubResource("StandardMaterial3D_s1xsf")
-material_overlay = SubResource("ShaderMaterial_2nwmu")
 mesh = SubResource("ArrayMesh_w0vj1")
 skeleton = NodePath("")
 

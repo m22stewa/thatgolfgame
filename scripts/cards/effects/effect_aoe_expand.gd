@@ -17,7 +17,6 @@ func _init() -> void:
 func apply_on_aoe(context: ShotContext, upgrade_level: int = 0) -> void:
 	var bonus = radius_bonus + int(upgrade_level * value_per_upgrade)
 	context.aoe_radius += bonus
-	print("Card Effect: AOE radius +%d (now %d)" % [bonus, context.aoe_radius])
 
 
 func get_description(upgrade_level: int = 0) -> String:

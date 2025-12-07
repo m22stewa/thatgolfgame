@@ -37,17 +37,16 @@ var current_lie_info: Dictionary = {}  # Store for recalculating when club chang
 @onready var score_value: Label = %ScoreValue
 @onready var score_details: Label = %ScoreDetails
 
+# Persistent score display in TopBar - get by path since it may not have unique name
+var persistent_score_label: Label = null
+var score_tween: Tween = null
+var displayed_score: int = 0  # For animated counting
+
 @onready var hole_complete_popup: PanelContainer = $HoleCompletePopup
 @onready var hole_complete_title: Label = %HoleCompleteTitle
 @onready var hole_score: Label = %HoleScore
 @onready var total_score: Label = %TotalScore
 @onready var next_button: Button = %NextButton
-
-# Lie info panel (optional - may not exist in scene)
-var lie_info_panel: PanelContainer = null
-var lie_name_label: Label = null
-var lie_description_label: RichTextLabel = null
-var lie_modifiers_label: RichTextLabel = null
 
 # References to game systems (set externally)
 var shot_manager: ShotManager = null
@@ -62,18 +61,18 @@ var shots_this_hole: int = 0
 
 # Club data (name, min_yards, max_yards)
 var clubs = [
-	["Driver", 200, 280],
-	["3 Wood", 180, 230],
-	["5 Wood", 160, 210],
-	["3 Iron", 150, 190],
-	["5 Iron", 130, 170],
-	["6 Iron", 120, 160],
-	["7 Iron", 110, 150],
-	["8 Iron", 100, 140],
-	["9 Iron", 90, 130],
-	["Pitching Wedge", 70, 110],
-	["Sand Wedge", 50, 90],
-	["Putter", 5, 30]
+	["Driver", 190, 220],      # 22 tiles max = 220 yards
+	["3 Wood", 170, 200],      # 20 tiles max = 200 yards
+	["5 Wood", 150, 180],      # 18 tiles max = 180 yards
+	["3 Iron", 140, 170],      # 17 tiles max = 170 yards
+	["5 Iron", 130, 160],      # 16 tiles max = 160 yards
+	["6 Iron", 120, 150],      # 15 tiles max = 150 yards
+	["7 Iron", 110, 140],      # 14 tiles max = 140 yards
+	["8 Iron", 100, 130],      # 13 tiles max = 130 yards
+	["9 Iron", 90, 120],       # 12 tiles max = 120 yards
+	["Pitching Wedge", 70, 110],  # 11 tiles max = 110 yards
+	["Sand Wedge", 50, 90],    # 9 tiles max = 90 yards
+	["Putter", 5, 20]
 ]
 var selected_club: int = 0
 
@@ -114,11 +113,13 @@ func _ready() -> void:
 	# Connect button signals
 	next_button.pressed.connect(_on_next_hole_pressed)
 	
+	# Get the persistent score label from ScoreInfo (at root level)
+	persistent_score_label = get_node_or_null("ScoreInfo/ScoreValue")
+	if persistent_score_label:
+		persistent_score_label.text = "0"
+	
 	# Create swing meter (positioned where confirm button was)
 	_create_swing_meter()
-	
-	# Create lie info panel for debugging
-	_create_lie_info_panel()
 	
 	# Initial UI state
 	update_club_display()
@@ -150,9 +151,12 @@ func set_hole_info(hole: int, par: int, yardage: int) -> void:
 	current_yardage = yardage
 	shots_this_hole = 0
 	
-	hole_label.text = "Hole %d" % hole
-	par_label.text = "Par %d" % par
-	yardage_label.text = "%d yds" % yardage
+	if hole_label:
+		hole_label.text = "Hole %d" % hole
+	if par_label:
+		par_label.text = "Par %d" % par
+	if yardage_label:
+		yardage_label.text = "%d yds" % yardage
 
 
 func update_shot_info(shot_num: int, distance_to_flag: int) -> void:
@@ -190,63 +194,8 @@ func update_club_display() -> void:
 	_update_club_difficulty()
 
 
-func _create_lie_info_panel() -> void:
-	"""Create a debug panel to show lie information"""
-	lie_info_panel = PanelContainer.new()
-	lie_info_panel.name = "LieInfoPanel"
-	
-	# Style the panel
-	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0.1, 0.1, 0.15, 0.9)
-	style.border_color = Color(0.3, 0.4, 0.5)
-	style.set_border_width_all(2)
-	style.set_corner_radius_all(5)
-	style.set_content_margin_all(10)
-	lie_info_panel.add_theme_stylebox_override("panel", style)
-	
-	# Position in top-left area
-	lie_info_panel.position = Vector2(20, 350)
-	lie_info_panel.size = Vector2(200, 180)
-	
-	# Create content container
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 5)
-	lie_info_panel.add_child(vbox)
-	
-	# Title
-	var title = Label.new()
-	title.text = "LIE INFO"
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color(0.7, 0.8, 0.9))
-	vbox.add_child(title)
-	
-	# Lie name
-	lie_name_label = Label.new()
-	lie_name_label.text = "---"
-	lie_name_label.add_theme_font_size_override("font_size", 16)
-	vbox.add_child(lie_name_label)
-	
-	# Description
-	lie_description_label = RichTextLabel.new()
-	lie_description_label.bbcode_enabled = true
-	lie_description_label.fit_content = true
-	lie_description_label.custom_minimum_size = Vector2(180, 30)
-	lie_description_label.add_theme_font_size_override("normal_font_size", 11)
-	vbox.add_child(lie_description_label)
-	
-	# Modifiers
-	lie_modifiers_label = RichTextLabel.new()
-	lie_modifiers_label.bbcode_enabled = true
-	lie_modifiers_label.fit_content = true
-	lie_modifiers_label.custom_minimum_size = Vector2(180, 80)
-	lie_modifiers_label.add_theme_font_size_override("normal_font_size", 12)
-	vbox.add_child(lie_modifiers_label)
-	
-	add_child(lie_info_panel)
-
-
 func update_lie_info(lie_info: Dictionary) -> void:
-	"""Update the lie info debug panel and calculate difficulty for swing meter"""
+	"""Calculate difficulty for swing meter based on lie"""
 	
 	# Store lie info for recalculating when club changes
 	current_lie_info = lie_info
@@ -269,7 +218,6 @@ func update_lie_info(lie_info: Dictionary) -> void:
 	# If club is not appropriate for the lie, increase difficulty significantly
 	if not club_is_appropriate:
 		current_lie_difficulty = min(current_lie_difficulty + 0.5, 1.0)
-		print("Club %s not ideal for %s - increased difficulty" % [club_name, lie_name])
 	
 	# Calculate power cap from power_mod AND club appropriateness
 	# power_mod of -15 or worse = can't hit at full power
@@ -286,49 +234,15 @@ func update_lie_info(lie_info: Dictionary) -> void:
 	# E.g., driver off rough = only 70% max power
 	if not club_is_appropriate:
 		current_power_cap = min(current_power_cap, 0.7)
-		print("Power capped at %.0f%% for inappropriate club/lie" % (current_power_cap * 100))
 	
-	# Special case: Driver off fairway (not tee) should be harder
+	# Special case: Long clubs (Driver, Woods) off fairway (not tee) should be harder
+	# BUT woods should still get full power, just slightly harder swing
 	if club_name == "DRIVER" and lie_name == "FAIRWAY":
 		current_lie_difficulty = max(current_lie_difficulty, 0.4)  # At least medium difficulty
 		current_power_cap = min(current_power_cap, 0.9)  # Slight power limit
-	
-	if lie_info_panel == null:
-		return
-	
-	# Update lie name with color
-	var lie_color = lie_info.get("color", Color.WHITE)
-	lie_name_label.text = lie_info.get("display_name", "Unknown")
-	lie_name_label.add_theme_color_override("font_color", lie_color)
-	
-	# Update description
-	lie_description_label.text = "[i]%s[/i]" % lie_info.get("description", "")
-	
-	# Build modifiers text
-	var mods = []
-	var spin_mod = lie_info.get("spin_mod", 0.0)
-	var curve_mod = lie_info.get("curve_mod", 0.0)
-	var roll_mod = lie_info.get("roll_mod", 0)
-	
-	# Color code based on good/bad
-	mods.append(_format_modifier_additive("Distance", power_mod, true))
-	mods.append(_format_modifier_additive("Accuracy", accuracy_mod, false))
-	mods.append(_format_modifier_additive("Spin", spin_mod, true))
-	mods.append(_format_modifier_additive("Curve", curve_mod, true))
-	mods.append(_format_modifier_additive("Roll", roll_mod, true))
-	
-	# Add chip/mult bonuses
-	var chip_bonus = lie_info.get("chip_bonus", 0)
-	if chip_bonus != 0:
-		var color = "green" if chip_bonus > 0 else "red"
-		mods.append("[color=%s]Chips: %s%d[/color]" % [color, "+" if chip_bonus > 0 else "", chip_bonus])
-	
-	var mult_bonus = lie_info.get("mult_bonus", 0.0)
-	if mult_bonus != 0.0:
-		var color = "green" if mult_bonus > 0 else "red"
-		mods.append("[color=%s]Mult: %s%.1f[/color]" % [color, "+" if mult_bonus > 0 else "", mult_bonus])
-	
-	lie_modifiers_label.text = "\n".join(mods)
+	elif (club_name == "WOOD_3" or club_name == "WOOD_5") and lie_name == "FAIRWAY":
+		current_lie_difficulty = max(current_lie_difficulty, 0.3)  # Moderate difficulty
+		# Woods get full power off fairway - they're designed for this
 
 
 func _get_current_club_name() -> String:
@@ -432,10 +346,13 @@ func _update_club_difficulty() -> void:
 		if not club_is_appropriate:
 			current_power_cap = min(current_power_cap, 0.7)
 		
-		# Special case: Driver off fairway
+		# Special case: Long clubs (Driver, Woods) off fairway (not tee)
 		if club_name == "DRIVER" and lie_name == "FAIRWAY":
 			current_lie_difficulty = max(current_lie_difficulty, 0.4)
 			current_power_cap = min(current_power_cap, 0.9)
+		elif (club_name == "WOOD_3" or club_name == "WOOD_5") and lie_name == "FAIRWAY":
+			current_lie_difficulty = max(current_lie_difficulty, 0.3)
+			# Woods get full power off fairway - they're designed for this
 
 
 func next_club() -> void:
@@ -452,6 +369,9 @@ func show_score_popup(chips: int, mult: float, final_score: int, hit_water: bool
 	"""Display score popup after a shot"""
 	total_points += final_score
 	
+	# Animate the persistent score display
+	_animate_score_addition(final_score)
+	
 	if hit_water:
 		score_title.text = "In the Water!"
 		score_title.add_theme_color_override("font_color", Color(0.3, 0.5, 0.8))
@@ -467,9 +387,35 @@ func show_score_popup(chips: int, mult: float, final_score: int, hit_water: bool
 	
 	score_popup.visible = true
 	
-	# Auto-hide after 2 seconds
-	await get_tree().create_timer(2.0).timeout
+	# Auto-hide after 4 seconds (allow time for slower score animation)
+	await get_tree().create_timer(4.0).timeout
 	score_popup.visible = false
+
+
+func _animate_score_addition(points_to_add: int) -> void:
+	"""Animate the score counting up rapidly in the persistent display"""
+	if not persistent_score_label:
+		return
+	
+	# Kill any existing tween
+	if score_tween and score_tween.is_valid():
+		score_tween.kill()
+	
+	var start_score = displayed_score
+	var target_score = total_points
+	
+	# Calculate duration based on points (slower animation)
+	var duration = clamp(points_to_add / 100.0, 1.0, 3.0)
+	
+	score_tween = create_tween()
+	score_tween.tween_method(_update_score_display, start_score, target_score, duration)
+
+
+func _update_score_display(value: int) -> void:
+	"""Called by tween to update the displayed score"""
+	displayed_score = value
+	if persistent_score_label:
+		persistent_score_label.text = str(value)
 
 
 func show_hole_complete(strokes: int, par: int, hole_points: int) -> void:
@@ -527,21 +473,12 @@ func _on_aoe_computed(context: ShotContext) -> void:
 
 func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot finishes"""
-	var hit_water = context.has_metadata("hit_water")
-	var hit_sand = context.has_metadata("hit_sand")
-	
-	show_score_popup(context.chips, context.mult, context.final_score, hit_water, hit_sand)
-	
-	# Check for hole complete
-	if context.has_metadata("reached_flag"):
-		# Wait for score popup to finish (reduced from 2.5s)
-		await get_tree().create_timer(1.0).timeout
-		show_hole_complete(shots_this_hole, current_par, total_points)
+	# Logic moved to hex_grid.gd to coordinate with ball animation
+	pass
 
 
 func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> void:
 	"""Called when player completes the 3-click swing"""
-	print("Swing completed: Power=%.0f%%, Accuracy=%.2f, Curve=%.1f" % [power * 100, accuracy, curve_mod])
 	
 	if not shot_manager:
 		push_error("ShotUI: No shot_manager reference! Cannot confirm shot.")
@@ -556,10 +493,6 @@ func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> voi
 	ctx.swing_power = power
 	ctx.swing_accuracy = 1.0 - abs(accuracy)  # accuracy is offset from zone, convert to 0-1
 	ctx.swing_curve = curve_mod
-	
-	print("Swing values stored: power=%.0f%%, accuracy=%.0f%%, curve=%+.1f" % [
-		ctx.swing_power * 100, ctx.swing_accuracy * 100, ctx.swing_curve
-	])
 	
 	# Now confirm the shot
 	shot_manager.confirm_shot()

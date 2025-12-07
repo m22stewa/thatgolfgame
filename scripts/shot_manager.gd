@@ -176,8 +176,9 @@ func get_current_context() -> ShotContext:
 
 func _calculate_base_stats() -> void:
 	"""Calculate initial stats from ball position and hole state"""
-	# Base AOE radius (can be modified by clubs/cards later)
-	current_context.aoe_radius = 1
+	# Base AOE radius starts at 0 (perfect accuracy)
+	# Will be increased by club accuracy and modifiers
+	current_context.aoe_radius = 0
 	current_context.aoe_shape = "circle"
 	
 	# Base scoring values
@@ -187,6 +188,13 @@ func _calculate_base_stats() -> void:
 
 func _apply_modifiers_before_aim() -> void:
 	"""Phase 2: Let modifiers adjust context before player aims"""
+	# Apply club accuracy to base AOE radius
+	if hole_controller and hole_controller.has_method("get_current_shot_stats"):
+		var stats = hole_controller.get_current_shot_stats()
+		if stats.has("final") and stats.final.has("accuracy"):
+			# Accuracy from club + all modifiers determines AOE radius
+			current_context.aoe_radius = maxi(0, stats.final.accuracy)
+	
 	if modifier_manager and modifier_manager.has_method("apply_before_aim"):
 		modifier_manager.apply_before_aim(current_context)
 	
@@ -280,17 +288,11 @@ func _calculate_power_adjusted_target() -> Vector2i:
 			
 			target_x += int(round(perp_x * curve_tiles))
 			target_y += int(round(perp_y * curve_tiles))
-			
-			print("Curve %.1f tiles applied (distance factor: %.1f)" % [curve_tiles, distance_factor])
 	
 	# Clamp to valid grid bounds if hole_controller available
 	if hole_controller and hole_controller.has_method("get_grid_width"):
 		target_x = clampi(target_x, 0, hole_controller.get_grid_width() - 1)
 		target_y = clampi(target_y, 0, hole_controller.get_grid_height() - 1)
-	
-	print("Power %.0f%%, Curve %.1f: aim [%d,%d] -> adjusted [%d,%d]" % [
-		power * 100, curve, aim.x, aim.y, target_x, target_y
-	])
 	
 	return Vector2i(target_x, target_y)
 
@@ -302,7 +304,6 @@ func _calculate_accuracy_landing(target_tile: Vector2i) -> Vector2i:
 	
 	# Perfect accuracy (>= 0.95) = land exactly on target
 	if accuracy >= 0.95:
-		print("Perfect accuracy! Landing on target [%d,%d]" % [target_tile.x, target_tile.y])
 		return target_tile
 	
 	# Build AOE tiles around the power-adjusted target
@@ -345,9 +346,6 @@ func _calculate_accuracy_landing(target_tile: Vector2i) -> Vector2i:
 	for tile in possible_tiles:
 		cumulative += weights.get(tile, 0.1)
 		if roll <= cumulative:
-			print("Accuracy %.0f%%: target [%d,%d] -> landing [%d,%d]" % [
-				accuracy * 100, target_tile.x, target_tile.y, tile.x, tile.y
-			])
 			return tile
 	
 	# Fallback

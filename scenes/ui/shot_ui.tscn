@@ -1,8 +1,26 @@
-[gd_scene load_steps=10 format=3 uid="uid://dg56vg8jbsg1a"]
+[gd_scene load_steps=13 format=3 uid="uid://dg56vg8jbsg1a"]
 
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="1_nxo7y"]
 [ext_resource type="Script" uid="uid://q8ialhsivonw" path="res://scripts/shot_ui.gd" id="1_shot_ui"]
 [ext_resource type="FontFile" uid="uid://cn2g0aaqs3d6n" path="res://models/fonts/Fraunces-VariableFont_SOFT,WONK,opsz,wght.ttf" id="2_ueb5v"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_nxo7y"]
+font_size = 100
+outline_size = 20
+outline_color = Color(0, 0.14509805, 0, 1)
+shadow_size = 20
+shadow_color = Color(0, 0, 0, 0.19607843)
+shadow_offset = Vector2(0, 10)
+
+[sub_resource type="LabelSettings" id="LabelSettings_n5q2d"]
+font_size = 100
+outline_size = 20
+outline_color = Color(0, 0.14509805, 0, 1)
+shadow_size = 20
+shadow_color = Color(0, 0, 0, 0.19607843)
+shadow_offset = Vector2(0, 10)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_nxo7y"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_nxo7y"]
 content_margin_left = 4.0
@@ -109,12 +127,41 @@ grow_vertical = 2
 theme = ExtResource("1_nxo7y")
 script = ExtResource("1_shot_ui")
 
+[node name="ScoreInfo" type="HBoxContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -9.0
+offset_top = 33.0
+offset_right = 373.0
+offset_bottom = 158.0
+grow_horizontal = 2
+theme_override_constants/separation = 15
+
+[node name="ScoreLabel" type="Label" parent="ScoreInfo"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 79
+text = "Score"
+label_settings = SubResource("LabelSettings_nxo7y")
+
+[node name="ScoreValue" type="Label" parent="ScoreInfo"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 100
+text = "0"
+label_settings = SubResource("LabelSettings_n5q2d")
+
 [node name="TopBar" type="PanelContainer" parent="."]
 layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = 60.0
+offset_right = 748.0
 offset_bottom = 60.0
 grow_horizontal = 2
+theme_override_styles/panel = SubResource("StyleBoxEmpty_nxo7y")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="TopBar"]
 layout_direction = 2
@@ -122,29 +169,27 @@ layout_mode = 2
 size_flags_horizontal = 8
 theme_override_constants/separation = 30
 
-[node name="HoleInfo" type="HBoxContainer" parent="TopBar/HBoxContainer"]
+[node name="HoleInfo2" type="HBoxContainer" parent="TopBar/HBoxContainer"]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="HoleLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo"]
-unique_name_in_owner = true
+[node name="HoleLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo2"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "Hole 1"
 
-[node name="ParLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo"]
-unique_name_in_owner = true
+[node name="ParLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo2"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "Par 4"
 
-[node name="YardageLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo"]
-unique_name_in_owner = true
+[node name="YardageLabel" type="Label" parent="TopBar/HBoxContainer/HoleInfo2"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
 text = "380 yds"
 
 [node name="Spacer" type="Control" parent="TopBar/HBoxContainer"]
+custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -189,6 +234,7 @@ theme_override_font_sizes/font_size = 12
 text = "Left-click to aim, Right-click to shoot"
 
 [node name="BottomPanel" type="PanelContainer" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 12
 anchor_top = 1.0

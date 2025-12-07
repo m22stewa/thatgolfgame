@@ -1,25 +1,25 @@
 extends Node
 class_name PuttingSystem
 
-## Simplified Putting System
-## - Click a tile to aim
-## - Click and hold to charge power
-## - Release to putt
-## - Ball rolls toward target with slope influence
+## New Putting System
+## - Circle around ball with arrow following mouse
+## - Arrow indicates aim direction
+## - Click to set power and putt
 
 signal putting_mode_entered()
 signal putting_mode_exited()
-signal putt_started(target_tile: Vector2i, power: float)
+signal putt_started(direction: Vector3, power: float)
 signal putt_completed(final_tile: Vector2i)
 
 # References
 var hex_grid: Node = null
 var golf_ball: Node3D = null
 var hole_viewer: Node = null
+var camera: Camera3D = null
 
 # State
 var is_putting_mode: bool = false
-var aim_tile: Vector2i = Vector2i(-1, -1)
+var aim_direction: Vector3 = Vector3.FORWARD  # Direction arrow is pointing
 var is_charging: bool = false
 var charge_power: float = 0.0
 var charge_start_time: float = 0.0
@@ -29,31 +29,48 @@ var ball_velocity: Vector3 = Vector3.ZERO
 var is_ball_rolling: bool = false
 
 # Constants
-const PUTT_SPEED: float = 4.0  # Base speed multiplier
-const FRICTION: float = 2.5
+const PUTT_BASE_DISTANCE: float = 20.0  # Base putter distance in yards
+const PUTT_SPEED: float = 15.0  # Base speed multiplier - higher = further
+const FRICTION: float = 2.0  # Reduced friction
 const SLOPE_FORCE: float = 2.0
 const MIN_VELOCITY: float = 0.05
+const CIRCLE_RADIUS: float = 0.5  # Radius of aim circle around ball
+const ARROW_LENGTH: float = 1.0  # Length of aim arrow
 
 # Visuals
-var aim_marker: MeshInstance3D = null
+var aim_circle: MeshInstance3D = null
+var aim_arrow: MeshInstance3D = null
+var ball_outline: MeshInstance3D = null  # Black outline tight around ball
 var power_bar: MeshInstance3D = null
 
 
 func _ready() -> void:
 	set_process(false)
+	set_process_input(false)
 
 
 func setup(grid: Node, viewer: Node) -> void:
 	hex_grid = grid
 	hole_viewer = viewer
+	# Find camera - hole_viewer has camera as property
+	if hole_viewer and "camera" in hole_viewer and hole_viewer.camera:
+		camera = hole_viewer.camera
+	elif hex_grid:
+		camera = hex_grid.get_viewport().get_camera_3d()
 
 
 func _process(delta: float) -> void:
+	if is_putting_mode and not is_ball_rolling:
+		_update_arrow_direction()
+	
 	if is_charging:
 		_update_charge()
 	
 	if is_ball_rolling:
 		_update_rolling(delta)
+	
+	# Keep visuals positioned on ball
+	_update_visuals_position()
 
 
 func enter_putting_mode() -> void:
@@ -62,10 +79,16 @@ func enter_putting_mode() -> void:
 	
 	is_putting_mode = true
 	set_process(true)
-	aim_tile = Vector2i(-1, -1)
+	set_process_input(true)
 	is_charging = false
+	charge_power = 0.0
 	
 	_create_visuals()
+	
+	# Hide the target highlight from regular shot mode
+	if hex_grid:
+		if hex_grid.target_highlight_mesh:
+			hex_grid.target_highlight_mesh.visible = false
 	
 	# Find green center (use flag position)
 	var green_center = Vector2i(0, 0)
@@ -75,7 +98,6 @@ func enter_putting_mode() -> void:
 	if hole_viewer and hole_viewer.has_method("enter_putting_mode"):
 		hole_viewer.enter_putting_mode(green_center, Rect2i())
 	
-	print("PUTTING MODE ON - centered on: ", green_center)
 	putting_mode_entered.emit()
 
 
@@ -85,13 +107,13 @@ func exit_putting_mode() -> void:
 	
 	is_putting_mode = false
 	set_process(false)
+	set_process_input(false)
 	
 	_clear_visuals()
 	
 	if hole_viewer and hole_viewer.has_method("exit_putting_mode"):
 		hole_viewer.exit_putting_mode()
 	
-	print("PUTTING MODE OFF")
 	putting_mode_exited.emit()
 
 
@@ -100,118 +122,211 @@ func _create_visuals() -> void:
 	
 	# Safety check - need hex_grid to add children
 	if hex_grid == null or not is_instance_valid(hex_grid):
-		print("PuttingSystem: Cannot create visuals - no hex_grid")
 		return
 	
-	# Aim marker - simple cylinder
-	aim_marker = MeshInstance3D.new()
-	var cyl = CylinderMesh.new()
-	cyl.top_radius = 0.5
-	cyl.bottom_radius = 0.5
-	cyl.height = 0.05
-	aim_marker.mesh = cyl
-	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color(1, 1, 0, 0.7)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	aim_marker.material_override = mat
-	aim_marker.visible = false
-	hex_grid.add_child(aim_marker)
+	# --- OUTER RING (white, LARGER - creates the outer ring) ---
+	ball_outline = MeshInstance3D.new()
+	var outline_cyl = CylinderMesh.new()
+	outline_cyl.top_radius = CIRCLE_RADIUS + 0.15  # Larger outer ring
+	outline_cyl.bottom_radius = CIRCLE_RADIUS + 0.15
+	outline_cyl.height = 0.05
+	ball_outline.mesh = outline_cyl
+	var outline_mat = StandardMaterial3D.new()
+	outline_mat.albedo_color = Color(1.0, 1.0, 1.0, 0.95)  # White
+	outline_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	outline_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ball_outline.material_override = outline_mat
+	hex_grid.add_child(ball_outline)
 	
-	# Power bar
+	# --- INNER CIRCLE (black, SMALLER - sits on top, creating ring effect) ---
+	aim_circle = MeshInstance3D.new()
+	var cylinder = CylinderMesh.new()
+	cylinder.top_radius = CIRCLE_RADIUS + 0.05  # Smaller inner disc
+	cylinder.bottom_radius = CIRCLE_RADIUS + 0.05
+	cylinder.height = 0.06  # Slightly thicker so it's on top
+	aim_circle.mesh = cylinder
+	var circle_mat = StandardMaterial3D.new()
+	circle_mat.albedo_color = Color(0.0, 0.0, 0.0, 1.0)  # Black
+	circle_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	aim_circle.material_override = circle_mat
+	hex_grid.add_child(aim_circle)
+	
+	# --- AIM ARROW (points toward mouse) ---
+	aim_arrow = MeshInstance3D.new()
+	var arrow_mesh = _create_arrow_mesh()
+	aim_arrow.mesh = arrow_mesh
+	var arrow_mat = StandardMaterial3D.new()
+	arrow_mat.albedo_color = Color(1.0, 1.0, 1.0, 1.0)  # White arrow
+	arrow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	aim_arrow.material_override = arrow_mat
+	hex_grid.add_child(aim_arrow)
+	
+	# --- POWER BAR BACKGROUND (shows 100% mark) ---
 	power_bar = MeshInstance3D.new()
-	var box = BoxMesh.new()
-	box.size = Vector3(0.5, 0.1, 0.1)
-	power_bar.mesh = box
-	var mat2 = StandardMaterial3D.new()
-	mat2.albedo_color = Color(0, 1, 0, 0.9)
-	mat2.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	power_bar.material_override = mat2
-	power_bar.visible = false
+	var bg_box = BoxMesh.new()
+	bg_box.size = Vector3(1.5, 0.3, 0.08)  # Background - thinner
+	power_bar.mesh = bg_box
+	var bg_mat = StandardMaterial3D.new()
+	bg_mat.albedo_color = Color(0.15, 0.15, 0.15, 1.0)  # Dark gray background
+	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	power_bar.material_override = bg_mat
+	power_bar.visible = true  # Always visible for now
 	hex_grid.add_child(power_bar)
 	
-	print("PuttingSystem: Visuals created")
+	# --- POWER BAR FILL (grows with charge) ---
+	var power_fill = MeshInstance3D.new()
+	var fill_box = BoxMesh.new()
+	fill_box.size = Vector3(1.5, 0.25, 0.1)  # Fill - in front
+	power_fill.mesh = fill_box
+	var fill_mat = StandardMaterial3D.new()
+	fill_mat.albedo_color = Color(0.2, 0.9, 0.2, 1.0)  # Green fill
+	fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	power_fill.material_override = fill_mat
+	power_fill.name = "PowerFill"
+	power_bar.add_child(power_fill)
+	power_fill.position = Vector3(0, 0, 0.1)  # More in front of background
 
 
 func _clear_visuals() -> void:
-	if aim_marker and is_instance_valid(aim_marker):
-		aim_marker.queue_free()
-		aim_marker = null
+	if aim_circle and is_instance_valid(aim_circle):
+		aim_circle.queue_free()
+		aim_circle = null
+	if aim_arrow and is_instance_valid(aim_arrow):
+		aim_arrow.queue_free()
+		aim_arrow = null
+	if ball_outline and is_instance_valid(ball_outline):
+		ball_outline.queue_free()
+		ball_outline = null
 	if power_bar and is_instance_valid(power_bar):
 		power_bar.queue_free()
 		power_bar = null
 
 
-# Handle input from hole_viewer
-func handle_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			# Click down - get tile from hole_viewer's hover detection
-			var tile = _get_hovered_tile()
-			if tile.x >= 0:
-				on_tile_clicked(tile)
-		else:
-			# Click released - execute putt
-			on_click_released()
+func _create_arrow_mesh() -> ArrayMesh:
+	"""Create an arrow mesh pointing in +Z direction"""
+	var arrow = ArrayMesh.new()
+	var st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	
+	# Arrow shaft (box from 0 to arrow_length - 0.4)
+	var shaft_length = ARROW_LENGTH - 0.5
+	var shaft_width = 0.15
+	var shaft_height = 0.08
+	
+	# Shaft vertices (box)
+	# Bottom face
+	st.add_vertex(Vector3(-shaft_width, 0, 0))
+	st.add_vertex(Vector3(shaft_width, 0, 0))
+	st.add_vertex(Vector3(shaft_width, 0, shaft_length))
+	st.add_vertex(Vector3(-shaft_width, 0, 0))
+	st.add_vertex(Vector3(shaft_width, 0, shaft_length))
+	st.add_vertex(Vector3(-shaft_width, 0, shaft_length))
+	
+	# Top face
+	st.add_vertex(Vector3(-shaft_width, shaft_height, 0))
+	st.add_vertex(Vector3(shaft_width, shaft_height, shaft_length))
+	st.add_vertex(Vector3(shaft_width, shaft_height, 0))
+	st.add_vertex(Vector3(-shaft_width, shaft_height, 0))
+	st.add_vertex(Vector3(-shaft_width, shaft_height, shaft_length))
+	st.add_vertex(Vector3(shaft_width, shaft_height, shaft_length))
+	
+	# Arrow head (triangle pointing forward)
+	var head_start = shaft_length
+	var head_end = ARROW_LENGTH
+	var head_width = 0.35
+	
+	# Top face of arrow head
+	st.add_vertex(Vector3(-head_width, shaft_height, head_start))
+	st.add_vertex(Vector3(0, shaft_height, head_end))
+	st.add_vertex(Vector3(head_width, shaft_height, head_start))
+	
+	# Bottom face of arrow head
+	st.add_vertex(Vector3(-head_width, 0, head_start))
+	st.add_vertex(Vector3(head_width, 0, head_start))
+	st.add_vertex(Vector3(0, 0, head_end))
+	
+	st.generate_normals()
+	return st.commit()
 
 
-func _get_hovered_tile() -> Vector2i:
-	"""Get the tile under the mouse using hole_viewer's detection"""
-	if hole_viewer and "hovered_tile" in hole_viewer:
-		var tile = hole_viewer.hovered_tile
-		print("PuttingSystem: hovered_tile = ", tile)
-		if tile.x != -999:
-			return tile
-	else:
-		print("PuttingSystem: No hole_viewer or hovered_tile")
-	return Vector2i(-1, -1)
+func _update_visuals_position() -> void:
+	"""Keep circle and arrow centered on ball"""
+	if golf_ball == null:
+		return
+	
+	var ball_pos = golf_ball.global_position
+	var y_offset = 0.15  # Slightly above ground
+	
+	# Ball outline stays tight around ball - slightly higher than circle for visibility
+	if ball_outline and is_instance_valid(ball_outline):
+		# Black outline at base level
+		ball_outline.global_position = Vector3(ball_pos.x, ball_pos.y + y_offset, ball_pos.z)
+	
+	if aim_circle and is_instance_valid(aim_circle):
+		# White circle slightly higher so it sits on top of black outline
+		aim_circle.global_position = Vector3(ball_pos.x, ball_pos.y + y_offset + 0.02, ball_pos.z)
+	
+	if aim_arrow and is_instance_valid(aim_arrow):
+		# Position arrow at edge of circle, pointing outward
+		var arrow_start = ball_pos + aim_direction * CIRCLE_RADIUS
+		aim_arrow.global_position = Vector3(arrow_start.x, ball_pos.y + y_offset, arrow_start.z)
+		
+		# Rotate arrow to point in aim direction using atan2
+		if aim_direction.length() > 0.01:
+			# Calculate Y rotation to face aim direction
+			var angle = atan2(aim_direction.x, aim_direction.z)
+			aim_arrow.rotation = Vector3(0, angle, 0)
 
 
-# Called by hole_viewer when mouse clicks
-func on_tile_clicked(tile: Vector2i) -> void:
+func _update_arrow_direction() -> void:
+	"""Update arrow to point toward mouse position on ground plane"""
+	if golf_ball == null:
+		return
+	if camera == null:
+		# Try to get camera again
+		if hole_viewer and "camera" in hole_viewer:
+			camera = hole_viewer.camera
+		if camera == null:
+			camera = golf_ball.get_viewport().get_camera_3d()
+		if camera == null:
+			return
+	
+	var mouse_pos = golf_ball.get_viewport().get_mouse_position()
+	var ray_origin = camera.project_ray_origin(mouse_pos)
+	var ray_dir = camera.project_ray_normal(mouse_pos)
+	
+	# Intersect with ground plane at ball's Y height
+	var ball_y = golf_ball.global_position.y
+	if abs(ray_dir.y) > 0.001:
+		var t = (ball_y - ray_origin.y) / ray_dir.y
+		if t > 0:
+			var hit_point = ray_origin + ray_dir * t
+			var dir = hit_point - golf_ball.global_position
+			dir.y = 0
+			if dir.length() > 0.1:
+				aim_direction = dir.normalized()
+
+
+func _input(event: InputEvent) -> void:
 	if not is_putting_mode or is_ball_rolling:
 		return
 	
-	if aim_tile.x < 0:
-		# First click - set aim
-		aim_tile = tile
-		_show_aim_marker(tile)
-		print("AIM SET: ", tile)
-	else:
-		# Already aiming - start charge on this click
-		is_charging = true
-		charge_start_time = Time.get_ticks_msec() / 1000.0
-		charge_power = 0.0
-		if power_bar:
-			power_bar.visible = true
-		print("CHARGING...")
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			# Start charging
+			is_charging = true
+			charge_start_time = Time.get_ticks_msec() / 1000.0
+			charge_power = 0.01  # Start with small value so bar is visible
+		else:
+			# Release - execute putt
+			if is_charging:
+				is_charging = false
+				_execute_putt()
 
 
-func on_click_released() -> void:
-	if not is_putting_mode:
-		return
-	
-	if is_charging:
-		is_charging = false
-		if power_bar:
-			power_bar.visible = false
-		_execute_putt()
-
-
-func cancel_aim() -> void:
-	aim_tile = Vector2i(-1, -1)
-	is_charging = false
-	if aim_marker:
-		aim_marker.visible = false
-	if power_bar:
-		power_bar.visible = false
-
-
-func _show_aim_marker(tile: Vector2i) -> void:
-	if aim_marker == null or hex_grid == null:
-		return
-	var pos = hex_grid.get_tile_world_position(tile)
-	aim_marker.position = Vector3(pos.x, pos.y + 0.55, pos.z)
-	aim_marker.visible = true
+# Handle input from hole_viewer (legacy support)
+func handle_input(event: InputEvent) -> void:
+	_input(event)
 
 
 func _update_charge() -> void:
@@ -232,54 +347,59 @@ func _update_power_bar() -> void:
 	
 	# Position above ball
 	var bp = golf_ball.global_position
-	power_bar.position = Vector3(bp.x, bp.y + 1.2, bp.z)
+	power_bar.global_position = Vector3(bp.x, bp.y + 1.5, bp.z)
 	
-	# Scale width by power
-	power_bar.scale.x = 0.2 + charge_power * 1.5
+	# Get the fill child
+	var power_fill = power_bar.get_node_or_null("PowerFill")
+	if power_fill == null:
+		return
 	
-	# Color: green -> yellow -> red
-	var mat = power_bar.material_override as StandardMaterial3D
+	# Scale fill width by power (0.01 to 1.0 = 0% to 100%)
+	var min_scale = 0.02
+	power_fill.scale.x = max(min_scale, charge_power)
+	
+	# Offset fill so it grows from left edge
+	# At scale 1.0, position.x = 0 (centered)
+	# At scale 0.5, position.x = -0.375 (shifted left)
+	var bar_width = 1.5  # Full width of bar
+	power_fill.position.x = -(bar_width / 2.0) * (1.0 - power_fill.scale.x)
+	
+	# Color: green at low power -> yellow at mid -> red at high
+	var mat = power_fill.material_override as StandardMaterial3D
 	if mat:
-		mat.albedo_color = Color(charge_power, 1.0 - charge_power * 0.5, 0.1, 0.9)
+		if charge_power < 0.5:
+			# Green to yellow (0-50%)
+			var t = charge_power * 2.0
+			mat.albedo_color = Color(t, 0.9, 0.2, 1.0)
+		else:
+			# Yellow to red (50-100%)
+			var t = (charge_power - 0.5) * 2.0
+			mat.albedo_color = Color(1.0, 0.9 - t * 0.7, 0.2 - t * 0.2, 1.0)
 
 
 func _execute_putt() -> void:
-	if golf_ball == null or hex_grid == null or aim_tile.x < 0:
-		print("Cannot putt - missing data")
+	if golf_ball == null or hex_grid == null:
 		return
 	
-	print("PUTT! Power: %.0f%%" % [charge_power * 100])
-	
 	# Emit signal before starting
-	putt_started.emit(aim_tile, charge_power)
-	
-	# Get positions
-	var ball_pos = golf_ball.global_position
-	var target_pos = hex_grid.get_tile_world_position(aim_tile)
-	
-	# Direction from ball to target (XZ plane)
-	var dir = Vector3(target_pos.x - ball_pos.x, 0, target_pos.z - ball_pos.z)
-	var dist = dir.length()
-	if dist > 0.01:
-		dir = dir.normalized()
-	else:
-		dir = Vector3(0, 0, 1)
+	putt_started.emit(aim_direction, charge_power)
 	
 	# Speed based on power (higher power = faster = goes further)
-	var speed = (0.5 + charge_power * 1.5) * PUTT_SPEED
-	ball_velocity = dir * speed
-	
-	print("Dir: ", dir, " Speed: ", speed)
+	# Power ranges 0-1, max distance at 100% power
+	var speed = charge_power * PUTT_SPEED
+	# Ball goes in the direction the arrow is pointing
+	ball_velocity = aim_direction * speed
 	
 	# Start rolling
 	is_ball_rolling = true
 	
-	# Hide aim marker
-	if aim_marker:
-		aim_marker.visible = false
-	
-	# Reset aim for next putt
-	aim_tile = Vector2i(-1, -1)
+	# Hide aim visuals while rolling
+	if aim_circle:
+		aim_circle.visible = false
+	if aim_arrow:
+		aim_arrow.visible = false
+	if ball_outline:
+		ball_outline.visible = false
 
 
 func _update_rolling(delta: float) -> void:
@@ -313,7 +433,6 @@ func _update_rolling(delta: float) -> void:
 		
 		# Check for hole
 		if new_tile == hex_grid.flag_position:
-			print("IN THE HOLE!")
 			is_ball_rolling = false
 			ball_velocity = Vector3.ZERO
 			hex_grid._trigger_hole_complete()
@@ -331,9 +450,28 @@ func _update_rolling(delta: float) -> void:
 	if ball_velocity.length() < MIN_VELOCITY:
 		is_ball_rolling = false
 		ball_velocity = Vector3.ZERO
-		print("Ball stopped")
 		
 		var final_tile = hex_grid.world_to_grid(golf_ball.global_position)
+		var final_surface = hex_grid.get_cell(final_tile.x, final_tile.y)
+		
+		# Check if ball is still on green
+		var still_on_green = (final_surface == hex_grid.SurfaceType.GREEN or final_surface == hex_grid.SurfaceType.FLAG)
+		
+		if still_on_green:
+			# Show aim visuals again for next putt
+			if aim_circle:
+				aim_circle.visible = true
+			if aim_arrow:
+				aim_arrow.visible = true
+			if ball_outline:
+				ball_outline.visible = true
+		else:
+			# Ball went off green - exit putting mode and return to normal shot mode
+			exit_putting_mode()
+			# Trigger camera reset and normal shot mode via hex_grid
+			if hex_grid and hex_grid.has_method("_start_new_shot"):
+				hex_grid._start_new_shot()
+		
 		putt_completed.emit(final_tile)
 
 

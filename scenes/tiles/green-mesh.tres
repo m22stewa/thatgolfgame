@@ -1,10 +1,7 @@
-[gd_resource type="ArrayMesh" load_steps=4 format=4 uid="uid://bqg41n33wp0pa"]
-
-[ext_resource type="Texture2D" uid="uid://b7g14kdv74gq4" path="res://textures/full-frame-shot-green-rug.jpg" id="1_33xov"]
+[gd_resource type="ArrayMesh" load_steps=3 format=4 uid="uid://bqg41n33wp0pa"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_td1sn"]
 albedo_color = Color(0, 1, 0, 1)
-albedo_texture = ExtResource("1_33xov")
 emission_enabled = true
 rim_enabled = true
 

@@ -17,7 +17,6 @@ func _init() -> void:
 func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
 	var scaled_bonus = bonus_chips + int(upgrade_level * value_per_upgrade)
 	context.chips += scaled_bonus
-	print("Card Effect: +%d chips" % scaled_bonus)
 
 
 func get_description(upgrade_level: int = 0) -> String:

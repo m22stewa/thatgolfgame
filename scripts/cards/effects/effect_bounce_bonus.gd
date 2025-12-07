@@ -32,8 +32,6 @@ func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
 		
 		context.chips += total_chips
 		context.mult += total_mult
-		
-		print("Card Effect: Bounce Bonus! %d bounces → +%d chips, +%.1f mult" % [bounces, total_chips, total_mult])
 
 
 func get_description(upgrade_level: int = 0) -> String:

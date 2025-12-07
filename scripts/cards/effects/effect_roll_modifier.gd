@@ -23,8 +23,6 @@ func apply_on_landing(context: ShotContext, upgrade_level: int = 0) -> void:
 	
 	context.roll_distance_mult = scaled_distance
 	context.friction_mult = scaled_friction
-	
-	print("Card Effect: Roll modified! Distance ×%.2f, Friction ×%.2f" % [scaled_distance, scaled_friction])
 
 
 func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
@@ -32,7 +30,6 @@ func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
 	if bonus_chips_on_roll_stop > 0:
 		var scaled = bonus_chips_on_roll_stop + (upgrade_level * 3)
 		context.chips += scaled
-		print("Card Effect: Roll stop bonus +%d chips" % scaled)
 
 
 func get_description(upgrade_level: int = 0) -> String:

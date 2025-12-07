@@ -46,6 +46,8 @@ var inspected_card_return_scale: Vector2 = Vector2.ONE
 @export var slot_color: Color = Color(0.15, 0.2, 0.15, 0.6)
 @export var slot_hover_color: Color = Color(0.25, 0.4, 0.25, 0.8)
 @export var slot_border_color: Color = Color(0.4, 0.6, 0.4, 0.8)
+@export var slot_texture: Texture2D = null  # Optional texture for slots
+@export var slot_hover_texture: Texture2D = null  # Optional texture for hovered slots
 
 # Currently hovered slot
 var hovered_slot_index: int = -1
@@ -101,23 +103,33 @@ func _create_single_slot(index: int) -> Control:
 	slot.size = card_size
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
-	# Background
-	var bg = ColorRect.new()
-	bg.name = "Background"
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = slot_color
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	slot.add_child(bg)
-	
-	# Border (using 4 thin rects)
-	var border_thickness = 2.0
-	var borders = ["Top", "Bottom", "Left", "Right"]
-	for border_name in borders:
-		var border = ColorRect.new()
-		border.name = "Border" + border_name
-		border.color = slot_border_color
-		border.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		slot.add_child(border)
+	# Background - use TextureRect if texture provided, else ColorRect
+	if slot_texture:
+		var tex_bg = TextureRect.new()
+		tex_bg.name = "Background"
+		tex_bg.texture = slot_texture
+		tex_bg.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+		tex_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tex_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(tex_bg)
+	else:
+		var bg = ColorRect.new()
+		bg.name = "Background"
+		bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+		bg.color = slot_color
+		bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.add_child(bg)
+		
+		# Border (using 4 thin rects) - only for ColorRect background
+		var border_thickness = 2.0
+		var borders = ["Top", "Bottom", "Left", "Right"]
+		for border_name in borders:
+			var border = ColorRect.new()
+			border.name = "Border" + border_name
+			border.color = slot_border_color
+			border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			slot.add_child(border)
 	
 	# Slot number label
 	var label = Label.new()
@@ -440,7 +452,14 @@ func _highlight_slot(index: int, highlight: bool) -> void:
 	var slot = card_slots[index]
 	var bg = slot.get_node_or_null("Background")
 	if bg:
-		bg.color = slot_hover_color if highlight else slot_color
+		# Check if using textures or colors
+		if bg is TextureRect and slot_texture:
+			if highlight and slot_hover_texture:
+				bg.texture = slot_hover_texture
+			else:
+				bg.texture = slot_texture
+		elif bg is ColorRect:
+			bg.color = slot_hover_color if highlight else slot_color
 
 
 func _snap_card_to_slot(card_ui: CardUI, slot_index: int) -> void:
@@ -464,13 +483,27 @@ func _snap_card_to_slot(card_ui: CardUI, slot_index: int) -> void:
 	# Put card in slot
 	slotted_cards[slot_index] = card_ui
 	
-	# Snap to slot position
+	# Snap to slot position - FAST snap (1-2 frames)
 	var slot = card_slots[slot_index]
-	card_ui.target_position = slot.position
+	var target_pos = slot.position
+	
+	# Stop dragging state immediately
+	card_ui.is_dragging = false
+	card_ui.z_index = 50
+	
+	# Quick snap tween (about 2 frames at 60fps = ~0.033 seconds)
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_QUAD)
+	tween.set_parallel(true)
+	tween.tween_property(card_ui, "position", target_pos, 0.05)
+	tween.tween_property(card_ui, "rotation", 0.0, 0.05)
+	tween.tween_property(card_ui, "scale", Vector2.ONE, 0.05)
+	
+	# Also set targets so idle processing doesn't fight the tween
+	card_ui.target_position = target_pos
 	card_ui.target_rotation = 0.0
 	card_ui.target_scale = Vector2.ONE
-	card_ui.z_index = 50
-	card_ui.is_dragging = false
 	
 	# Emit played signal
 	card_played.emit(card_ui.card_instance)

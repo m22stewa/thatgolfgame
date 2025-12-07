@@ -51,11 +51,6 @@ func _find_and_setup_mesh() -> void:
 	if ball_mesh == null:
 		# Try finding any MeshInstance3D child
 		ball_mesh = _find_mesh_recursive(self)
-	
-	if ball_mesh:
-		print("GolfBall: Found mesh - ", ball_mesh.name)
-	else:
-		push_warning("GolfBall: Could not find MeshInstance3D in model")
 
 
 func _create_shadow() -> void:
@@ -88,7 +83,6 @@ func _create_shadow() -> void:
 	add_child(shadow_mesh)
 	shadow_mesh.top_level = true  # Don't inherit parent transform
 	shadow_mesh.visible = false  # Start hidden, only show during flight
-	print("GolfBall: Shadow created")
 
 
 func update_shadow(ground_y: float = 0.0) -> void:
@@ -172,7 +166,6 @@ func apply_material(material: Material) -> void:
 	"""Apply a material to the ball mesh"""
 	if ball_mesh:
 		ball_mesh.material_override = material
-		print("GolfBall: Material applied")
 	else:
 		push_warning("GolfBall: No mesh found to apply material to")
 

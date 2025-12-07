@@ -1,8 +1,17 @@
-[gd_scene load_steps=5 format=3 uid="uid://c7ppupfhd4nsq"]
+[gd_scene load_steps=7 format=3 uid="uid://c7ppupfhd4nsq"]
 
 [ext_resource type="Script" uid="uid://d07rvvcm5vxy5" path="res://scripts/cards/card_ui.gd" id="1_card_ui"]
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="1_fbbsm"]
 [ext_resource type="Texture2D" uid="uid://vl0mjpdp7k02" path="res://textures/card.png" id="2_1kpl7"]
+[ext_resource type="Shader" uid="uid://0mvrhorfr22a" path="res://scenes/ui/card_shadow.gdshader" id="4_wc1mw"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_wc1mw"]
+shader = ExtResource("4_wc1mw")
+shader_parameter/shadow_color = Color(0, 0, 0, 0.3)
+shader_parameter/shadow_scale = 0.05
+shader_parameter/shadow_min_length = 10.0
+shader_parameter/shadow_max_length = 20.0
+shader_parameter/screen_center = Vector2(1360, 540)
 
 [sub_resource type="LabelSettings" id="LabelSettings_fbbsm"]
 font_size = 13
@@ -29,6 +38,17 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 color = Color(0.2, 0.3, 0.2, 1)
+
+[node name="shadow" type="TextureRect" parent="."]
+material = SubResource("ShaderMaterial_wc1mw")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_1kpl7")
+expand_mode = 1
 
 [node name="TextureRect" type="TextureRect" parent="."]
 layout_mode = 1

@@ -45,6 +45,10 @@ var last_ball_position: Vector3 = Vector3.ZERO
 var ball_velocity: Vector3 = Vector3.ZERO
 var track_after_flight: bool = true
 
+# Wind display
+var wind_label: Label = null
+var wind_indicator: Node3D = null  # The windflag scene instance
+
 # Flight camera behavior
 @export var flight_zoom_out: float = 10.0  # Extra zoom during flight
 @export var flight_look_ahead: float = 0.3  # How much to look ahead of ball during flight
@@ -70,6 +74,9 @@ const PUTTING_ZOOM: float = 20.0  # Closer zoom on green
 func _ready() -> void:
 	# Create the SubViewport structure
 	_setup_viewport()
+	
+	# Create wind UI elements
+	_setup_wind_display()
 	
 	# Find references after scene is ready
 	call_deferred("_find_references")
@@ -116,7 +123,6 @@ func _share_world() -> void:
 	var main_world = get_viewport().find_world_3d()
 	if main_world and viewport:
 		viewport.world_3d = main_world
-		print("HoleViewer: Sharing World3D with main scene")
 
 
 func _find_references() -> void:
@@ -129,15 +135,12 @@ func _find_references() -> void:
 		hex_grid = _find_node_by_name(get_tree().current_scene, "HexGrid")
 	
 	if hex_grid:
-		print("HoleViewer: Found HexGrid at ", hex_grid.get_path())
 		# Register our camera with hex_grid so it can be used for picking
 		# Pass self so hex_grid can set up putting system connection
 		if hex_grid.has_method("set_external_camera"):
 			hex_grid.set_external_camera(camera, viewport, self)
 		_calculate_hole_bounds()
 		_center_on_hole()
-	else:
-		print("HoleViewer: WARNING - Could not find HexGrid")
 	
 	# Find ball
 	_find_ball()
@@ -168,9 +171,6 @@ func _find_ball() -> void:
 		var balls = get_tree().get_nodes_in_group("golf_ball")
 		if balls.size() > 0:
 			ball_node = balls[0]
-	
-	if ball_node:
-		print("HoleViewer: Found ball at ", ball_node.global_position)
 
 
 func _calculate_hole_bounds() -> void:
@@ -202,8 +202,6 @@ func _calculate_hole_bounds() -> void:
 		grid_width * hex_width + tile_size * 2,  # Width
 		grid_height * hex_height + tile_size * 2  # Height
 	)
-	
-	print("HoleViewer: Calculated hole bounds: ", hole_bounds)
 
 
 func _center_on_hole() -> void:
@@ -220,8 +218,6 @@ func _center_on_hole() -> void:
 		var max_dim = max(hole_bounds.size.x * 2, hole_bounds.size.y * 0.5)
 		target_zoom = clamp(max_dim, min_zoom, max_zoom)
 		current_zoom = target_zoom
-		
-		print("HoleViewer: Centered on hole, zoom = ", current_zoom)
 
 
 func _process(delta: float) -> void:
@@ -231,6 +227,7 @@ func _process(delta: float) -> void:
 	_smooth_camera_movement(delta)
 	_update_camera_transform()
 	_update_hovered_tile()
+	_update_wind_display()
 
 
 func _handle_ball_tracking(delta: float) -> void:
@@ -511,8 +508,6 @@ func _handle_tile_click(screen_pos: Vector2) -> void:
 		# Directly set aim on hex_grid if available
 		if hex_grid and hex_grid.has_method("set_aim_cell"):
 			hex_grid.set_aim_cell(tile_coords)
-		else:
-			print("HoleViewer: Clicked tile ", tile_coords)
 
 
 func _update_hovered_tile() -> void:
@@ -677,7 +672,6 @@ func enter_putting_mode(green_center: Vector2i, green_bounds: Rect2i) -> void:
 		return
 	
 	is_putting_mode = true
-	print("HoleViewer: Entering putting mode")
 	
 	# Store current camera settings
 	normal_camera_angle = camera_angle
@@ -705,7 +699,6 @@ func exit_putting_mode() -> void:
 		return
 	
 	is_putting_mode = false
-	print("HoleViewer: Exiting putting mode")
 	
 	# Restore normal camera settings
 	camera_angle = normal_camera_angle
@@ -721,3 +714,114 @@ func exit_putting_mode() -> void:
 func set_putting_system(system: Node) -> void:
 	"""Set reference to the putting system"""
 	putting_system = system
+
+
+# ============================================================================
+# WIND DISPLAY
+# ============================================================================
+
+var wind_widget: Control = null
+
+func _setup_wind_display() -> void:
+	"""Find UI elements for wind display (must be added in editor)"""
+	# 1. Try direct child
+	wind_widget = get_node_or_null("WindWidget")
+	
+	# 2. Try searching recursively in this node
+	if not wind_widget:
+		wind_widget = _find_node_by_name(self, "WindWidget")
+	
+	# 3. Try searching the entire scene (most robust)
+	if not wind_widget and get_tree() and get_tree().current_scene:
+		wind_widget = get_tree().current_scene.find_child("WindWidget", true, false)
+		
+	if wind_widget:
+		# Found existing widget (placed in editor)
+		wind_label = wind_widget.get_node_or_null("Label")
+		var viewport = wind_widget.get_node_or_null("SubViewport")
+		if viewport:
+			wind_indicator = viewport.get_node_or_null("WindIndicator")
+
+
+func _update_wind_display() -> void:
+	"""Update wind indicator based on hex_grid wind system"""
+	# Re-acquire hex_grid if lost (e.g. scene reload or new hole)
+	if not hex_grid or not is_instance_valid(hex_grid):
+		_find_references()
+		if not hex_grid:
+			return
+		
+	if not wind_widget:
+		_setup_wind_display()
+		if not wind_widget:
+			return
+	
+	# Get wind system from hex_grid
+	var wind_system = hex_grid.get("wind_system")
+	
+	if not wind_system:
+		wind_widget.visible = false
+		return
+	
+	# Update wind label
+	var enabled = wind_system.get("enabled")
+	
+	# ALWAYS show the widget, even if calm
+	wind_widget.visible = true
+	
+	if enabled:
+		if wind_label:
+			wind_label.text = wind_system.call("get_display_text")
+		
+		# Update wind indicator (3D flag)
+		if wind_indicator:
+			wind_indicator.visible = true
+			
+			# Rotate indicator to show wind direction RELATIVE to camera view
+			# Wind rotation (0=N) is where wind comes FROM.
+			# Flag should point where wind goes TO (opposite direction, +PI).
+			# Note: wind_system indices are clockwise (N->NE), but 3D rotation is CCW.
+			# So we negate wind_rotation to map N->NE to negative rotation.
+			var wind_rotation = wind_system.call("get_arrow_rotation")
+			
+			# Camera rotation moves opposite to orbit yaw (Yaw increases CCW, Cam Rot decreases CW)
+			# So we ADD camera_yaw to compensate.
+			var relative_rotation = (-wind_rotation + PI) + camera_yaw
+			
+			wind_indicator.rotation.y = relative_rotation
+			
+			# Adjust shader parameters based on wind speed
+			var mesh_instance = wind_indicator.get_node_or_null("MeshInstance3D")
+			if mesh_instance:
+				# Try material_override first, then the mesh's surface material
+				var material = mesh_instance.material_override
+				if not material:
+					material = mesh_instance.get_active_material(0)
+				
+				if material and material is ShaderMaterial:
+					var speed = wind_system.get("speed_kmh")
+					if speed == null: speed = 0.0
+					
+					# Wave Size: 0.0 to 1.5 based on speed (0-40 km/h)
+					var wave_size = lerp(0.0, 1.5, clamp(speed / 40.0, 0.0, 1.0))
+					material.set_shader_parameter("wave_size", wave_size)
+					
+					# Time Scale: Faster animation with higher speed
+					var speed_factor = speed / 20.0
+					material.set_shader_parameter("time_scale", Vector2(0.3 + (0.3 * speed_factor), 0.0))
+	else:
+		# Calm conditions
+		if wind_label:
+			wind_label.text = "Calm"
+		
+		# Show flag but make it still
+		if wind_indicator:
+			wind_indicator.visible = true
+			var mesh_instance = wind_indicator.get_node_or_null("MeshInstance3D")
+			if mesh_instance:
+				var material = mesh_instance.material_override
+				if not material:
+					material = mesh_instance.get_active_material(0)
+				if material and material is ShaderMaterial:
+					material.set_shader_parameter("wave_size", 0.0)
+					material.set_shader_parameter("time_scale", Vector2(0.1, 0.0))

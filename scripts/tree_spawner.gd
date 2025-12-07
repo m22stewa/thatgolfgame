@@ -93,7 +93,7 @@ func _spawn_single_tree(pos: Vector3) -> void:
 		rotation_euler.x = deg_to_rad(randf_range(-max_tilt_degrees, max_tilt_degrees))
 		rotation_euler.z = deg_to_rad(randf_range(-max_tilt_degrees, max_tilt_degrees))
 	tree_instance.rotation = rotation_euler
-	
+
 	# Vary foliage color if enabled
 	if vary_foliage_color and foliage_colors.size() > 0:
 		_apply_random_foliage_color(tree_instance)

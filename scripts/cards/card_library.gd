@@ -34,8 +34,6 @@ func _register_all_cards() -> void:
 	
 	# Register consumables
 	_register_consumables()
-	
-	print("CardLibrary: Registered %d cards" % _cards.size())
 
 
 #region Card Registration

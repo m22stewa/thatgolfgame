@@ -24,11 +24,9 @@ func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
 	
 	if scaled_chips > 0:
 		context.chips += scaled_chips
-		print("Card Effect: +%d chips from %s" % [scaled_chips, target_terrain])
 	
 	if scaled_mult > 0:
 		context.mult += scaled_mult
-		print("Card Effect: +%.1f mult from %s" % [scaled_mult, target_terrain])
 
 
 func _terrain_in_path(context: ShotContext) -> bool:

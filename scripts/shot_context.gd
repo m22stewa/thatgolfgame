@@ -73,7 +73,7 @@ func reset() -> void:
 	curve_mod = 0.0
 	roll_mod = 0.0
 	aoe_tiles.clear()
-	aoe_radius = 1
+	aoe_radius = 0  # Start at 0 (perfect accuracy)
 	aoe_shape = "circle"
 	aoe_weights.clear()
 	path_tiles.clear()

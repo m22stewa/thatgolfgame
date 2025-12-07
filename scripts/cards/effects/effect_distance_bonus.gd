@@ -25,7 +25,6 @@ func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
 			var scaled_per_unit = chips_per_unit + (upgrade_level * 0.5)
 			var bonus = int(distance * scaled_per_unit)
 			context.chips += bonus
-			print("Card Effect: +%d chips (%.1f per cell × %.1f cells)" % [bonus, scaled_per_unit, distance])
 		
 		1:  # LongShot - bonus if distance exceeds threshold
 			if distance >= threshold_distance:
@@ -36,8 +35,6 @@ func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
 					context.chips += scaled_chips
 				if scaled_mult > 0:
 					context.mult += scaled_mult
-				
-				print("Card Effect: Long Shot! +%d chips, +%.1f mult" % [scaled_chips, scaled_mult])
 		
 		2:  # ShortShot - bonus if distance is under threshold
 			if distance <= threshold_distance:
@@ -48,8 +45,6 @@ func apply_on_scoring(context: ShotContext, upgrade_level: int = 0) -> void:
 					context.chips += scaled_chips
 				if scaled_mult > 0:
 					context.mult += scaled_mult
-				
-				print("Card Effect: Precision Shot! +%d chips, +%.1f mult" % [scaled_chips, scaled_mult])
 
 
 func get_description(upgrade_level: int = 0) -> String:

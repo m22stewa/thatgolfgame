@@ -30,9 +30,6 @@ func apply_before_aim(context: ShotContext, upgrade_level: int = 0) -> void:
 	
 	context.curve_strength = scaled_strength * direction_mult
 	context.curve_delay = curve_delay_cells
-	
-	var dir_name = "left" if direction_mult < 0 else "right"
-	print("Card Effect: Curve shot! Strength %.2f %s" % [scaled_strength, dir_name])
 
 
 func apply_on_landing(context: ShotContext, upgrade_level: int = 0) -> void:
@@ -40,7 +37,6 @@ func apply_on_landing(context: ShotContext, upgrade_level: int = 0) -> void:
 	if bonus_on_curve_land > 0 and context.did_curve:
 		var scaled = bonus_on_curve_land + (upgrade_level * 5)
 		context.chips += scaled
-		print("Card Effect: Curved landing! +%d chips" % scaled)
 
 
 func get_description(upgrade_level: int = 0) -> String:

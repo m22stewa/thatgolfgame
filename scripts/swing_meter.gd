@@ -74,7 +74,6 @@ func _ready() -> void:
 	await get_tree().process_frame
 	if track:
 		track_width = track.size.x
-		print("Track width: ", track_width)
 	
 	# Connect gui_input on the Background panel to capture clicks
 	var background = get_node_or_null("Background")
@@ -135,7 +134,6 @@ func _start_swing() -> void:
 	# Start at the zero point (center of accuracy zone = 0% power)
 	marker_position = zero_point
 	_update_state_label("Set Power!")
-	print("Swing started - set power!")
 
 
 func _set_power() -> void:
@@ -165,7 +163,6 @@ func _set_power() -> void:
 	
 	_update_power_label()
 	_update_state_label("Set Accuracy!")
-	print("Power set at %.0f%%" % (power_value * 100))
 
 
 func _set_accuracy() -> void:
@@ -179,8 +176,6 @@ func _set_accuracy() -> void:
 	current_state = State.COMPLETE
 	_update_accuracy_label()
 	_update_state_label("Shot Complete!")
-	
-	print("Accuracy position: %.2f, Offset: %.2f, Curve mod: %.1f" % [marker_position, accuracy_value, curve_mod])
 	
 	# Emit result after brief delay so player can see result
 	await get_tree().create_timer(0.3).timeout
@@ -286,7 +281,6 @@ func _update_power_return_phase(delta: float) -> void:
 	# If marker reaches the zero point without clicking, THAT'S a miss - reset the meter
 	if marker_position <= zero_point:
 		marker_position = zero_point
-		print("Missed power click entirely - resetting swing meter")
 		_reset_meter()
 	
 	_update_marker_visual()
@@ -424,10 +418,6 @@ func configure_for_shot(club_difficulty: float, lie_difficulty: float, power_cap
 	
 	# Power cap from lie
 	max_power = clamp(power_cap, 0.1, 1.0)
-	
-	print("Swing configured: zone_width=%.0f%%, speed=%.0f, max_power=%.0f%%" % [
-		accuracy_zone_width * 100, swing_speed, max_power * 100
-	])
 
 
 func show_meter(speed_multiplier: float = 1.0) -> void:
@@ -446,10 +436,6 @@ func show_meter(speed_multiplier: float = 1.0) -> void:
 	
 	_reset_meter()
 	visible = true
-	
-	print("Swing meter shown: speed=%.0f, return=%.0f, zone=%.0f%%-%.0f%%" % [
-		swing_speed, return_speed, accuracy_zone_start * 100, accuracy_zone_end * 100
-	])
 	
 	# Grab focus for input
 	grab_focus()

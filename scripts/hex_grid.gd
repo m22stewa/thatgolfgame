@@ -173,6 +173,10 @@ var FLOWER_MODELS: Array[PackedScene] = [
 
 @onready var holelabel: Label = %Label
 @onready var thefloor: CSGBox3D = %floor
+@onready var water_effect: ColorRect = %"shoteffects-water"
+
+# Track previous tile for water penalty
+var previous_valid_tile: Vector2i = Vector2i(-1, -1)
 
 var mesh_map = {
 	SurfaceType.TEE: preload("res://scenes/tiles/teebox-mesh.tres"),
@@ -264,6 +268,7 @@ var aoe_system: AOESystem = null
 var lie_system: Node = null  # LieSystem
 var shot_ui: ShotUI = null
 var putting_system: Node = null  # PuttingSystem for green play
+var wind_system: Node = null  # WindSystem for environmental effects
 var hole_viewer: Node = null  # HoleViewer reference
 
 # Card system components
@@ -332,7 +337,6 @@ const ELEVATION_OFFSETS = {
 # --- Helpers ------------------------------------------------------------
 
 func _clear_course_nodes() -> void:
-	thefloor.hide()
 	golf_ball = null  # Reset golf ball reference
 	tile_nodes.clear()  # Clear tile node references
 	tile_data.clear()  # Clear HexTile data
@@ -396,6 +400,74 @@ func _is_adjacent_to_type(col: int, row: int, surface_type: int) -> bool:
 				if get_cell(ncol, nrow) == surface_type:
 					return true
 	return false
+
+
+func _remove_disconnected_water() -> void:
+	"""Remove water tiles that aren't connected to the playable area.
+	   Uses flood fill to find water bodies and checks if they touch any playable tile."""
+	
+	var visited: Dictionary = {}  # Vector2i -> bool
+	var playable_types = [SurfaceType.FAIRWAY, SurfaceType.GREEN, SurfaceType.TEE, SurfaceType.ROUGH, SurfaceType.SAND]
+	
+	# Find all water tiles
+	var all_water_tiles: Array[Vector2i] = []
+	for col in range(grid_width):
+		for row in range(grid_height):
+			if get_cell(col, row) == SurfaceType.WATER:
+				all_water_tiles.append(Vector2i(col, row))
+	
+	# Process each water tile that hasn't been visited
+	for water_tile in all_water_tiles:
+		if visited.has(water_tile):
+			continue
+		
+		# Flood fill to find all connected water tiles in this body
+		var water_body: Array[Vector2i] = []
+		var touches_playable = false
+		var queue: Array[Vector2i] = [water_tile]
+		
+		while queue.size() > 0:
+			var current = queue.pop_front()
+			
+			if visited.has(current):
+				continue
+			visited[current] = true
+			
+			var cx = current.x
+			var cy = current.y
+			
+			if cx < 0 or cx >= grid_width or cy < 0 or cy >= grid_height:
+				continue
+			
+			if get_cell(cx, cy) != SurfaceType.WATER:
+				continue
+			
+			water_body.append(current)
+			
+			# Check all 8 neighbors
+			for dcol in range(-1, 2):
+				for drow in range(-1, 2):
+					if dcol == 0 and drow == 0:
+						continue
+					var ncol = cx + dcol
+					var nrow = cy + drow
+					
+					if ncol >= 0 and ncol < grid_width and nrow >= 0 and nrow < grid_height:
+						var neighbor_surf = get_cell(ncol, nrow)
+						
+						# Check if this neighbor is a playable tile
+						if neighbor_surf in playable_types:
+							touches_playable = true
+						
+						# Add unvisited water neighbors to queue
+						var neighbor_pos = Vector2i(ncol, nrow)
+						if neighbor_surf == SurfaceType.WATER and not visited.has(neighbor_pos):
+							queue.append(neighbor_pos)
+		
+		# If this water body doesn't touch any playable tile, remove it
+		if not touches_playable:
+			for tile in water_body:
+				set_cell(tile.x, tile.y, SurfaceType.ROUGH)
 
 
 func _is_fairway_edge(col: int, row: int) -> bool:
@@ -829,6 +901,7 @@ func _ready() -> void:
 	_generate_grid()
 	_log_hole_info()
 	_start_new_shot()
+	_play_opening_transition()
 
 
 func _init_club_menu() -> void:
@@ -872,7 +945,6 @@ func _init_club_menu() -> void:
 	
 	# Update button visuals to show selected club
 	_update_club_button_visuals()
-	print("Club buttons connected: %d buttons" % club_buttons.size())
 
 
 func _on_spin_button_toggled(spin: SpinType) -> void:
@@ -884,11 +956,9 @@ func _on_spin_button_toggled(spin: SpinType) -> void:
 		for other_spin in spin_buttons:
 			if other_spin != spin:
 				spin_buttons[other_spin].button_pressed = false
-		print("Shot spin: %s" % _get_spin_name(spin))
 	else:
 		# If toggled off, go back to no spin
 		current_spin = SpinType.NONE
-		print("Shot spin: None")
 	
 	# Update trajectory to reflect new spin
 	_refresh_trajectory()
@@ -946,11 +1016,6 @@ func _on_club_button_pressed(club_type: ClubType) -> void:
 	_update_club_button_visuals()
 	_hide_range_preview()
 	_update_dim_overlays()  # Update dim overlays for new club range
-	print("Selected club: %s (max %d tiles / %d yards)" % [
-		_get_club_name(current_club), 
-		get_current_club_distance(),
-		get_current_club_distance() * int(YARDS_PER_CELL)
-	])
 
 
 func _on_club_button_hover(club_type: ClubType) -> void:
@@ -1094,6 +1159,11 @@ func get_current_club_base_distance() -> int:
 	return CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).distance
 
 
+func get_current_club_loft() -> int:
+	"""Get loft value for current club (1-5 scale)"""
+	return CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).loft
+
+
 func get_current_shot_stats() -> Dictionary:
 	"""Get complete shot stats: base club stats + all modifiers = final stats"""
 	var club_stats = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7])
@@ -1147,11 +1217,6 @@ func _set_club(club_type: ClubType) -> void:
 	_update_club_button_visuals()
 	_update_dim_overlays()
 	_refresh_stats_panel()
-	print("Club set: %s (max %d tiles / %d yards)" % [
-		_get_club_name(current_club), 
-		get_current_club_distance(),
-		get_current_club_distance() * int(YARDS_PER_CELL)
-	])
 
 
 func _refresh_stats_panel() -> void:
@@ -1251,7 +1316,6 @@ func _update_dim_overlays() -> void:
 				overlay_count += 1
 	
 	dim_overlays_visible = true
-	print("Created %d dim overlays" % overlay_count)
 
 
 func _create_dim_overlay() -> MeshInstance3D:
@@ -1303,19 +1367,16 @@ func _input(event: InputEvent) -> void:
 				# Single click during animation = fast forward
 				if shot_manager.animation_speed < shot_manager.FAST_FORWARD_SPEED:
 					shot_manager.fast_forward_animation()
-					print("Fast-forwarding animation (3x)")
 				else:
 					# Already fast-forwarding, skip to end
 					shot_manager.skip_animation()
 					_skip_current_animation()
-					print("Skipping animation")
 				return
 		elif event is InputEventKey:
 			if event.pressed and event.keycode == KEY_SPACE:
 				# Space bar = skip animation entirely
 				shot_manager.skip_animation()
 				_skip_current_animation()
-				print("Skipping animation (Space)")
 				return
 	
 	# Only process mouse clicks if not handled by UI
@@ -1357,7 +1418,6 @@ func _try_lock_target(cell: Vector2i) -> void:
 	# Check if forward from ball
 	if golf_ball:
 		if not is_forward_from_ball(cell):
-			print("Cannot shoot backward! Target must be toward the hole.")
 			return
 	
 	# Lock to this cell
@@ -1407,6 +1467,11 @@ func _update_aoe_for_cell(cell: Vector2i) -> void:
 	
 	_hide_all_aoe_highlights()
 	
+	# Get AOE radius from shot context
+	var aoe_radius = 1  # Default
+	if shot_manager and shot_manager.current_context:
+		aoe_radius = shot_manager.current_context.aoe_radius
+	
 	var aoe_offset = get_shape_aoe_offset()
 	var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
 	aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
@@ -1425,19 +1490,20 @@ func _update_aoe_for_cell(cell: Vector2i) -> void:
 				highlight.rotation.y = PI / 6.0
 				highlight.visible = true
 	
-	# Show ring 2 AOE
-	var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
-	for outer_cell in outer_cells:
-		if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
-			var o_surface = get_cell(outer_cell.x, outer_cell.y)
-			if o_surface != -1 and o_surface != SurfaceType.WATER:
-				var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
-				var o_x = outer_cell.x * width * 1.5
-				var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-				var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
-				highlight.position = Vector3(o_x, o_y, o_z)
-				highlight.rotation.y = PI / 6.0
-				highlight.visible = true
+	# Show ring 2 AOE only if radius >= 2
+	if aoe_radius >= 2:
+		var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
+		for outer_cell in outer_cells:
+			if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
+				var o_surface = get_cell(outer_cell.x, outer_cell.y)
+				if o_surface != -1 and o_surface != SurfaceType.WATER:
+					var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
+					var o_x = outer_cell.x * width * 1.5
+					var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
+					var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+					highlight.position = Vector3(o_x, o_y, o_z)
+					highlight.rotation.y = PI / 6.0
+					highlight.visible = true
 
 
 ## Public function to set aim target from external sources (like HoleViewer)
@@ -1445,13 +1511,11 @@ func set_aim_cell(cell: Vector2i) -> bool:
 	"""Set the aim target to a specific cell. Returns true if successful."""
 	# Validate cell is in bounds
 	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
-		print("HexGrid: Invalid aim cell - out of bounds: ", cell)
 		return false
 	
 	# Check if target is forward from ball
 	if golf_ball:
 		if not is_forward_from_ball(cell):
-			print("Cannot shoot backward! Target must be toward the hole.")
 			return false
 	
 	# Lock target to this cell
@@ -1578,33 +1642,41 @@ func set_hover_cell(cell: Vector2i) -> void:
 		var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
 		aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
 		
-		# Update adjacent highlights (ring 1)
-		var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
-		for neighbor in neighbors:
-			if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
-				var n_surface = get_cell(neighbor.x, neighbor.y)
-				if n_surface != -1 and n_surface != SurfaceType.WATER:
-					var highlight = _get_or_create_aoe_highlight(neighbor, 1)
-					var n_x = neighbor.x * width * 1.5
-					var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-					var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
-					highlight.position = Vector3(n_x, n_y, n_z)
-					highlight.rotation.y = PI / 6.0
-					highlight.visible = true
+		# Get AOE radius from shot context (accuracy modifiers applied)
+		var aoe_radius = 1  # Default
+		if shot_manager and shot_manager.current_context:
+			aoe_radius = shot_manager.current_context.aoe_radius
+		
+		# Show AOE rings based on calculated radius
+		if aoe_radius >= 1:
+			# Update adjacent highlights (ring 1)
+			var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
+			for neighbor in neighbors:
+				if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
+					var n_surface = get_cell(neighbor.x, neighbor.y)
+					if n_surface != -1 and n_surface != SurfaceType.WATER:
+						var highlight = _get_or_create_aoe_highlight(neighbor, 1)
+						var n_x = neighbor.x * width * 1.5
+						var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
+						var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
+						highlight.position = Vector3(n_x, n_y, n_z)
+						highlight.rotation.y = PI / 6.0
+						highlight.visible = true
 		
 		# Update outer ring highlights (ring 2)
-		var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
-		for outer_cell in outer_cells:
-			if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
-				var o_surface = get_cell(outer_cell.x, outer_cell.y)
-				if o_surface != -1 and o_surface != SurfaceType.WATER:
-					var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
-					var o_x = outer_cell.x * width * 1.5
-					var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-					var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
-					highlight.position = Vector3(o_x, o_y, o_z)
-					highlight.rotation.y = PI / 6.0
-					highlight.visible = true
+		if aoe_radius >= 2:
+			var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
+			for outer_cell in outer_cells:
+				if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
+					var o_surface = get_cell(outer_cell.x, outer_cell.y)
+					if o_surface != -1 and o_surface != SurfaceType.WATER:
+						var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
+						var o_x = outer_cell.x * width * 1.5
+						var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
+						var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+						highlight.position = Vector3(o_x, o_y, o_z)
+						highlight.rotation.y = PI / 6.0
+						highlight.visible = true
 		
 		# Update trajectory arc
 		if target_locked:
@@ -1632,7 +1704,6 @@ func set_external_camera(cam: Camera3D, vp: SubViewport, viewer: Node = null) ->
 		# Tell hole_viewer about putting system
 		if hole_viewer.has_method("set_putting_system"):
 			hole_viewer.set_putting_system(putting_system)
-	print("HexGrid: External camera set from HoleViewer")
 
 
 # Display debug information about a tile in the info label
@@ -1743,6 +1814,11 @@ func _init_shot_system() -> void:
 	lie_system.name = "LieSystem"
 	add_child(lie_system)
 	
+	# Create wind system
+	wind_system = WindSystem.new()
+	wind_system.name = "WindSystem"
+	add_child(wind_system)
+	
 	# Create shot manager
 	shot_manager = ShotManager.new()
 	shot_manager.name = "ShotManager"
@@ -1794,7 +1870,10 @@ func _init_card_system() -> void:
 	card_system.initialize_starter_deck()
 	card_system.draw_starting_hand(5)
 	
-	print("Card system initialized with starter deck")
+	# Register wind modifier (always active when wind is present)
+	if modifier_manager and wind_system:
+		var wind_modifier = WindModifier.new(wind_system)
+		modifier_manager.add_modifier(wind_modifier)
 
 
 func _init_putting_system() -> void:
@@ -1811,34 +1890,29 @@ func _init_putting_system() -> void:
 		putting_system.putting_mode_exited.connect(_on_putting_mode_exited)
 		putting_system.putt_started.connect(_on_putt_started)
 		putting_system.putt_completed.connect(_on_putt_completed)
-		
-		print("Putting system initialized")
 	else:
 		push_warning("Could not load putting_system.gd")
 
 
 func _on_putting_mode_entered() -> void:
 	"""Called when entering putting mode"""
-	print("HexGrid: Ball is on the green - putting mode active")
 	# Hide regular shot UI elements
 	_hide_shot_visuals()
 
 
 func _on_putting_mode_exited() -> void:
 	"""Called when exiting putting mode"""
-	print("HexGrid: Exited putting mode")
 	# Show regular shot UI elements again
 	_show_shot_visuals()
 
 
 func _on_putt_started(target_tile: Vector2i, power: float) -> void:
 	"""Called when a putt is executed"""
-	print("HexGrid: Putt started - target=[%d,%d], power=%.2f" % [target_tile.x, target_tile.y, power])
+	pass
 
 
 func _on_putt_completed(final_tile: Vector2i) -> void:
 	"""Called when putt roll completes"""
-	print("HexGrid: Putt completed at [%d,%d]" % [final_tile.x, final_tile.y])
 	
 	# Check if still on/near green - if so, stay in putting mode
 	var surface = get_cell(final_tile.x, final_tile.y)
@@ -1903,7 +1977,6 @@ func _find_and_setup_ui() -> void:
 				lie_description_label.bbcode_enabled = true
 			if lie_modifiers_label:
 				lie_modifiers_label.bbcode_enabled = true
-			print("Lie info panel connected")
 	
 	# Also try as direct children of scene root
 	if shot_ui == null:
@@ -1914,17 +1987,11 @@ func _find_and_setup_ui() -> void:
 	# Connect ShotUI
 	if shot_ui:
 		shot_ui.setup(shot_manager, self)
-		print("ShotUI connected to shot system")
-	else:
-		print("ShotUI not found - add ShotUI scene to Control node")
 	
 	# Connect HandUI to deck manager
 	if hand_ui and deck_manager:
 		hand_ui.setup(deck_manager)
 		hand_ui.card_played.connect(_on_card_played_from_hand)
-		print("HandUI connected to deck manager")
-	else:
-		print("HandUI not found - add HandUI scene to Control node")
 
 
 func _on_card_played_from_hand(card_instance: CardInstance) -> void:
@@ -1933,7 +2000,6 @@ func _on_card_played_from_hand(card_instance: CardInstance) -> void:
 		# Create modifier from card and add to current shot
 		var card_mod = CardModifier.new(card_instance)
 		modifier_manager.add_modifier(card_mod)
-		print("Played card: %s" % card_instance.get_display_name())
 
 
 func _update_ui_hole_info() -> void:
@@ -1952,14 +2018,24 @@ func _start_new_shot() -> void:
 	var ball_tile = world_to_grid(golf_ball.position)
 	var ball_surface = get_cell(ball_tile.x, ball_tile.y)
 	
-	# Check if ball is on or near green - enter putting mode
-	# Putting mode activates on green, flag, OR within 2 tiles of green (fringe/approach)
-	var should_putt = ball_surface == SurfaceType.GREEN or ball_surface == SurfaceType.FLAG
-	if not should_putt:
-		should_putt = _is_near_green(ball_tile, 2)
+	# Check if ball is in the hole - don't start a new shot, trigger hole complete
+	if ball_tile == flag_position:
+		_trigger_hole_complete()
+		return
+	
+	# Check if ball is ON the green - ONLY green tiles trigger putting mode
+	var should_putt = ball_surface == SurfaceType.GREEN
 	
 	if should_putt:
 		if putting_system:
+			# Hide ALL shot mode visuals before entering putting mode
+			if target_highlight_mesh:
+				target_highlight_mesh.visible = false
+			if highlight_mesh:
+				highlight_mesh.visible = false
+			_hide_range_preview()
+			_hide_all_aoe_highlights()
+			
 			putting_system.golf_ball = golf_ball
 			putting_system.setup(self, hole_viewer)
 			putting_system.enter_putting_mode()
@@ -1989,7 +2065,6 @@ func _calculate_distance_yards(from: Vector2i, to: Vector2i) -> int:
 
 func _on_shot_started(context: ShotContext) -> void:
 	"""Called when shot begins - calculate lie and update UI"""
-	print("Shot %d started from tile [%d, %d]" % [context.shot_index, context.start_tile.x, context.start_tile.y])
 	
 	# Calculate lie effects for starting position
 	if lie_system and context.start_tile.x >= 0:
@@ -2002,14 +2077,6 @@ func _on_shot_started(context: ShotContext) -> void:
 		# Also update shot_ui if it has the method
 		if shot_ui and shot_ui.has_method("update_lie_info"):
 			shot_ui.update_lie_info(lie_info)
-		
-		var power_mod = lie_info.get("power_mod", 0)
-		var accuracy_mod = lie_info.get("accuracy_mod", 0)
-		print("Lie: %s (Power: %+d tiles, Accuracy: %+d AOE)" % [
-			lie_info.get("display_name", "Unknown"),
-			power_mod,
-			accuracy_mod
-		])
 	
 	# Update UI with current terrain
 	if shot_ui and context.start_tile.x >= 0:
@@ -2139,24 +2206,34 @@ func _on_aoe_computed(context: ShotContext) -> void:
 
 func _on_landing_resolved(context: ShotContext) -> void:
 	"""Called when landing tile is determined"""
-	print("Ball landing at tile [%d, %d]" % [context.landing_tile.x, context.landing_tile.y])
+	pass
 
 
 func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot is finished - animate ball flight, then update state"""
-	print("Shot completed! Score: %d (chips: %d x mult: %.1f)" % [context.final_score, context.chips, context.mult])
 	
 	# Reset target lock state
 	target_locked = false
 	target_highlight_mesh.visible = false
 	
+	# Store previous valid tile before shot (for water penalty)
+	previous_valid_tile = context.start_tile
+	
 	# Mark animation as started
 	if shot_manager:
 		shot_manager.start_animation()
 	
+	# Track if ball hit water
+	var hit_water = false
+	
 	# Animate ball flight to landing position, then bounces
 	if golf_ball and context.landing_tile.x >= 0:
 		var ball_tile = world_to_grid(golf_ball.position)
+		
+		# Check if landing tile is water
+		var landing_surface = get_cell(context.landing_tile.x, context.landing_tile.y)
+		if landing_surface == SurfaceType.WATER:
+			hit_water = true
 		
 		# Get base bounce count from club (drivers bounce more, wedges less)
 		var num_bounces = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).roll
@@ -2168,18 +2245,42 @@ func _on_shot_completed(context: ShotContext) -> void:
 		# Animate ball flight to carry position
 		await _animate_ball_flight_with_bounce(golf_ball.position, carry_pos)
 		
-		# Now apply bounces from carry position toward target and beyond
-		var final_tile = await _apply_bounce_rollout(carry_tile, context.landing_tile, num_bounces)
+		# Check if carry tile is water
+		var carry_surface = get_cell(carry_tile.x, carry_tile.y)
+		if carry_surface == SurfaceType.WATER:
+			hit_water = true
+			# Ball splashes in water at carry position
+			await _handle_water_hazard()
+		else:
+			# Calculate roll direction from ball's starting position through carry position
+			# This maintains the shot's forward direction, not toward the pin
+			var roll_direction = _get_roll_direction(ball_tile, carry_tile)
+			
+			# Now apply bounces from carry position in the shot's direction
+			var final_tile = await _apply_bounce_rollout(carry_tile, roll_direction, num_bounces)
+			
+			# Check if final tile is water
+			var final_surface = get_cell(final_tile.x, final_tile.y)
+			if final_surface == SurfaceType.WATER:
+				hit_water = true
+				await _handle_water_hazard()
 		
 		# Stop ball spin after all bouncing is complete
 		if golf_ball:
 			golf_ball.set_meta("is_spinning", false)
-		
-		print("Final tile after bounces: [%d, %d]" % [final_tile.x, final_tile.y])
 	
 	# Mark animation as ended
 	if shot_manager:
 		shot_manager.end_animation()
+	
+	# Show score popup now that ball has landed
+	if shot_ui:
+		var is_water_hit = context.has_metadata("hit_water")
+		var is_sand_hit = context.has_metadata("hit_sand")
+		shot_ui.show_score_popup(context.chips, context.mult, context.final_score, is_water_hit, is_sand_hit)
+		
+		# Wait for popup to be visible for a bit (allow animation to play)
+		await get_tree().create_timer(4.0).timeout
 	
 	# Hide trajectory after landing
 	trajectory_mesh.visible = false
@@ -2191,11 +2292,12 @@ func _on_shot_completed(context: ShotContext) -> void:
 	
 	# Check if reached flag (note: rollout may have already triggered hole complete)
 	if context.has_metadata("reached_flag"):
-		print("HOLE COMPLETE!")
-		# UI handles showing hole complete popup via signal
+		# Show hole complete popup
+		if shot_ui:
+			# Pass 0 for total_points as ShotUI tracks it internally
+			shot_ui.show_hole_complete(context.shot_index, current_par, 0)
 	else:
-		# Short delay for score popup, then start next shot (reduced from 2.5s)
-		await get_tree().create_timer(0.8).timeout
+		# Start next shot
 		_start_new_shot()
 
 
@@ -2206,6 +2308,40 @@ func _skip_current_animation() -> void:
 		current_ball_tween.custom_step(100.0)  # Fast forward to end
 		current_ball_tween.kill()
 		current_ball_tween = null
+
+
+func _handle_water_hazard() -> void:
+	"""Handle ball landing in water - show effect, return ball to previous tile, add penalty"""
+	
+	# Show and fade in water effect overlay
+	if water_effect:
+		water_effect.color = Color(1, 1, 1, 0)  # Start transparent
+		water_effect.visible = true
+		var tween = create_tween()
+		tween.tween_property(water_effect, "color:a", 1.0, 0.3)
+		await tween.finished
+	
+	# Wait a moment for dramatic effect
+	await get_tree().create_timer(0.5).timeout
+	
+	# Move ball back to previous valid tile
+	if golf_ball and previous_valid_tile.x >= 0:
+		var return_pos = get_tile_surface_position(previous_valid_tile)
+		golf_ball.position = return_pos
+	
+	# Add penalty stroke
+	if shot_manager and shot_manager.current_context:
+		shot_manager.current_context.shot_index += 1
+	
+	# Wait a moment before fading out
+	await get_tree().create_timer(0.3).timeout
+	
+	# Fade out water effect overlay
+	if water_effect:
+		var tween = create_tween()
+		tween.tween_property(water_effect, "color:a", 0.0, 0.7)
+		await tween.finished
+		water_effect.visible = false  # Hide when done
 
 
 var hole_complete_triggered: bool = false  # Prevent multiple triggers
@@ -2225,8 +2361,6 @@ func _trigger_hole_complete() -> void:
 	if golf_ball:
 		golf_ball.set_meta("is_spinning", false)
 	
-	print("=== HOLE COMPLETE! ===")
-	
 	# Hide trajectory
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
@@ -2235,13 +2369,41 @@ func _trigger_hole_complete() -> void:
 	# Trigger confetti on the flag
 	_play_hole_confetti()
 	
-	# TODO: Show hole complete UI, calculate final score, etc.
-	# For now, just wait and regenerate (reduced from 2.0s)
-	await get_tree().create_timer(1.2).timeout
+	# Wait 0.5 seconds for confetti celebration
+	await get_tree().create_timer(0.5).timeout
 	
-	# Reset for next hole
-	hole_complete_triggered = false
-	_on_button_pressed()  # Regenerate course
+	# Play transition while generating new hole
+	_play_transition_loading(func():
+		# Reset for next hole
+		hole_complete_triggered = false
+		
+		# Reset shot counter and club selection
+		if shot_manager and shot_manager.current_context:
+			shot_manager.current_context.shot_index = 0
+		current_club = ClubType.DRIVER
+		_update_club_button_visuals()
+		
+		# Reset target lock
+		target_locked = false
+		locked_cell = Vector2i(-1, -1)
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
+		curved_trajectory_mesh.visible = false
+		target_highlight_mesh.visible = false
+		_hide_all_aoe_highlights()
+		
+		# Cancel any in-progress shot
+		if shot_manager:
+			shot_manager.cancel_shot()
+		
+		_clear_course_nodes()
+		_generate_course()
+		_generate_grid()
+		_log_hole_info()
+		
+		# Start a fresh shot
+		_start_new_shot()
+	)
 
 
 func _play_hole_confetti() -> void:
@@ -2310,51 +2472,46 @@ func _get_carry_position(from_tile: Vector2i, target_tile: Vector2i, bounce_coun
 	return carry_tile
 
 
-func _apply_bounce_rollout(carry_tile: Vector2i, target_tile: Vector2i, num_bounces: int) -> Vector2i:
+func _apply_bounce_rollout(carry_tile: Vector2i, roll_direction: Vector2i, num_bounces: int) -> Vector2i:
 	"""Apply bounce-based rollout after ball lands. Ball bounces forward based on:
 	   - Club base rollout determines number of bounces
 	   - Each bounce gets progressively smaller
-	   - Elevation changes can add/remove bounces
+	   - Ball follows negative elevation (rolls downhill) while moving forward
 	   Spin (topspin/backspin) is applied AFTER bouncing finishes.
 	   Ball stops at water/sand hazards."""
 	
-	# Determine bounce direction (from carry toward target)
-	var bounce_dir = _get_roll_direction(carry_tile, target_tile)
-	
-	print("Bounce rollout: bounces=%d, direction=%s" % [num_bounces, bounce_dir])
+	# Use the provided roll direction (based on shot trajectory)
+	var base_direction = roll_direction
 	
 	var current_tile = carry_tile
 	var bounces_done = 0
 	var reached_hole = false
+	var current_direction = base_direction
 	
 	# Check if carry position is already on the hole
 	if current_tile == flag_position:
-		print("Ball landed in the hole!")
 		_trigger_hole_complete()
 		return current_tile
 	
 	# Do bounces one at a time
 	while bounces_done < num_bounces:
-		var next_tile = Vector2i(current_tile.x + bounce_dir.x, current_tile.y + bounce_dir.y)
+		# Get elevation-influenced direction (follows downhill while moving forward)
+		current_direction = _get_elevation_influenced_direction(current_tile, base_direction)
+		var next_tile = current_tile + current_direction
 		
 		# Check bounds
 		if next_tile.x < 0 or next_tile.x >= grid_width or next_tile.y < 0 or next_tile.y >= grid_height:
-			print("Bounce stopped - out of bounds")
 			break
 		
 		# Check for hazards that stop the ball
 		var next_surface = get_cell(next_tile.x, next_tile.y)
 		if next_surface == -1:
-			print("Bounce stopped - invalid tile")
 			break
 		if next_surface == SurfaceType.WATER:
-			print("Bounce stopped - water hazard")
 			break
 		if next_surface == SurfaceType.SAND:
-			print("Bounce stopped - sand bunker (ball plugs)")
 			break
 		if next_surface == SurfaceType.TREE:
-			print("Bounce stopped - trees")
 			break
 		
 		# Check elevation change for bounce adjustments
@@ -2365,10 +2522,8 @@ func _apply_bounce_rollout(carry_tile: Vector2i, target_tile: Vector2i, num_boun
 		# Adjust bounces based on elevation
 		if elev_diff < -0.3:
 			num_bounces += 1  # Downhill = extra bounce
-			print("  Downhill at [%d,%d] - extra bounce!" % [next_tile.x, next_tile.y])
 		elif elev_diff > 0.3:
 			# Uphill kills the bounce early
-			print("  Uphill at [%d,%d] - bounce dies" % [next_tile.x, next_tile.y])
 			break
 		
 		# Animate bounce to next tile (height decreases with each bounce)
@@ -2381,20 +2536,17 @@ func _apply_bounce_rollout(carry_tile: Vector2i, target_tile: Vector2i, num_boun
 		
 		# Check if ball bounced into the hole
 		if current_tile == flag_position:
-			print("Ball bounced into the hole!")
 			reached_hole = true
 			break
-	
-	print("Bounces complete: %d bounces, position: [%d, %d]" % [bounces_done, current_tile.x, current_tile.y])
 	
 	# If ball reached hole, trigger completion and skip spin
 	if reached_hole:
 		_trigger_hole_complete()
 		return current_tile
 	
-	# Now apply spin effect AFTER bouncing
+	# Now apply spin effect AFTER bouncing (use current direction for spin)
 	if current_spin != SpinType.NONE:
-		current_tile = await _apply_spin_effect(current_tile, bounce_dir)
+		current_tile = await _apply_spin_effect(current_tile, current_direction)
 	
 	return current_tile
 
@@ -2476,20 +2628,16 @@ func _apply_spin_effect(from_tile: Vector2i, roll_dir: Vector2i) -> Vector2i:
 	var spin_tiles = 1  # Spin adds 1 tile of roll
 	var current_tile = from_tile
 	
-	print("Applying %s effect..." % _get_spin_name(current_spin))
-	
 	for i in range(spin_tiles):
 		var next_tile = Vector2i(current_tile.x + spin_direction.x, current_tile.y + spin_direction.y)
 		
 		# Check bounds
 		if next_tile.x < 0 or next_tile.x >= grid_width or next_tile.y < 0 or next_tile.y >= grid_height:
-			print("Spin stopped - out of bounds")
 			break
 		
 		# Check for hazards
 		var next_surface = get_cell(next_tile.x, next_tile.y)
 		if next_surface == -1 or next_surface == SurfaceType.WATER or next_surface == SurfaceType.SAND or next_surface == SurfaceType.TREE:
-			print("Spin stopped - hazard")
 			break
 		
 		# Animate the spin roll (slightly slower than natural roll)
@@ -2500,32 +2648,98 @@ func _apply_spin_effect(from_tile: Vector2i, roll_dir: Vector2i) -> Vector2i:
 		
 		# Check if ball spun into the hole
 		if current_tile == flag_position:
-			print("Ball spun into the hole!")
 			_trigger_hole_complete()
 			break
 	
-	print("Spin effect complete, final: [%d, %d]" % [current_tile.x, current_tile.y])
 	return current_tile
 
 
 func _get_roll_direction(from_tile: Vector2i, to_tile: Vector2i) -> Vector2i:
-	"""Get the primary roll direction (unit vector) from one tile toward another."""
+	"""Get the primary roll direction (unit vector) from one tile toward another.
+	   Returns a normalized direction that can be diagonal (e.g., (1,1) for northeast)."""
 	var dx = to_tile.x - from_tile.x
 	var dy = to_tile.y - from_tile.y
 	
-	# Normalize to unit direction, favoring Y (forward/backward toward flag)
+	# Normalize to unit direction, preserving diagonals
 	var dir = Vector2i(0, 0)
 	
+	if dx != 0:
+		dir.x = 1 if dx > 0 else -1
 	if dy != 0:
 		dir.y = 1 if dy > 0 else -1
-	if dx != 0 and dy == 0:
-		dir.x = 1 if dx > 0 else -1
 	
-	# Default to forward (toward flag) if no direction
+	# Default to forward if no direction
 	if dir == Vector2i(0, 0):
 		dir.y = 1
 	
 	return dir
+
+
+func _get_elevation_influenced_direction(current_tile: Vector2i, base_direction: Vector2i) -> Vector2i:
+	"""Get the next roll direction influenced by elevation.
+	   Ball always moves forward but can curve left/right following lower ground.
+	   base_direction: the general forward direction of travel."""
+	
+	var current_elev = get_elevation(current_tile.x, current_tile.y)
+	
+	# Get the three forward-ish tiles (forward, forward-left, forward-right)
+	var candidates: Array[Dictionary] = []
+	
+	# Always consider the base forward direction
+	var forward = current_tile + base_direction
+	if _is_valid_roll_tile(forward):
+		var elev = get_elevation(forward.x, forward.y)
+		candidates.append({"tile": forward, "elev": elev, "priority": 0})
+	
+	# Determine left and right based on base direction
+	var left_offset: Vector2i
+	var right_offset: Vector2i
+	
+	if base_direction.y != 0:
+		# Moving forward/backward - left/right are on X axis
+		left_offset = Vector2i(base_direction.y, base_direction.y)  # Diagonal forward-left
+		right_offset = Vector2i(-base_direction.y, base_direction.y)  # Diagonal forward-right
+	else:
+		# Moving sideways - left/right are on Y axis
+		left_offset = Vector2i(base_direction.x, base_direction.x)  # Diagonal
+		right_offset = Vector2i(base_direction.x, -base_direction.x)  # Diagonal
+	
+	var forward_left = current_tile + left_offset
+	if _is_valid_roll_tile(forward_left):
+		var elev = get_elevation(forward_left.x, forward_left.y)
+		candidates.append({"tile": forward_left, "elev": elev, "priority": 1})
+	
+	var forward_right = current_tile + right_offset
+	if _is_valid_roll_tile(forward_right):
+		var elev = get_elevation(forward_right.x, forward_right.y)
+		candidates.append({"tile": forward_right, "elev": elev, "priority": 1})
+	
+	if candidates.is_empty():
+		return base_direction  # No valid options, keep going straight
+	
+	# Sort by elevation (lowest first), then by priority (straight preferred)
+	candidates.sort_custom(func(a, b):
+		# Prefer significantly lower elevation
+		var elev_diff = a.elev - b.elev
+		if abs(elev_diff) > 0.15:  # Significant elevation difference
+			return elev_diff < 0
+		# If similar elevation, prefer straight ahead
+		return a.priority < b.priority
+	)
+	
+	# Return direction to the best tile
+	var best_tile = candidates[0].tile
+	return Vector2i(sign(best_tile.x - current_tile.x), sign(best_tile.y - current_tile.y))
+
+
+func _is_valid_roll_tile(tile: Vector2i) -> bool:
+	"""Check if a tile is valid for rolling onto."""
+	if tile.x < 0 or tile.x >= grid_width or tile.y < 0 or tile.y >= grid_height:
+		return false
+	var surface = get_cell(tile.x, tile.y)
+	if surface == -1 or surface == SurfaceType.WATER or surface == SurfaceType.TREE:
+		return false
+	return true
 
 
 func _animate_ball_roll(start_pos: Vector3, end_pos: Vector3, is_spin_roll: bool = false) -> void:
@@ -2699,10 +2913,6 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 	golf_ball.set_meta("spin_axis", spin_axis)
 	golf_ball.set_meta("spin_speed", spin_speed * speed_mult)  # Speed up spin too
 	golf_ball.set_meta("is_spinning", true)
-	
-	# Print curve info for debugging
-	if abs(curve_amount) > 0.1:
-		print("Shot curve: %.2f (%s), scaled lateral: %.1f units" % [curve_amount, curve_type, scaled_curve])
 	
 	# Create tween for flight arc
 	current_ball_tween = create_tween()
@@ -3639,8 +3849,6 @@ func _log_hole_info() -> void:
 				max_elev = elev
 	
 	# flag_position is set in _generate_grid() when flag is placed
-	# Just log it here for debugging
-	print("Flag position: %s" % flag_position)
 	
 	# Count landforms by type
 	var hills = 0
@@ -3665,12 +3873,34 @@ func _log_hole_info() -> void:
 	hole_info_text += "Landforms: %d hills, %d mounds, %d valleys\n" % [hills, mounds, valleys]
 	hole_info_text += "%d ridges, %d swales, %d dunes" % [ridges, swales, dunes]
 	
+	# Generate wind conditions for this hole
+	if wind_system:
+		# Calculate difficulty based on par and yardage
+		var difficulty = 0.5  # Default medium
+		if current_par == 5 or current_yardage > 500:
+			difficulty = 0.7  # Harder holes get more wind
+		elif current_par == 3 or current_yardage < 200:
+			difficulty = 0.3  # Easier holes get less wind
+		
+		wind_system.generate_wind(difficulty)
+		
+		# Debug wind info
+		# print("--- WIND DEBUG ---")
+		# print("Speed: %.1f km/h" % wind_system.speed_kmh)
+		# print("Direction: %s" % wind_system.get_direction_name())
+		# print("Gustiness: %.2f" % wind_system.gustiness)
+		# print("------------------")
+		
+		# Add wind info to on-screen debug text
+		hole_info_text += "\n\nWind: %s %d km/h (Gust: %.2f)" % [
+			wind_system.get_direction_name(), 
+			int(wind_system.speed_kmh),
+			wind_system.gustiness
+		]
+	
 	# Update UI Label
 	if holelabel:
 		holelabel.text = hole_info_text
-	else:
-		# Fallback to console if label not found
-		print(hole_info_text)
 	
 	# Update ShotUI with hole info
 	_update_ui_hole_info()
@@ -3699,6 +3929,9 @@ func generate_hole_with_par(par: int) -> void:
 
 # --- Course generation --------------------------------------------------
 
+# Dogleg type for current hole (set during generation, used for width calculation)
+var current_dogleg_type: int = 3  # 0-2 = dogleg, 3 = straight
+
 func _generate_course() -> void:
 	# Randomly select par (3, 4, or 5)
 	var par_options = [3, 4, 5]
@@ -3713,8 +3946,19 @@ func _generate_course() -> void:
 	# Convert yardage to grid height (length of hole)
 	grid_height = int(current_yardage / YARDS_PER_CELL)
 	
+	# Decide dogleg type BEFORE setting width
+	# 0 = random dogleg, 1 = dogleg left, 2 = dogleg right, 3 = mostly straight
+	current_dogleg_type = randi() % 4
+	
 	# Set width based on par (longer holes are wider)
-	grid_width = config.min_width + randi() % (config.max_width - config.min_width + 1)
+	# If there's a dogleg (types 0-2), ignore the max_width limit to accommodate curves
+	var base_width = config.min_width + randi() % (config.max_width - config.min_width + 1)
+	if current_dogleg_type < 3:
+		# Dogleg holes can be wider - add extra width based on how severe the dogleg is
+		var dogleg_extra_width = 6 + randi() % 8  # Add 6-13 extra tiles for doglegs
+		grid_width = base_width + dogleg_extra_width
+	else:
+		grid_width = base_width
 	
 	_init_grid()
 	_generate_course_features()
@@ -3725,86 +3969,10 @@ func _generate_course_features() -> void:
 	var noise_seed = randi() % 1000
 	elevation_seed = randi() % 10000
 
-	# --- POND WATER FEATURE ---
-	if randf() < 1.0:
-		var pond_size = 4 + randi() % 5
-		var attempts = 0
-		var placed = false
-		while not placed and attempts < 20:
-			var pond_col = 1 + randi() % (grid_width - 2)
-			var pond_row = 1 + randi() % (grid_height - 2)
-
-			var touching_green_or_tee = false
-			for dcol in range(-2, 3):
-				for drow in range(-2, 3):
-					var ncol = pond_col + dcol
-					var nrow = pond_row + drow
-					if ncol >= 0 and ncol < grid_width \
-					and nrow >= 0 and nrow < grid_height:
-						var surf = get_cell(ncol, nrow)
-						if surf == SurfaceType.GREEN or surf == SurfaceType.TEE:
-							touching_green_or_tee = true
-
-			if not touching_green_or_tee:
-				for dcol in range(-3, 4):
-					for drow in range(-3, 4):
-						if dcol * dcol + drow * drow \
-						<= int(pow(float(pond_size) / 2.0, 2)):
-							var col = pond_col + dcol
-							var row = pond_row + drow
-							if col >= 0 and col < grid_width \
-							and row >= 0 and row < grid_height:
-								var surf2 = get_cell(col, row)
-								if surf2 != SurfaceType.GREEN \
-								and surf2 != SurfaceType.TEE:
-									set_cell(col, row, SurfaceType.WATER)
-				placed = true
-
-			attempts += 1
-
-	# --- BODY OF WATER (dynamic edge feature, random chance) ---
-	if randf() < 0.25:
-		var edge = randi() % 4 # 0=left, 1=right, 2=top, 3=bottom
-		var max_depth = 2 + randi() % 3 # 2 to 4 tiles deep
-		var min_length = int(grid_height * 0.5)
-		var min_body_width = int(grid_width * 0.5)
-
-		if edge == 0:
-			var start_row_l = randi() % int(grid_height * 0.3)
-			var end_row_l = start_row_l + min_length + randi() % (grid_height - start_row_l - min_length + 1)
-			end_row_l = min(end_row_l, grid_height)
-			for row in range(start_row_l, end_row_l):
-				var depth_l = 2 + randi() % (max_depth - 1)
-				for col in range(0, depth_l):
-					set_cell(col, row, SurfaceType.WATER)
-
-		elif edge == 1:
-			var start_row_r = randi() % int(grid_height * 0.3)
-			var end_row_r = start_row_r + min_length + randi() % (grid_height - start_row_r - min_length + 1)
-			end_row_r = min(end_row_r, grid_height)
-			for row in range(start_row_r, end_row_r):
-				var depth_r = 2 + randi() % (max_depth - 1)
-				for col in range(grid_width - depth_r, grid_width):
-					set_cell(col, row, SurfaceType.WATER)
-
-		elif edge == 2:
-			var start_col_t = randi() % int(grid_width * 0.3)
-			var end_col_t = start_col_t + min_body_width + randi() % (grid_width - start_col_t - min_body_width + 1)
-			end_col_t = min(end_col_t, grid_width)
-			for col in range(start_col_t, end_col_t):
-				var depth_t = 2 + randi() % (max_depth - 1)
-				for row in range(0, depth_t):
-					set_cell(col, row, SurfaceType.WATER)
-
-		else:
-			var start_col_b = randi() % int(grid_width * 0.3)
-			var end_col_b = start_col_b + min_body_width + randi() % (grid_width - start_col_b - min_body_width + 1)
-			end_col_b = min(end_col_b, grid_width)
-			for col in range(start_col_b, end_col_b):
-				var depth_b = 2 + randi() % (max_depth - 1)
-				for row in range(grid_height - depth_b, grid_height):
-					set_cell(col, row, SurfaceType.WATER)
-
+	# ============================================================
+	# STEP 1: Place tee and green FIRST (fixed points of the hole)
+	# ============================================================
+	
 	# Place tee at top center
 	var tee_col = int(grid_width / 2)
 	var tee_row = 1
@@ -3835,6 +4003,188 @@ func _generate_course_features() -> void:
 			if dist <= green_radius:
 				set_cell(col, row, SurfaceType.GREEN)
 
+	# ============================================================
+	# STEP 2: Carve fairway (path from tee to green)
+	# ============================================================
+	
+	var green_fairway_gap = 1 + randi() % 2
+	var fairway_end_row = green_center_row - green_radius + green_fairway_gap
+	var fairway_start_row = tee_row + 2
+	var start_row = min(fairway_start_row, fairway_end_row)
+	var end_row = max(fairway_start_row, fairway_end_row)
+
+	# Use pre-determined dogleg type from _generate_course()
+	var control_col = tee_col
+	if current_dogleg_type == 0:
+		# Random dogleg - can curve either direction
+		var dogleg_offset0 = int((randf() - 0.5) * grid_width * 1.6)
+		control_col = clamp(tee_col + dogleg_offset0, 1, grid_width - 2)
+	elif current_dogleg_type == 1:
+		# Dogleg left
+		control_col = 1
+	elif current_dogleg_type == 2:
+		# Dogleg right
+		control_col = grid_width - 2
+	else:
+		# Mostly straight (type 3) - slight variation
+		var dogleg_offset3 = int((randf() - 0.5) * grid_width * 0.8)
+		control_col = clamp(tee_col + dogleg_offset3, 1, grid_width - 2)
+
+	var num_segments = abs(end_row - start_row)
+	var path_points: Array = []
+	for i in range(num_segments + 1):
+		var t = float(i) / num_segments
+		var px = int((1.0 - t) * (1.0 - t) * tee_col \
+			+ 2.0 * (1.0 - t) * t * control_col \
+			+ t * t * green_center_col)
+		var py = int(lerp(tee_row, fairway_end_row, t))
+		path_points.append(Vector2(px, py))
+
+	# Store fairway cells for later reference (water should avoid these)
+	var fairway_cells: Dictionary = {}
+	
+	var min_fw_width = 3.0
+	var max_fw_width = 10.0
+	for i in range(path_points.size()):
+		var t2 = float(i) / float(path_points.size() - 1)
+		var fw_width = lerp(min_fw_width, max_fw_width, pow(sin(t2 * PI), 1.5))
+		var half_width = int(fw_width / 2.0)
+		var center = path_points[i]
+		for dcol in range(-half_width, half_width + 1):
+			for drow in range(-half_width, half_width + 1):
+				if dcol * dcol + drow * drow <= half_width * half_width:
+					var fx = int(center.x + dcol)
+					var fy = int(center.y + drow)
+					if fx > 0 and fx < grid_width - 1 and fy > 0 and fy < grid_height - 1:
+						var is_adjacent_to_green = _is_adjacent_to_type(fx, fy, SurfaceType.GREEN)
+						var is_adjacent_to_tee = _is_adjacent_to_type(fx, fy, SurfaceType.TEE)
+						var surf_here = get_cell(fx, fy)
+						if surf_here != SurfaceType.GREEN \
+						and surf_here != SurfaceType.TEE \
+						and not is_adjacent_to_green \
+						and not is_adjacent_to_tee:
+							set_cell(fx, fy, SurfaceType.FAIRWAY)
+							fairway_cells[Vector2i(fx, fy)] = true
+
+	# ============================================================
+	# STEP 3: Place water features AFTER tee/green/fairway exist
+	# ============================================================
+	
+	# --- BODY OF WATER (edge feature that fills solidly from edge to playable area) ---
+	if randf() < 0.35:  # 35% chance of body of water
+		var edge = randi() % 2  # 0=left, 1=right (sides only for better gameplay)
+		
+		# Vertical range for the body of water (almost full height)
+		var start_row_water = randi() % max(1, int(grid_height * 0.1))
+		var end_row_water = grid_height - randi() % max(1, int(grid_height * 0.1))
+		
+		# Track water tiles per row for trimming later
+		var water_rows: Dictionary = {}  # row -> Array of columns with water
+		
+		if edge == 0:  # Left edge water
+			# Fill each row individually from edge to its nearest playable tile
+			for row in range(start_row_water, end_row_water):
+				water_rows[row] = []
+				# Find the closest playable tile for THIS row
+				var row_playable_col = grid_width  # Default to end if no playable found
+				for check_col in range(grid_width):
+					var surf = get_cell(check_col, row)
+					if surf == SurfaceType.FAIRWAY or surf == SurfaceType.TEE or surf == SurfaceType.GREEN:
+						row_playable_col = check_col
+						break
+				
+				# Only place water if there's room on this row
+				if row_playable_col > 2:
+					var fill_to_col = row_playable_col - 1  # 1 tile buffer
+					for col in range(0, fill_to_col):
+						set_cell(col, row, SurfaceType.WATER)
+						water_rows[row].append(col)
+			
+			# Trim each row to max 10 tiles, keeping tiles closest to playable area (rightmost)
+			for row in water_rows.keys():
+				var cols = water_rows[row]
+				if cols.size() > 10:
+					# Sort descending (rightmost first) and keep only first 10
+					cols.sort()
+					cols.reverse()
+					var cols_to_remove = cols.slice(10)
+					for col in cols_to_remove:
+						# Set back to rough instead of water
+						set_cell(col, row, SurfaceType.ROUGH)
+		
+		else:  # Right edge water (edge == 1)
+			# Fill each row individually from its nearest playable tile to edge
+			for row in range(start_row_water, end_row_water):
+				water_rows[row] = []
+				# Find the closest playable tile for THIS row from the right
+				var row_playable_col = -1  # Default to start if no playable found
+				for check_col in range(grid_width - 1, -1, -1):
+					var surf = get_cell(check_col, row)
+					if surf == SurfaceType.FAIRWAY or surf == SurfaceType.TEE or surf == SurfaceType.GREEN:
+						row_playable_col = check_col
+						break
+				
+				# Only place water if there's room on this row
+				if row_playable_col >= 0 and row_playable_col < grid_width - 3:
+					var fill_from_col = row_playable_col + 2  # 1 tile buffer
+					for col in range(fill_from_col, grid_width):
+						set_cell(col, row, SurfaceType.WATER)
+						water_rows[row].append(col)
+			
+			# Trim each row to max 10 tiles, keeping tiles closest to playable area (leftmost)
+			for row in water_rows.keys():
+				var cols = water_rows[row]
+				if cols.size() > 10:
+					# Sort ascending (leftmost first) and keep only first 10
+					cols.sort()
+					var cols_to_remove = cols.slice(10)
+					for col in cols_to_remove:
+						# Set back to rough instead of water
+						set_cell(col, row, SurfaceType.ROUGH)
+
+	# --- POND WATER FEATURE (solid circular shape in rough areas) ---
+	if randf() < 0.7:  # 70% chance of pond
+		var pond_radius = 2 + randi() % 3  # 2-4 radius
+		var attempts = 0
+		var placed = false
+		
+		while not placed and attempts < 50:
+			# Pick a random center point (avoid edges)
+			var pond_col = pond_radius + 1 + randi() % max(1, grid_width - pond_radius * 2 - 2)
+			var pond_row = int(grid_height * 0.2) + randi() % max(1, int(grid_height * 0.6))
+
+			# Check if pond area is clear of playable tiles (with buffer)
+			var area_is_clear = true
+			var buffer = 2  # Stay 2 tiles away from playable areas
+			
+			for dcol in range(-pond_radius - buffer, pond_radius + buffer + 1):
+				if not area_is_clear:
+					break
+				for drow in range(-pond_radius - buffer, pond_radius + buffer + 1):
+					var ncol = pond_col + dcol
+					var nrow = pond_row + drow
+					if ncol >= 0 and ncol < grid_width and nrow >= 0 and nrow < grid_height:
+						var surf = get_cell(ncol, nrow)
+						if surf == SurfaceType.GREEN or surf == SurfaceType.TEE or surf == SurfaceType.FAIRWAY:
+							area_is_clear = false
+							break
+
+			if area_is_clear:
+				# Place the pond - SOLID circle, no conditions inside the radius
+				for dcol in range(-pond_radius, pond_radius + 1):
+					for drow in range(-pond_radius, pond_radius + 1):
+						# Use distance check for circular shape
+						var dist_sq = dcol * dcol + drow * drow
+						if dist_sq <= pond_radius * pond_radius:
+							var col = pond_col + dcol
+							var row = pond_row + drow
+							# Only check bounds, always fill within the circle
+							if col >= 0 and col < grid_width and row >= 0 and row < grid_height:
+								set_cell(col, row, SurfaceType.WATER)
+				placed = true
+
+			attempts += 1
+
 	# --- ISLAND GREEN FEATURE (10% chance) ---
 	# Surrounds the green with water, creating a dramatic approach
 	if randf() < 0.10:
@@ -3856,58 +4206,10 @@ func _generate_course_features() -> void:
 						if surf != SurfaceType.GREEN and surf != SurfaceType.TEE:
 							set_cell(ncol, nrow, SurfaceType.WATER)
 
-	# --- Shaped fairway with dogleg ---
-	var green_fairway_gap = 1 + randi() % 2
-	var fairway_end_row = green_center_row - green_radius + green_fairway_gap
-	var fairway_start_row = tee_row + 2
-	var start_row = min(fairway_start_row, fairway_end_row)
-	var end_row = max(fairway_start_row, fairway_end_row)
-
-	var dogleg_type = randi() % 4
-	var control_col = tee_col
-	if dogleg_type == 0:
-		var dogleg_offset0 = int((randf() - 0.5) * grid_width * 1.6)
-		control_col = clamp(tee_col + dogleg_offset0, 1, grid_width - 2)
-	elif dogleg_type == 1:
-		control_col = 1
-	elif dogleg_type == 2:
-		control_col = grid_width - 2
-	else:
-		var dogleg_offset3 = int((randf() - 0.5) * grid_width * 0.8)
-		control_col = clamp(tee_col + dogleg_offset3, 1, grid_width - 2)
-
-	var num_segments = abs(end_row - start_row)
-	var path_points: Array = []
-	for i in range(num_segments + 1):
-		var t = float(i) / num_segments
-		var px = int((1.0 - t) * (1.0 - t) * tee_col \
-			+ 2.0 * (1.0 - t) * t * control_col \
-			+ t * t * green_center_col)
-		var py = int(lerp(tee_row, fairway_end_row, t))
-		path_points.append(Vector2(px, py))
-
-	var min_width = 3.0
-	var max_width = 10.0
-	for i in range(path_points.size()):
-		var t2 = float(i) / float(path_points.size() - 1)
-		var width = lerp(min_width, max_width, pow(sin(t2 * PI), 1.5))
-		var half_width = int(width / 2.0)
-		var center = path_points[i]
-		for dcol in range(-half_width, half_width + 1):
-			for drow in range(-half_width, half_width + 1):
-				if dcol * dcol + drow * drow <= half_width * half_width:
-					var fx = int(center.x + dcol)
-					var fy = int(center.y + drow)
-					if fx > 0 and fx < grid_width - 1 and fy > 0 and fy < grid_height - 1:
-						var is_adjacent_to_green = _is_adjacent_to_type(fx, fy, SurfaceType.GREEN)
-						var is_adjacent_to_tee = _is_adjacent_to_type(fx, fy, SurfaceType.TEE)
-						var surf_here = get_cell(fx, fy)
-						if surf_here != SurfaceType.GREEN \
-						and surf_here != SurfaceType.TEE \
-						and surf_here != SurfaceType.WATER \
-						and not is_adjacent_to_green \
-						and not is_adjacent_to_tee:
-							set_cell(fx, fy, SurfaceType.FAIRWAY)
+	# --- REMOVE DISCONNECTED WATER ---
+	# Hide water that isn't touching any playable tile (fairway, green, tee, rough)
+	# Use flood fill to find connected water bodies, remove those that don't touch the hole
+	_remove_disconnected_water()
 
 	# --- SAND / WATER HAZARDS ---
 	var sand_roll = randf()
@@ -4254,8 +4556,8 @@ func _trim_organic_edges() -> void:
 	_cleanup_floating_water()
 
 
-# Remove water cells that are not connected to land (floating water)
-# Exception: water at grid edges is always kept (edge water features)
+# Remove water cells that are isolated single tiles (not part of a water body)
+# Large connected water bodies are kept - only truly isolated water is removed
 func _cleanup_floating_water() -> void:
 	var water_to_remove: Array = []
 	
@@ -4264,13 +4566,14 @@ func _cleanup_floating_water() -> void:
 			if get_cell(col, row) != SurfaceType.WATER:
 				continue
 			
-			# Water at grid edges is always kept (edge water bodies are intentional features)
+			# Water at grid edges is always kept
 			var is_edge_water = col <= 1 or col >= grid_width - 2 or row <= 1 or row >= grid_height - 2
 			if is_edge_water:
 				continue
 			
-			# Check if this water cell is adjacent to any land (non-empty, non-water)
-			var has_land_neighbor = false
+			# Count water neighbors and land neighbors
+			var water_neighbors = 0
+			var land_neighbors = 0
 			for dc in range(-1, 2):
 				for dr in range(-1, 2):
 					if dc == 0 and dr == 0:
@@ -4279,23 +4582,24 @@ func _cleanup_floating_water() -> void:
 					var nr = row + dr
 					if nc >= 0 and nc < grid_width and nr >= 0 and nr < grid_height:
 						var neighbor_surf = get_cell(nc, nr)
-						# Land is anything that's not water and not empty
-						if neighbor_surf != -1 and neighbor_surf != SurfaceType.WATER:
-							has_land_neighbor = true
-							break
-				if has_land_neighbor:
-					break
+						if neighbor_surf == SurfaceType.WATER:
+							water_neighbors += 1
+						elif neighbor_surf != -1:  # Land (not empty, not water)
+							land_neighbors += 1
 			
-			if not has_land_neighbor:
+			# Only remove water if it has NO water neighbors AND no land neighbors
+			# (truly isolated single tile) OR if it only has 1-2 water neighbors
+			# and no land (small floating cluster)
+			if water_neighbors == 0 and land_neighbors == 0:
+				water_to_remove.append(Vector2i(col, row))
+			elif water_neighbors <= 2 and land_neighbors == 0:
+				# Small cluster not connected to land - mark for potential removal
+				# But only if it's really small (will be caught in subsequent passes)
 				water_to_remove.append(Vector2i(col, row))
 	
 	# Remove floating water cells
 	for cell in water_to_remove:
 		set_cell(cell.x, cell.y, -1)
-	
-	# Repeat until no more floating water (for water bodies that lost connection gradually)
-	if water_to_remove.size() > 0:
-		_cleanup_floating_water()
 
 
 # Generate elevation map after all surface types are determined
@@ -4610,23 +4914,136 @@ func _on_regenerate_button_pressed() -> void:
 
 
 func _on_button_pressed() -> void:
-	# Reset target lock
-	target_locked = false
-	locked_cell = Vector2i(-1, -1)
-	trajectory_mesh.visible = false
-	trajectory_shadow_mesh.visible = false
-	curved_trajectory_mesh.visible = false
-	target_highlight_mesh.visible = false
-	_hide_all_aoe_highlights()
+	"""Handle Generate New Hole button - play transition while regenerating"""
+	_play_transition_loading(func():
+		# Reset shot counter and club selection
+		if shot_manager and shot_manager.current_context:
+			shot_manager.current_context.shot_index = 0
+		current_club = ClubType.DRIVER
+		_update_club_button_visuals()
+		
+		# Reset target lock
+		target_locked = false
+		locked_cell = Vector2i(-1, -1)
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
+		curved_trajectory_mesh.visible = false
+		target_highlight_mesh.visible = false
+		_hide_all_aoe_highlights()
+		
+		# Cancel any in-progress shot
+		if shot_manager:
+			shot_manager.cancel_shot()
+		
+		_clear_course_nodes()
+		_generate_course()
+		_generate_grid()
+		_log_hole_info()
+		
+		# Start a fresh shot
+		_start_new_shot()
+	)
+
+
+# ============================================================================
+# SCREEN TRANSITION SYSTEM
+# ============================================================================
+
+func _play_opening_transition() -> void:
+	"""Animate the screen transition from 1.0 to 0.0 on game start"""
+	_play_transition_out()
+
+
+func _play_transition_out(duration: float = 1.5, show_loading: bool = false) -> void:
+	"""Transition OUT (1.0 -> 0.0) to reveal the scene"""
+	var transition_rect = get_node_or_null("%sceen-transition")
+	if not transition_rect:
+		return
 	
-	# Cancel any in-progress shot
-	if shot_manager:
-		shot_manager.cancel_shot()
+	transition_rect.visible = true
+	var material = transition_rect.material
+	if not material or not material is ShaderMaterial:
+		return
 	
-	_clear_course_nodes()
-	_generate_course()
-	_generate_grid()
-	_log_hole_info()
+	# Get loading message control
+	var loading_message = transition_rect.get_node_or_null("LoadingMessage")
 	
-	# Start a fresh shot
-	_start_new_shot()
+	material.set_shader_parameter("animation_progress", 1.0)
+	
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	
+	tween.tween_method(
+		func(value: float):
+			material.set_shader_parameter("animation_progress", value)
+			# Fade loading message out immediately as transition starts
+			if loading_message and show_loading:
+				# Fade out from the start: progress 1.0->0 maps to opacity 1->0
+				loading_message.modulate.a = value,
+		1.0,
+		0.0,
+		duration
+	)
+	
+	tween.tween_callback(func(): 
+		transition_rect.visible = false
+		if loading_message:
+			loading_message.modulate.a = 0.0
+	)
+
+
+func _play_transition_in(duration: float = 0.8, show_loading: bool = false) -> void:
+	"""Transition IN (0.0 -> 1.0) to cover the scene"""
+	var transition_rect = get_node_or_null("%sceen-transition")
+	if not transition_rect:
+		return
+	
+	transition_rect.visible = true
+	var material = transition_rect.material
+	if not material or not material is ShaderMaterial:
+		return
+	
+	# Get loading message control
+	var loading_message = transition_rect.get_node_or_null("LoadingMessage")
+	if loading_message:
+		loading_message.modulate.a = 0.0
+	
+	material.set_shader_parameter("animation_progress", 0.0)
+	
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_IN_OUT)
+	tween.set_trans(Tween.TRANS_CUBIC)
+	
+	tween.tween_method(
+		func(value: float):
+			material.set_shader_parameter("animation_progress", value)
+			# Fade loading message in as we cover (only if show_loading is true)
+			if loading_message and show_loading:
+				# Fade in: progress 0->0.5 stays at 0, then 0.5->1.0 fades to 1
+				var opacity = clamp((value - 0.5) * 2.0, 0.0, 1.0)
+				loading_message.modulate.a = opacity,
+		0.0,
+		1.0,
+		duration
+	)
+
+
+func _play_transition_loading(loading_action: Callable) -> void:
+	"""Play full transition: IN (cover), execute action, then OUT (reveal)
+	   The loading_action should be a Callable that performs the loading work"""
+	# Transition in to cover screen (with loading message)
+	_play_transition_in(0.8, true)
+	
+	# Wait for transition to complete
+	await get_tree().create_timer(0.8).timeout
+	
+	# Execute the loading action (e.g., generate new hole)
+	if loading_action.is_valid():
+		loading_action.call()
+	
+	# Small delay to ensure everything is loaded
+	await get_tree().create_timer(0.1).timeout
+	
+	# Transition out to reveal new content (with loading message fading out)
+	_play_transition_out(1.2, true)
