@@ -359,6 +359,7 @@ func _is_mouse_over_ui_control() -> bool:
 				continue
 			if child is Control and child.visible:
 				if _control_wants_input(child, mouse_pos):
+					# print("Input consumed by: ", child.name)
 					return true
 	return false
 
@@ -371,6 +372,19 @@ func _control_wants_input(control: Control, mouse_pos: Vector2) -> bool:
 		# Buttons always consume clicks
 		if control is BaseButton:
 			return true
+			
+		# Card System UI should always consume clicks
+		# Check by class name string to avoid cyclic dependency issues or load order issues
+		if "CardSelectionUI" in control.name:
+			return true
+		if control.get_script() and "card_selection_ui.gd" in control.get_script().resource_path:
+			return true
+			
+		if "CardUI" in control.name:
+			return true
+		if control.get_script() and "card_ui.gd" in control.get_script().resource_path:
+			return true
+			
 		# Check children recursively
 		for child in control.get_children():
 			if child is Control and child.visible:
@@ -391,12 +405,16 @@ func _input(event: InputEvent) -> void:
 	if not _is_mouse_inside():
 		return
 	
-	# Don't handle clicks if mouse is over a UI button
-	if event is InputEventMouseButton and event.pressed:
-		if _is_mouse_over_ui_control():
-			return
-	
 	if event is InputEventMouseButton:
+		# If we are currently dragging/rotating, we own the mouse interaction
+		# and must handle the release event regardless of UI
+		var is_interacting = is_panning or is_rotating
+		
+		if not is_interacting:
+			# If not interacting, check if UI wants this event (Press OR Release)
+			if _is_mouse_over_ui_control():
+				return
+
 		_handle_mouse_button(event)
 		get_viewport().set_input_as_handled()
 

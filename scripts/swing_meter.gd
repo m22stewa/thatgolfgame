@@ -86,6 +86,10 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not visible:
 		return
+		
+	# Ensure track width is up to date (layout may change after visibility toggle)
+	if track:
+		track_width = track.size.x
 	
 	match current_state:
 		State.POWER_PHASE:

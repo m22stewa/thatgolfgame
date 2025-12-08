@@ -13,10 +13,11 @@ class_name CardData
 
 # Card classification
 enum Rarity { COMMON, UNCOMMON, RARE, LEGENDARY }
-enum CardType { SHOT, PASSIVE, CONSUMABLE, JOKER }
+enum CardType { SHOT, PASSIVE, CONSUMABLE, JOKER, CLUB }
 
 @export var rarity: Rarity = Rarity.COMMON
 @export var card_type: CardType = CardType.SHOT
+@export var target_club: String = ""           # If type is CLUB, which club does it represent?
 
 # Visual
 @export var icon: Texture2D = null             # Card art

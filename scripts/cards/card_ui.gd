@@ -15,11 +15,13 @@ signal card_inspect_requested(card_ui: CardUI)  # Click without drag
 
 # Card data
 var card_instance: CardInstance = null
+var custom_front_texture: Texture2D = null
 
 # Visual state
 var is_selected: bool = false
 var is_hovered: bool = false
 var is_playable: bool = true
+var manual_positioning: bool = false # If true, disables internal position/scale animation
 var hover_offset: float = 30.0
 var select_offset: float = 50.0
 
@@ -54,6 +56,7 @@ var inspect_tilt_amount: float = 5.0  # Max tilt in degrees (subtle 3D effect)
 
 # Child node references
 @onready var background: ColorRect = $Background
+@onready var card_front: TextureRect = $TextureRect
 @onready var card_name_label: Label = $CardName
 @onready var description_label: RichTextLabel = $Description
 @onready var rarity_indicator: ColorRect = $RarityIndicator
@@ -128,10 +131,11 @@ func _process_idle(delta: float) -> void:
 		_process_inspection(delta)
 		return
 	
-	# Smooth animation toward target
-	position = position.lerp(target_position, delta * animation_speed)
-	rotation = lerp(rotation, target_rotation, delta * animation_speed)
-	scale = scale.lerp(target_scale, delta * animation_speed)
+	if not manual_positioning:
+		# Smooth animation toward target
+		position = position.lerp(target_position, delta * animation_speed)
+		rotation = lerp(rotation, target_rotation, delta * animation_speed)
+		scale = scale.lerp(target_scale, delta * animation_speed)
 	
 	# Decay any remaining wiggle
 	wiggle_amount = move_toward(wiggle_amount, 0.0, delta * wiggle_decay)
@@ -186,12 +190,22 @@ func setup(instance: CardInstance) -> void:
 		refresh_display()
 
 
+func set_custom_front_texture(texture: Texture2D) -> void:
+	custom_front_texture = texture
+	if is_node_ready() and card_front:
+		card_front.texture = texture
+
+
 func refresh_display() -> void:
 	"""Update visual display from card data"""
 	if not card_instance or not card_instance.data:
 		return
 	
 	var data = card_instance.data
+	
+	# Custom front texture
+	if custom_front_texture and card_front:
+		card_front.texture = custom_front_texture
 	
 	# Card name
 	if card_name_label:
@@ -360,22 +374,28 @@ func _on_gui_input(event: InputEvent) -> void:
 				# Record mouse down position for click vs drag detection
 				is_mouse_down = true
 				mouse_down_position = event.global_position
+				accept_event() # Consume press
 			else:
 				if is_dragging:
 					# End drag
 					end_drag()
 				elif is_mouse_down:
-					# This was a click (not a drag) - request inspection
+					# This was a click (not a drag)
+					card_clicked.emit(self)
 					card_inspect_requested.emit(self)
+					accept_event() # Consume the event so it doesn't bubble to parent
 				is_mouse_down = false
+				accept_event() # Consume release
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			# Right click to play selected card
 			if is_selected and is_playable:
 				card_played.emit(self)
 	
 	elif event is InputEventMouseMotion:
+		# Dragging disabled for now
+		pass
 		# Check if we should start dragging (moved beyond threshold)
-		if is_mouse_down and not is_dragging and is_playable:
-			var distance = event.global_position.distance_to(mouse_down_position)
-			if distance > DRAG_THRESHOLD:
-				start_drag(get_parent().get_local_mouse_position())
+		# if is_mouse_down and not is_dragging and is_playable:
+		# 	var distance = event.global_position.distance_to(mouse_down_position)
+		# 	if distance > DRAG_THRESHOLD:
+		# 		start_drag(get_parent().get_local_mouse_position())

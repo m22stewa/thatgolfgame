@@ -17,68 +17,210 @@ func _ready() -> void:
 
 
 func _register_all_cards() -> void:
-	# Register all starter deck cards
-	_register_starter_cards()
-	
-	# Register common cards
-	_register_common_cards()
-	
-	# Register uncommon cards
-	_register_uncommon_cards()
-	
-	# Register rare cards
-	_register_rare_cards()
-	
-	# Register legendary cards
-	_register_legendary_cards()
-	
-	# Register consumables
-	_register_consumables()
+	_register_golf_cards()
+	_register_club_cards()
 
 
 #region Card Registration
 
-func _register_starter_cards() -> void:
-	# === POWER DRIVE ===
-	var power_drive = CardData.create("power_drive", "Power Drive", CardData.Rarity.COMMON)
-	power_drive.card_type = CardData.CardType.SHOT
-	power_drive.description = "A solid drive with bonus chips."
-	power_drive.flavor_text = "\"Hit it hard, hit it far.\""
-	power_drive.tags = ["drive", "starter"]
+func _register_club_cards() -> void:
+	# Register a card for each club type
+	var clubs = [
+		{"id": "club_driver", "name": "Driver", "club": "DRIVER", "desc": "Max distance off the tee."},
+		{"id": "club_3wood", "name": "3 Wood", "club": "WOOD_3", "desc": "Long distance fairway wood."},
+		{"id": "club_5wood", "name": "5 Wood", "club": "WOOD_5", "desc": "Versatile fairway wood."},
+		{"id": "club_3iron", "name": "3 Iron", "club": "IRON_3", "desc": "Long iron for distance."},
+		{"id": "club_5iron", "name": "5 Iron", "club": "IRON_5", "desc": "Mid-long iron."},
+		{"id": "club_6iron", "name": "6 Iron", "club": "IRON_6", "desc": "Mid iron utility."},
+		{"id": "club_7iron", "name": "7 Iron", "club": "IRON_7", "desc": "Standard mid iron."},
+		{"id": "club_8iron", "name": "8 Iron", "club": "IRON_8", "desc": "Short-mid iron."},
+		{"id": "club_9iron", "name": "9 Iron", "club": "IRON_9", "desc": "Short iron for approach."},
+		{"id": "club_pw", "name": "Pitching Wedge", "club": "PITCHING_WEDGE", "desc": "High loft for approach."},
+		{"id": "club_sw", "name": "Sand Wedge", "club": "SAND_WEDGE", "desc": "Max loft, best for bunkers."},
+		{"id": "club_putter", "name": "Putter", "club": "PUTTER", "desc": "For the green."}
+	]
 	
-	var pd_effect = EffectChipsBonus.new()
-	pd_effect.bonus_chips = 10
-	power_drive.effects.append(pd_effect)
-	_register(power_drive)
+	for c in clubs:
+		var card = CardData.create(c.id, c.name, CardData.Rarity.COMMON)
+		card.card_type = CardData.CardType.CLUB
+		card.target_club = c.club
+		card.description = c.desc
+		_register(card)
+
+
+func _register_golf_cards() -> void:
+	# === CLEAN STRIKE (4) ===
+	var clean_strike = CardData.create("clean_strike", "Clean Strike", CardData.Rarity.COMMON)
+	clean_strike.card_type = CardData.CardType.SHOT
+	clean_strike.description = "No change to distance, accuracy, roll, or score."
+	clean_strike.flavor_text = "Represents a normal, expected shot."
+	clean_strike.tags = ["neutral"]
+	_register(clean_strike)
 	
-	# === STEADY PUTTER ===
-	var steady_putter = CardData.create("steady_putter", "Steady Putter", CardData.Rarity.COMMON)
-	steady_putter.card_type = CardData.CardType.SHOT
-	steady_putter.description = "Precision putting for reliable points."
-	steady_putter.flavor_text = "\"Slow and steady wins the hole.\""
-	steady_putter.tags = ["putt", "starter"]
+	# === CONTROLLED AIM (2) ===
+	var controlled_aim = CardData.create("controlled_aim", "Controlled Aim", CardData.Rarity.COMMON)
+	controlled_aim.card_type = CardData.CardType.SHOT
+	controlled_aim.description = "AOE radius -1 ring (minimum 0)."
+	controlled_aim.flavor_text = "Small precision boost, no distance change."
+	controlled_aim.tags = ["accuracy"]
 	
-	var sp_effect = EffectDistanceBonus.new()
-	sp_effect.distance_mode = 2  # ShortShot
-	sp_effect.threshold_distance = 3.0
-	sp_effect.flat_bonus_chips = 15
-	sp_effect.flat_bonus_mult = 0.5
-	steady_putter.effects.append(sp_effect)
-	_register(steady_putter)
+	var ca_effect = EffectSimpleStat.new()
+	ca_effect.target_stat = "aoe_radius"
+	ca_effect.value = -1
+	controlled_aim.effects.append(ca_effect)
+	_register(controlled_aim)
 	
-	# === FAIRWAY FINDER ===
-	var fairway_finder = CardData.create("fairway_finder", "Fairway Finder", CardData.Rarity.COMMON)
-	fairway_finder.card_type = CardData.CardType.PASSIVE
-	fairway_finder.description = "Bonus points when landing on fairway."
-	fairway_finder.flavor_text = "\"Keep it on the short grass.\""
-	fairway_finder.tags = ["fairway", "starter"]
+	# === SLIGHTLY SHORT (3) ===
+	var slightly_short = CardData.create("slightly_short", "Slightly Short", CardData.Rarity.COMMON)
+	slightly_short.card_type = CardData.CardType.SHOT
+	slightly_short.description = "Distance -1 tile."
+	slightly_short.flavor_text = "Common small distance miss."
+	slightly_short.tags = ["distance"]
 	
-	var ff_effect = EffectTerrainBonus.new()
-	ff_effect.target_terrain = "Fairway"
-	ff_effect.bonus_chips = 8
-	ff_effect.bonus_mult = 0.3
-	fairway_finder.effects.append(ff_effect)
-	_register(fairway_finder)
+	var ss_effect = EffectSimpleStat.new()
+	ss_effect.target_stat = "power_mod"
+	ss_effect.value = -1
+	slightly_short.effects.append(ss_effect)
+	_register(slightly_short)
+	
+	# === WAY SHORT (1) ===
+	var way_short = CardData.create("way_short", "Way Short", CardData.Rarity.UNCOMMON)
+	way_short.card_type = CardData.CardType.SHOT
+	way_short.description = "Distance -2 tiles."
+	way_short.flavor_text = "Larger mishit, but not catastrophic."
+	way_short.tags = ["distance"]
+	
+	var ws_effect = EffectSimpleStat.new()
+	ws_effect.target_stat = "power_mod"
+	ws_effect.value = -2
+	way_short.effects.append(ws_effect)
+	_register(way_short)
+	
+	# === SOLID CONTACT (1) ===
+	var solid_contact = CardData.create("solid_contact", "Solid Contact", CardData.Rarity.COMMON)
+	solid_contact.card_type = CardData.CardType.SHOT
+	solid_contact.description = "Distance +1 tile."
+	solid_contact.flavor_text = "Minor distance bonus for well-struck shots."
+	solid_contact.tags = ["distance"]
+	
+	var sc_effect = EffectSimpleStat.new()
+	sc_effect.target_stat = "power_mod"
+	sc_effect.value = 1
+	solid_contact.effects.append(sc_effect)
+	_register(solid_contact)
+	
+	# === CRUSHED IT (1) ===
+	var crushed_it = CardData.create("crushed_it", "Crushed It", CardData.Rarity.RARE)
+	crushed_it.card_type = CardData.CardType.SHOT
+	crushed_it.description = "Distance +2 tiles."
+	crushed_it.flavor_text = "Big distance boost, exciting on drives."
+	crushed_it.tags = ["distance"]
+	
+	var ci_effect = EffectSimpleStat.new()
+	ci_effect.target_stat = "power_mod"
+	ci_effect.value = 2
+	crushed_it.effects.append(ci_effect)
+	_register(crushed_it)
+	
+	# === SHANK (2) ===
+	var shank = CardData.create("shank", "Shank", CardData.Rarity.UNCOMMON)
+	shank.card_type = CardData.CardType.SHOT
+	shank.description = "AOE radius +1 ring."
+	shank.flavor_text = "Less accurate shot, larger landing zone."
+	shank.tags = ["accuracy"]
+	
+	var shank_effect = EffectSimpleStat.new()
+	shank_effect.target_stat = "aoe_radius"
+	shank_effect.value = 1
+	shank.effects.append(shank_effect)
+	_register(shank)
+	
+	# === WILD PUSH (1) ===
+	var wild_push = CardData.create("wild_push", "Wild Push", CardData.Rarity.UNCOMMON)
+	wild_push.card_type = CardData.CardType.SHOT
+	wild_push.description = "AOE radius +1 ring; add small curve toward miss side."
+	wild_push.flavor_text = "Feels like a directional hook/slice miss."
+	wild_push.tags = ["accuracy", "curve"]
+	
+	var wp_aoe = EffectSimpleStat.new()
+	wp_aoe.target_stat = "aoe_radius"
+	wp_aoe.value = 1
+	wild_push.effects.append(wp_aoe)
+	
+	var wp_curve = EffectCurveShot.new()
+	wp_curve.curve_direction = 2 # Random
+	wp_curve.curve_strength = 0.2
+	wild_push.effects.append(wp_curve)
+	_register(wild_push)
+	
+	# === LASER LINE (1) ===
+	var laser_line = CardData.create("laser_line", "Laser Line", CardData.Rarity.RARE)
+	laser_line.card_type = CardData.CardType.SHOT
+	laser_line.description = "Set AOE radius to 0."
+	laser_line.flavor_text = "Very accurate \"sniper\" shot."
+	laser_line.tags = ["accuracy"]
+	
+	var ll_effect = EffectSimpleStat.new()
+	ll_effect.target_stat = "aoe_radius"
+	ll_effect.value = 0
+	ll_effect.set_mode = true
+	laser_line.effects.append(ll_effect)
+	_register(laser_line)
+	
+	# === HEAVY SPIN (1) ===
+	var heavy_spin = CardData.create("heavy_spin", "Heavy Spin", CardData.Rarity.UNCOMMON)
+	heavy_spin.card_type = CardData.CardType.SHOT
+	heavy_spin.description = "Roll -1 tile (minimum 0)."
+	heavy_spin.flavor_text = "Helps shots stop faster, good for approaches."
+	heavy_spin.tags = ["roll", "spin"]
+	
+	var hs_effect = EffectSimpleStat.new()
+	hs_effect.target_stat = "roll_mod"
+	hs_effect.value = -1
+	heavy_spin.effects.append(hs_effect)
+	_register(heavy_spin)
+	
+	# === HOT BOUNCE (1) ===
+	var hot_bounce = CardData.create("hot_bounce", "Hot Bounce", CardData.Rarity.UNCOMMON)
+	hot_bounce.card_type = CardData.CardType.SHOT
+	hot_bounce.description = "Roll +1 tile."
+	hot_bounce.flavor_text = "Extra rollout after landing."
+	hot_bounce.tags = ["roll"]
+	
+	var hb_effect = EffectSimpleStat.new()
+	hb_effect.target_stat = "roll_mod"
+	hb_effect.value = 1
+	hot_bounce.effects.append(hb_effect)
+	_register(hot_bounce)
+	
+	# === LUCKY BOUNCE (1) ===
+	var lucky_bounce = CardData.create("lucky_bounce", "Lucky Bounce", CardData.Rarity.RARE)
+	lucky_bounce.card_type = CardData.CardType.SHOT
+	lucky_bounce.description = "Roll +1 tile; draw another modifier card (rolling)."
+	lucky_bounce.flavor_text = "Can stack with other modifiers for wild outcomes."
+	lucky_bounce.tags = ["roll", "special"]
+	
+	var lb_effect = EffectSimpleStat.new()
+	lb_effect.target_stat = "roll_mod"
+	lb_effect.value = 1
+	lucky_bounce.effects.append(lb_effect)
+	# TODO: Implement "Draw another modifier" effect
+	_register(lucky_bounce)
+	
+	# === CLUTCH FINISH (1) ===
+	var clutch_finish = CardData.create("clutch_finish", "Clutch Finish", CardData.Rarity.RARE)
+	clutch_finish.card_type = CardData.CardType.SHOT
+	clutch_finish.description = "+1 score multiplier."
+	clutch_finish.flavor_text = "Only if ball ends on green or in hole this shot."
+	clutch_finish.tags = ["scoring"]
+	
+	var cf_effect = EffectMultBonus.new()
+	cf_effect.bonus_mult = 1.0
+	# Trigger condition: OnGreen (5) or OnHole (not in enum, but OnGreen usually covers it or we need logic)
+	# Assuming OnGreen covers it for now
+	cf_effect.trigger_condition = 5 # OnGreen
+	clutch_finish.effects.append(cf_effect)
+	_register(clutch_finish)
 
 
 func _register_common_cards() -> void:
@@ -407,15 +549,66 @@ func create_instance(card_id: String) -> CardInstance:
 	return null
 
 
+func get_club_deck() -> Array[CardInstance]:
+	"""Return a full set of club cards"""
+	var deck: Array[CardInstance] = []
+	var club_ids = [
+		"club_driver", "club_3wood", "club_5wood", 
+		"club_3iron", "club_5iron", "club_6iron", 
+		"club_7iron", "club_8iron", "club_9iron", 
+		"club_pw", "club_sw", "club_putter"
+	]
+	
+	for id in club_ids:
+		var data = get_card(id)
+		if data:
+			deck.append(CardInstance.create_from_data(data))
+			
+	return deck
+
+
 func get_starter_deck() -> Array[CardInstance]:
 	## Returns the default starter deck for a new run
 	var deck: Array[CardInstance] = []
 	
-	# 3 copies of each starter card
-	for i in 3:
-		deck.append(create_instance("power_drive"))
-		deck.append(create_instance("steady_putter"))
-		deck.append(create_instance("fairway_finder"))
+	# Clean Strike (4)
+	for i in 4: deck.append(create_instance("clean_strike"))
+	
+	# Controlled Aim (2)
+	for i in 2: deck.append(create_instance("controlled_aim"))
+	
+	# Slightly Short (3)
+	for i in 3: deck.append(create_instance("slightly_short"))
+	
+	# Way Short (1)
+	deck.append(create_instance("way_short"))
+	
+	# Solid Contact (1)
+	deck.append(create_instance("solid_contact"))
+	
+	# Crushed It (1)
+	deck.append(create_instance("crushed_it"))
+	
+	# Shank (2)
+	for i in 2: deck.append(create_instance("shank"))
+	
+	# Wild Push (1)
+	deck.append(create_instance("wild_push"))
+	
+	# Laser Line (1)
+	deck.append(create_instance("laser_line"))
+	
+	# Heavy Spin (1)
+	deck.append(create_instance("heavy_spin"))
+	
+	# Hot Bounce (1)
+	deck.append(create_instance("hot_bounce"))
+	
+	# Lucky Bounce (1)
+	deck.append(create_instance("lucky_bounce"))
+	
+	# Clutch Finish (1)
+	deck.append(create_instance("clutch_finish"))
 	
 	return deck
 

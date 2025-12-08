@@ -1,0 +1,7 @@
+[gd_scene load_steps=3 format=3 uid="uid://c8j2k3l4m5n6"]
+
+[ext_resource type="PackedScene" uid="uid://bdh233aiwm47f" path="res://scenes/ui/deck_overlay.tscn" id="1_overlay"]
+[ext_resource type="Script" path="res://scripts/ui/deck_widget.gd" id="2_script"]
+
+[node name="DeckWidget" instance=ExtResource("1_overlay")]
+script = ExtResource("2_script")

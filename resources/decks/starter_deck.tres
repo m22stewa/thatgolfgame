@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DeckDefinition" load_steps=3 format=3 uid="uid://gtpkcpcn5wkb"]
+
+[ext_resource type="Script" uid="uid://bqhyqgxuiige0" path="res://scripts/cards/deck_definition.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_woe3k"]
+
+[resource]
+script = ExtResource("1_script")
+deck_id = "starter_deck"
+display_name = "Starter Deck"
+description = "Basic starter deck"
+card_ids = Array[String](["clean_strike", "clean_strike", "clean_strike", "clean_strike", "controlled_aim", "controlled_aim", "slightly_short", "slightly_short", "slightly_short", "way_short", "solid_contact", "power_drive", "wind_reader", "lucky_bounce"])

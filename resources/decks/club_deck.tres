@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DeckDefinition" load_steps=3 format=3 uid="uid://duw6nvk3cwy06"]
+
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_pmqoj"]
+[ext_resource type="Script" uid="uid://bqhyqgxuiige0" path="res://scripts/cards/deck_definition.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+deck_id = "club_deck"
+display_name = "Standard Clubs"
+description = "Standard set of 12 clubs"
+card_ids = Array[String](["club_driver", "club_3wood", "club_5wood", "club_3iron", "club_5iron", "club_6iron", "club_7iron", "club_8iron", "club_9iron", "club_pw", "club_sw", "club_putter"])

@@ -1,0 +1,54 @@
+[gd_scene load_steps=7 format=3 uid="uid://cubpvmp3dd1sd"]
+
+[ext_resource type="Script" uid="uid://djci7xdtp02ij" path="res://scripts/cards/card_3d.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="2_front"]
+[ext_resource type="Texture2D" uid="uid://bto2fkglva4rq" path="res://textures/card-back.png" id="3_back"]
+
+[sub_resource type="BoxMesh" id="CardMesh"]
+size = Vector3(4, 2.02, 0.05)
+
+[sub_resource type="StandardMaterial3D" id="Mat_Front"]
+resource_local_to_scene = true
+albedo_texture = ExtResource("2_front")
+uv1_scale = Vector3(3, 2, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_Back"]
+transparency = 4
+albedo_texture = ExtResource("3_back")
+uv1_scale = Vector3(3, 2, 1)
+
+[node name="Card3D" type="Area3D"]
+script = ExtResource("1_script")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("CardMesh")
+surface_material_override/0 = SubResource("Mat_Front")
+
+[node name="BackMesh" type="MeshInstance3D" parent="MeshInstance3D"]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, -0.026)
+mesh = SubResource("CardMesh")
+surface_material_override/0 = SubResource("Mat_Back")
+
+[node name="TitleLabel" type="Label3D" parent="MeshInstance3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.67556155, 0.03)
+render_priority = 10
+text = "Card Name"
+font_size = 64
+outline_size = 8
+
+[node name="DescLabel" type="Label3D" parent="MeshInstance3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.09793702, 0.03)
+pixel_size = 0.003
+render_priority = 10
+modulate = Color(0, 0, 0, 1)
+outline_modulate = Color(0.98234254, 0.9823423, 0.9823424, 1)
+text = "Card Description goes here."
+font_size = 78
+outline_size = 0
+autowrap_mode = 3
+width = 1100.0
+
+[node name="IconSprite" type="Sprite3D" parent="MeshInstance3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6, 0.03)
+pixel_size = 0.005
+render_priority = 5

@@ -37,7 +37,7 @@ const LIE_DATA = {
 	"FAIRWAY": {
 		"display_name": "Fairway",
 		"description": "Clean lie on short grass. Excellent contact.",
-		"power_mod": -1,       # Slightly less distance than tee
+		"power_mod": 0,        # Standard distance
 		"accuracy_mod": 0,
 		"spin_mod": 0.0,
 		"curve_mod": 0.0,

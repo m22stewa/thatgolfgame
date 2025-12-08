@@ -6,7 +6,7 @@ enum SurfaceType {
 
 # Golf club types and their max distances in tiles
 enum ClubType {
-	DRIVER, WOOD_3, WOOD_5, IRON_3, IRON_5, IRON_6, IRON_7, IRON_8, IRON_9, PITCHING_WEDGE, SAND_WEDGE
+	DRIVER, WOOD_3, WOOD_5, IRON_3, IRON_5, IRON_6, IRON_7, IRON_8, IRON_9, PITCHING_WEDGE, SAND_WEDGE, PUTTER
 }
 
 # Spin types affecting ball roll after landing
@@ -122,10 +122,27 @@ const CLUB_STATS = {
 		"loft": 5,          # Highest loft
 		"arc_height": 5.0,
 	},
+	ClubType.PUTTER: {
+		"name": "Putter",
+		"distance": 5,
+		"accuracy": 0,
+		"roll": 5,
+		"loft": 0,
+		"arc_height": 0.0,
+	}
 }
 
 # Current selected club
 var current_club: ClubType = ClubType.DRIVER
+
+func set_club_by_name(club_name: String) -> void:
+	"""Set current club by string name (e.g. 'DRIVER', 'IRON_5')"""
+	var type = ClubType.get(club_name)
+	if type != null:
+		current_club = type
+		_update_club_button_visuals()
+		_update_trajectory(Vector3.ZERO) # Refresh trajectory
+		_update_dim_overlays()
 
 # Club button references
 var club_buttons: Array[Button] = []
@@ -139,6 +156,10 @@ var dim_overlays_visible: bool = false
 const FLAG = preload("uid://cu7517xrwfodv")
 const TEEBOX_MODEL = preload("res://scenes/tiles/teebox-model.tscn")
 const GOLFBALL = preload("res://scenes/golf_ball.tscn")
+
+# Deck Definitions
+@export var starter_deck: DeckDefinition = preload("res://resources/decks/starter_deck.tres")
+@export var club_deck: DeckDefinition = preload("res://resources/decks/club_deck.tres")
 
 # Array of tree scenes to randomly choose from
 # Add more tree .tscn files here for variety!
@@ -275,7 +296,7 @@ var hole_viewer: Node = null  # HoleViewer reference
 var card_system: CardSystemManager = null
 var card_library: CardLibrary = null
 var deck_manager: DeckManager = null
-var hand_ui: HandUI = null
+
 
 # UI references for lie info panel
 var lie_info_panel: PanelContainer = null
@@ -1867,8 +1888,10 @@ func _init_card_system() -> void:
 	add_child(card_system)
 	
 	# Initialize starter deck
+	card_system.starter_deck_definition = starter_deck
+	card_system.club_deck_definition = club_deck
 	card_system.initialize_starter_deck()
-	card_system.draw_starting_hand(5)
+
 	
 	# Register wind modifier (always active when wind is present)
 	if modifier_manager and wind_system:
@@ -1959,12 +1982,11 @@ func _is_near_green(tile: Vector2i, max_distance: int) -> bool:
 
 
 func _find_and_setup_ui() -> void:
-	"""Find ShotUI and HandUI nodes and connect them to systems"""
+	"""Find ShotUI nodes and connect them to systems"""
 	# Try to find UI nodes in the Control node
 	var control = get_tree().current_scene.get_node_or_null("Control")
 	if control:
 		shot_ui = control.get_node_or_null("ShotUI")
-		hand_ui = control.get_node_or_null("HandUI")
 		
 		# Find lie info panel
 		lie_info_panel = control.get_node_or_null("LieInfoPanel")
@@ -1981,25 +2003,10 @@ func _find_and_setup_ui() -> void:
 	# Also try as direct children of scene root
 	if shot_ui == null:
 		shot_ui = get_tree().current_scene.get_node_or_null("ShotUI")
-	if hand_ui == null:
-		hand_ui = get_tree().current_scene.get_node_or_null("HandUI")
 	
 	# Connect ShotUI
 	if shot_ui:
 		shot_ui.setup(shot_manager, self)
-	
-	# Connect HandUI to deck manager
-	if hand_ui and deck_manager:
-		hand_ui.setup(deck_manager)
-		hand_ui.card_played.connect(_on_card_played_from_hand)
-
-
-func _on_card_played_from_hand(card_instance: CardInstance) -> void:
-	"""Handle when a card is played from the hand UI"""
-	if card_system and shot_manager and shot_manager.is_shot_in_progress:
-		# Create modifier from card and add to current shot
-		var card_mod = CardModifier.new(card_instance)
-		modifier_manager.add_modifier(card_mod)
 
 
 func _update_ui_hole_info() -> void:
@@ -2280,7 +2287,7 @@ func _on_shot_completed(context: ShotContext) -> void:
 		shot_ui.show_score_popup(context.chips, context.mult, context.final_score, is_water_hit, is_sand_hit)
 		
 		# Wait for popup to be visible for a bit (allow animation to play)
-		await get_tree().create_timer(4.0).timeout
+		await get_tree().create_timer(2.0).timeout
 	
 	# Hide trajectory after landing
 	trajectory_mesh.visible = false
@@ -3960,6 +3967,10 @@ func _generate_course() -> void:
 	else:
 		grid_width = base_width
 	
+	# Reset deck for new hole
+	if card_system:
+		card_system.initialize_starter_deck()
+	
 	_init_grid()
 	_generate_course_features()
 
@@ -4921,6 +4932,10 @@ func _on_button_pressed() -> void:
 			shot_manager.current_context.shot_index = 0
 		current_club = ClubType.DRIVER
 		_update_club_button_visuals()
+		
+		# Reset card deck
+		if card_system:
+			card_system.initialize_starter_deck()
 		
 		# Reset target lock
 		target_locked = false

@@ -2,8 +2,8 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d1vw0nxr7kmei"
-path.s3tc="res://.godot/imported/texture_solid.png-162392e72075af3dd5145bffa7d533cb.s3tc.ctex"
+uid="uid://c2i1fnty3x2cx"
+path.s3tc="res://.godot/imported/titleist-logo-png_seeklogo-140305.png-469a43d14d3154dfbb5e16f16086aefd.s3tc.ctex"
 metadata={
 "imported_formats": ["s3tc_bptc"],
 "vram_texture": true
@@ -11,8 +11,8 @@ metadata={
 
 [deps]
 
-source_file="res://textures/texture_solid.png"
-dest_files=["res://.godot/imported/texture_solid.png-162392e72075af3dd5145bffa7d533cb.s3tc.ctex"]
+source_file="res://textures/titleist-logo-png_seeklogo-140305.png"
+dest_files=["res://.godot/imported/titleist-logo-png_seeklogo-140305.png-469a43d14d3154dfbb5e16f16086aefd.s3tc.ctex"]
 
 [params]
 

@@ -6,12 +6,20 @@ class_name CardSystemManager
 
 # References to external systems (set via setup or found automatically)
 var deck_manager: DeckManager = null
+var club_deck_manager: DeckManager = null
 var modifier_manager: ModifierManager = null
 var shot_manager: ShotManager = null
 var card_library: CardLibrary = null
 
+@export_group("Deck Configuration")
+@export var starter_deck_definition: DeckDefinition
+@export var club_deck_definition: DeckDefinition
+
 # UI reference
-var hand_ui: HandUI = null
+var deck_view: DeckView3D = null
+var club_deck_view: DeckView3D = null
+var deck_widget: Control = null
+var club_deck_widget: Control = null
 
 # Signals for external systems
 signal card_system_ready()
@@ -50,13 +58,17 @@ func _auto_setup() -> void:
 		deck_manager.name = "DeckManager"
 		add_child(deck_manager)
 	
-	# Connect deck signals (only if not already connected)
-	if not deck_manager.card_played.is_connected(_on_card_played):
-		deck_manager.card_played.connect(_on_card_played)
-	if not deck_manager.card_discarded.is_connected(_on_card_discarded):
-		deck_manager.card_discarded.connect(_on_card_discarded)
-	if not deck_manager.hand_changed.is_connected(_on_hand_changed):
-		deck_manager.hand_changed.connect(_on_hand_changed)
+	# Create ClubDeckManager if not present
+	if club_deck_manager == null:
+		club_deck_manager = DeckManager.new()
+		club_deck_manager.name = "ClubDeckManager"
+		add_child(club_deck_manager)
+	
+	# Connect deck signals
+	if not deck_manager.card_activated.is_connected(_on_card_activated):
+		deck_manager.card_activated.connect(_on_card_activated)
+	if not club_deck_manager.card_activated.is_connected(_on_card_activated):
+		club_deck_manager.card_activated.connect(_on_card_activated)
 	
 	# Create CardLibrary if not present
 	if card_library == null:
@@ -64,7 +76,60 @@ func _auto_setup() -> void:
 		card_library.name = "CardLibrary"
 		add_child(card_library)
 	
+	# Setup UI
+	_setup_deck_ui()
+	
 	card_system_ready.emit()
+
+
+func _on_request_club_selection() -> void:
+	"""Open club selection UI"""
+	# Get available cards
+	var cards = club_deck_manager._draw_pile
+	
+	# Instantiate the new UI
+	var selection_ui_scene = load("res://scenes/ui/card_selection_ui.tscn")
+	if not selection_ui_scene:
+		push_error("CardSelectionUI scene not found!")
+		return
+		
+	var selection_ui = selection_ui_scene.instantiate()
+	
+	# Calculate deck position for animation origin
+	var deck_pos = Vector2.ZERO
+	var front_texture = null
+	
+	if club_deck_widget:
+		# If it's a Control (DeckWidget or SubViewportContainer)
+		deck_pos = club_deck_widget.global_position + (club_deck_widget.size / 2.0)
+		if club_deck_widget is DeckWidget:
+			front_texture = club_deck_widget.card_front_texture
+	
+	# Add to UI layer
+	var control = get_tree().current_scene.get_node_or_null("Control")
+	if control:
+		control.add_child(selection_ui)
+		selection_ui.setup(cards, deck_pos, front_texture)
+		selection_ui.card_selected.connect(_select_club_card)
+
+
+func _select_club_card(card: CardInstance) -> void:
+	"""Player selected a club from the list"""
+	club_deck_manager.draw_specific_card(card)
+
+
+func _apply_club_selection(card_instance: CardInstance) -> void:
+	"""Handle club card selection"""
+	var club_name = card_instance.data.target_club
+	if club_name.is_empty():
+		return
+		
+	# Find HexGrid (hole controller) to set the club
+	var hex_grid = _find_node_by_class("Node3D") # HexGrid extends Node3D and is usually root or close
+	# Better way: use shot_manager's hole_controller reference
+	if shot_manager and shot_manager.hole_controller:
+		if shot_manager.hole_controller.has_method("set_club_by_name"):
+			shot_manager.hole_controller.set_club_by_name(club_name)
 
 
 func _find_node_by_class(class_name_str: String) -> Node:
@@ -85,53 +150,121 @@ func _recursive_find(node: Node, class_name_str: String) -> Node:
 	return null
 
 
-func _setup_hand_ui() -> void:
-	"""Find or create the HandUI component"""
-	# Try to find existing HandUI
+func _setup_deck_ui() -> void:
+	"""Find or create the DeckView3D component via overlay"""
 	var control = get_tree().current_scene.get_node_or_null("Control")
-	if control:
-		hand_ui = control.get_node_or_null("HandUI")
+	if not control: return
 	
-	if hand_ui == null:
-		# Try loading the scene
-		var hand_ui_scene = load("res://scenes/ui/hand_ui.tscn")
-		if hand_ui_scene and control:
-			hand_ui = hand_ui_scene.instantiate()
-			control.add_child(hand_ui)
+	# Explicitly remove old HandUI/DeckUI if they exist
+	var old_hand = control.get_node_or_null("HandUI")
+	if old_hand: old_hand.queue_free()
+	var old_deck = control.get_node_or_null("DeckUI")
+	if old_deck: old_deck.queue_free()
 	
-	if hand_ui:
-		hand_ui.setup(deck_manager)
-		hand_ui.card_played.connect(_on_ui_card_played)
-		hand_ui.card_selected.connect(_on_ui_card_selected)
+	# Find all DeckWidgets in Control
+	var widgets = []
+	for child in control.get_children():
+		if child is DeckWidget:
+			widgets.append(child)
+		elif child.name == "DeckOverlay" or child.name == "ClubDeckOverlay":
+			# Fallback for old overlays or manually named nodes
+			widgets.append(child)
+	
+	for widget in widgets:
+		var is_club_deck = false
+		
+		# Determine type
+		if widget is DeckWidget:
+			if widget.deck_type == DeckWidget.DeckType.CLUBS:
+				is_club_deck = true
+		elif widget.name == "ClubDeckOverlay":
+			is_club_deck = true
+			
+		# Setup
+		if is_club_deck:
+			# Club Deck
+			club_deck_widget = widget
+			if widget.has_method("get_deck_view"):
+				club_deck_view = widget.get_deck_view()
+				widget.setup(club_deck_manager)
+			else:
+				club_deck_view = widget.get_node_or_null("SubViewport/DeckView3D")
+				if club_deck_view:
+					club_deck_view.setup(club_deck_manager)
+					club_deck_view.interaction_mode = DeckView3D.InteractionMode.SELECT_FROM_UI
+			
+			if club_deck_view and not club_deck_view.request_club_selection.is_connected(_on_request_club_selection):
+				club_deck_view.request_club_selection.connect(_on_request_club_selection)
+				
+		else:
+			# Modifier Deck (Default)
+			deck_widget = widget
+			if widget.has_method("get_deck_view"):
+				deck_view = widget.get_deck_view()
+				widget.setup(deck_manager)
+			else:
+				deck_view = widget.get_node_or_null("SubViewport/DeckView3D")
+				if deck_view:
+					deck_view.setup(deck_manager)
+					deck_view.interaction_mode = DeckView3D.InteractionMode.DRAW_TOP
+			
+			# Ensure signal is disconnected (reverting previous change)
+			if deck_view and deck_view.request_club_selection.is_connected(_on_request_club_selection):
+				deck_view.request_club_selection.disconnect(_on_request_club_selection)
 
 
 # --- Public API ---
 
 func initialize_starter_deck() -> void:
 	"""Initialize the deck with starter cards for a new run"""
+	# Ensure ClubDeckManager exists (it might not be set by external caller)
+	if club_deck_manager == null:
+		club_deck_manager = DeckManager.new()
+		club_deck_manager.name = "ClubDeckManager"
+		add_child(club_deck_manager)
+		# Connect signal
+		if not club_deck_manager.card_activated.is_connected(_on_card_activated):
+			club_deck_manager.card_activated.connect(_on_card_activated)
+
 	if not card_library or not deck_manager:
 		push_warning("CardSystemManager: Cannot init deck - systems not ready")
 		return
 	
-	var starter_cards = card_library.get_starter_deck()
+	# Initialize Modifier Deck
+	var starter_cards: Array[CardInstance] = []
+	if starter_deck_definition:
+		var card_datas = starter_deck_definition.get_all_cards()
+		for data in card_datas:
+			starter_cards.append(CardInstance.create_from_data(data))
+	else:
+		# Fallback to library default
+		starter_cards = card_library.get_starter_deck()
 	
-	for card in starter_cards:
-		deck_manager.add_to_deck(card)
+	deck_manager.initialize_with_instances(starter_cards)
 	
-	deck_manager.shuffle_deck()
+	# Initialize Club Deck
+	if club_deck_manager:
+		var club_cards: Array[CardInstance] = []
+		if club_deck_definition:
+			var card_datas = club_deck_definition.get_all_cards()
+			for data in card_datas:
+				club_cards.append(CardInstance.create_from_data(data))
+		else:
+			# Fallback to library default
+			club_cards = card_library.get_club_deck()
+			
+		club_deck_manager.initialize_with_instances(club_cards)
 
 
-func draw_starting_hand(count: int = 5) -> void:
-	"""Draw the initial hand for a hole"""
-	if deck_manager:
-		for i in count:
-			deck_manager.draw_card()
-
-
-func play_card(card_instance: CardInstance) -> bool:
-	"""Play a card, adding its effects to the modifier system"""
+func activate_card_modifier(card_instance: CardInstance) -> void:
+	"""Apply a card's effects to the modifier system"""
 	if not card_instance or not modifier_manager:
-		return false
+		return
+		
+	# If it's a CLUB card, we don't create a modifier, we set the club
+	if card_instance.data.card_type == CardData.CardType.CLUB:
+		_apply_club_selection(card_instance)
+		return
 	
 	# Create modifier wrapper for the card
 	var card_modifier = CardModifier.new(card_instance)
@@ -139,29 +272,6 @@ func play_card(card_instance: CardInstance) -> bool:
 	# Add to modifier manager
 	modifier_manager.add_modifier(card_modifier)
 	active_card_modifiers.append(card_modifier)
-	
-	# Move card from hand to discard (DeckManager handles this)
-	deck_manager.play_card(card_instance)
-	
-	return true
-
-
-func add_card_to_deck(card_data: CardData) -> void:
-	"""Add a new card to the deck (rewards, shop, etc.)"""
-	if deck_manager and card_data:
-		var instance = CardInstance.new(card_data)
-		deck_manager.add_to_deck(instance)
-		deck_changed.emit()
-
-
-func remove_card_from_deck(card_instance: CardInstance) -> void:
-	"""Remove a card permanently (selling, destroying)"""
-	if deck_manager:
-		# Remove from all piles
-		deck_manager._draw_pile.erase(card_instance)
-		deck_manager._hand.erase(card_instance)
-		deck_manager._discard_pile.erase(card_instance)
-		deck_changed.emit()
 
 
 func get_deck_manager() -> DeckManager:
@@ -179,22 +289,17 @@ func _on_shot_started(context: ShotContext) -> void:
 	# Clear active card modifiers from previous shot
 	_clear_active_modifiers()
 	
-	# Apply Joker cards (always active passives)
-	_apply_joker_cards(context)
-	
-	# Deck manager handles shot start (e.g., draw phase)
+	# Clear active cards in deck manager (move to discard)
 	if deck_manager:
-		deck_manager.on_shot_start(context)
+		deck_manager.clear_active_cards()
+	if club_deck_manager:
+		club_deck_manager.clear_active_cards()
 
 
 func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot finishes"""
 	# Clear active modifiers
 	_clear_active_modifiers()
-	
-	# Deck manager handles shot end (e.g., discard exhausted cards)
-	if deck_manager:
-		deck_manager.on_shot_end(context)
 
 
 func _clear_active_modifiers() -> void:
@@ -206,41 +311,8 @@ func _clear_active_modifiers() -> void:
 	active_card_modifiers.clear()
 
 
-func _apply_joker_cards(context: ShotContext) -> void:
-	"""Apply Joker-type cards (always active passives)"""
-	# Jokers in hand are always active
-	if deck_manager:
-		for card in deck_manager.get_hand():
-			if card.data.card_type == CardData.CardType.JOKER:
-				var card_mod = CardModifier.new(card)
-				modifier_manager.add_modifier(card_mod)
-				active_card_modifiers.append(card_mod)
+# --- Event Handlers ---
 
-
-# --- UI Event Handlers ---
-
-func _on_card_played(card: CardInstance) -> void:
-	"""Handle card played from deck manager"""
-	# Card is already processed by DeckManager
-	pass
-
-
-func _on_card_discarded(card: CardInstance) -> void:
-	"""Handle card discarded"""
-	pass
-
-
-func _on_hand_changed() -> void:
-	"""Handle hand composition change"""
-	deck_changed.emit()
-
-
-func _on_ui_card_played(card: CardInstance) -> void:
-	"""Handle card played from UI"""
-	play_card(card)
-
-
-func _on_ui_card_selected(card: CardInstance) -> void:
-	"""Handle card selected in UI (for preview/info)"""
-	# Could show detailed card info popup
-	pass
+func _on_card_activated(card: CardInstance) -> void:
+	"""Handle card activated from deck manager"""
+	activate_card_modifier(card)

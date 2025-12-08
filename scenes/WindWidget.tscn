@@ -6,11 +6,12 @@
 font_color = Color(0.096204735, 0.09620475, 0.096204735, 1)
 
 [node name="WindWidget" type="SubViewportContainer"]
-offset_left = 7.0
-offset_top = 5.0
-offset_right = 135.0
-offset_bottom = 133.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 136.0
+offset_bottom = 136.0
 size_flags_horizontal = 4
+size_flags_vertical = 4
 mouse_filter = 2
 
 [node name="Label" type="Label" parent="."]

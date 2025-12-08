@@ -1,13 +1,14 @@
-[gd_scene load_steps=58 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=66 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
+[ext_resource type="Texture2D" uid="uid://bto2fkglva4rq" path="res://textures/card-back.png" id="3_do8f8"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
 [ext_resource type="PackedScene" uid="uid://bm4yp6kkayc83" path="res://scenes/hole-generator.tscn" id="4_81eei"]
 [ext_resource type="PackedScene" uid="uid://dsma18qptjtff" path="res://scenes/WindWidget.tscn" id="4_fkwjp"]
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_2xvcl"]
 [ext_resource type="Shader" uid="uid://cwotan7qgy7bh" path="res://scenes/tilt.gdshader" id="5_q0ffo"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="5_shot_ui"]
-[ext_resource type="PackedScene" uid="uid://d26l5mg54l7s2" path="res://scenes/ui/hand_ui.tscn" id="6_hand_ui"]
+[ext_resource type="PackedScene" path="res://scenes/ui/deck_widget.tscn" id="6_eulkx"]
 [ext_resource type="Shader" uid="uid://dw8e21t3mum1l" path="res://scripts/weather-rain.gdshader" id="6_ynlb6"]
 [ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="7_hole_viewer"]
 [ext_resource type="Shader" uid="uid://chnhearr3oxlt" path="res://scripts/screenTransition.gdshader" id="7_mitcx"]
@@ -16,7 +17,11 @@
 [ext_resource type="Shader" uid="uid://d03cyebunvl18" path="res://scripts/floor.gdshader" id="8_q0ffo"]
 [ext_resource type="Shader" uid="uid://d0ig6thf42v6r" path="res://scripts/celebration.gdshader" id="9_06m3i"]
 [ext_resource type="FontFile" uid="uid://csixfh5trj68q" path="res://theme/Unbounded-VariableFont_wght.ttf" id="9_pyvcl"]
+[ext_resource type="PackedScene" uid="uid://brd1rbth2tvmv" path="res://scenes/rolling-ball.tscn" id="10_fkwjp"]
 [ext_resource type="Shader" uid="uid://b4a5pybeu403q" path="res://scripts/ice.gdshader" id="10_jfa70"]
+[ext_resource type="Texture2D" uid="uid://jxeniu88y6gg" path="res://textures/card-back-clubs.png" id="15_dn5wk"]
+[ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="16_6l36g"]
+[ext_resource type="Texture2D" uid="uid://b7223pksok6fj" path="res://textures/card-front-clubs.png" id="18_uydiq"]
 
 [sub_resource type="Gradient" id="Gradient_81eei"]
 
@@ -107,6 +112,13 @@ shader_parameter/spacing = 25.0
 shader_parameter/animation_progress = 0.0
 shader_parameter/dot_size = 1.0
 shader_parameter/dot_color = Color(0, 0.06666667, 0.0627451, 1)
+
+[sub_resource type="Environment" id="Environment_fkwjp"]
+ambient_light_source = 3
+ambient_light_color = Color(0, 0.27450982, 0, 1)
+
+[sub_resource type="World3D" id="World3D_eulkx"]
+environment = SubResource("Environment_fkwjp")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_jfa70"]
 shader = ExtResource("9_06m3i")
@@ -261,6 +273,11 @@ shader_parameter/uv1_offset = Vector2(0, 0)
 [sub_resource type="PlaneMesh" id="PlaneMesh_q0ffo"]
 size = Vector2(400, 400)
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fkwjp"]
+transparency = 1
+cull_mode = 2
+albedo_color = Color(0, 0, 0, 0)
+
 [node name="GOLF" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -356,20 +373,6 @@ offset_bottom = 182.0
 
 [node name="ShotUI" parent="Control" instance=ExtResource("5_shot_ui")]
 layout_mode = 1
-
-[node name="HandUI" parent="Control" instance=ExtResource("6_hand_ui")]
-layout_mode = 1
-anchors_preset = 12
-anchor_top = 1.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 758.0
-offset_top = -200.0
-offset_right = 1.5323486
-grow_horizontal = 2
-grow_vertical = 0
-scale = Vector2(1.0007037, 1)
-slot_spacing = 20.0
 
 [node name="LieInfoPanel" type="PanelContainer" parent="Control"]
 unique_name_in_owner = true
@@ -535,19 +538,32 @@ theme_override_fonts/font = ExtResource("9_pyvcl")
 theme_override_font_sizes/font_size = 66
 text = "Generating new hole..."
 
-[node name="ColorRect" type="ColorRect" parent="Control/CanvasLayer/sceen-transition/LoadingMessage"]
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -20.0
-offset_top = -117.0
-offset_right = 20.0
-offset_bottom = -77.0
-grow_horizontal = 2
-grow_vertical = 2
+[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/CanvasLayer/sceen-transition/LoadingMessage"]
+layout_mode = 0
+offset_left = -116.0
+offset_top = -177.0
+offset_right = 396.0
+offset_bottom = 335.0
+
+[node name="SubViewport" type="SubViewport" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer"]
+own_world_3d = true
+world_3d = SubResource("World3D_eulkx")
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(200, 200)
+render_target_update_mode = 4
+
+[node name="Camera3D" type="Camera3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08075428, 100.4028, 4.5826488)
+
+[node name="RollingBall" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport" instance=ExtResource("10_fkwjp")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 100.33403, 0)
+
+[node name="light" type="OmniLight3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 101.359436, 2.96326)
+
+[node name="light2" type="OmniLight3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 99.181526, 2.7580886)
 
 [node name="fireworks" type="ColorRect" parent="Control/CanvasLayer"]
 visible = false
@@ -585,6 +601,24 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
+[node name="DeckOverlay" parent="Control" instance=ExtResource("6_eulkx")]
+layout_mode = 1
+offset_left = -725.0
+offset_top = -602.0
+offset_right = 75.0
+offset_bottom = -2.0
+card_back_texture = ExtResource("3_do8f8")
+card_front_texture = ExtResource("16_6l36g")
+
+[node name="ClubDeckOverlay" parent="Control" instance=ExtResource("6_eulkx")]
+layout_mode = 1
+offset_top = -599.0
+offset_bottom = 1.0
+deck_type = 1
+card_back_texture = ExtResource("15_dn5wk")
+card_front_texture = ExtResource("18_uydiq")
+interaction_mode = 1
+
 [node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]
 
 [node name="HexGrid" type="Node3D" parent="HoleGenerator"]
@@ -601,9 +635,7 @@ gi_mode = 2
 mesh = SubResource("PlaneMesh_q0ffo")
 
 [node name="shadowcatcher" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0)
-visible = false
-material_overlay = SubResource("ShaderMaterial_q0ffo")
+material_override = SubResource("StandardMaterial3D_fkwjp")
 mesh = SubResource("PlaneMesh_q0ffo")
 
 [connection signal="pressed" from="Control/Button" to="HoleGenerator/HexGrid" method="_on_button_pressed"]

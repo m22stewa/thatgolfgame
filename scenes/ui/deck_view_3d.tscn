@@ -1,0 +1,47 @@
+[gd_scene load_steps=6 format=3 uid="uid://bx4eqix8eau1c"]
+
+[ext_resource type="Script" uid="uid://b4xmxx406cutt" path="res://scripts/cards/deck_view_3d.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://bto2fkglva4rq" path="res://textures/card-back.png" id="2_back"]
+
+[sub_resource type="BoxMesh" id="DeckMesh"]
+size = Vector3(4, 2.02, 0.5)
+
+[sub_resource type="StandardMaterial3D" id="DeckMat"]
+transparency = 4
+albedo_texture = ExtResource("2_back")
+uv1_scale = Vector3(3, 2, 1)
+
+[sub_resource type="BoxShape3D" id="DeckShape"]
+size = Vector3(4, 2.02, 0.5)
+
+[node name="DeckView3D" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.46609324, 0.88473564, 0, -0.88473564, 0.46609324, 0, 8.238342, 3.9275322)
+fov = 40.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.433013, 0.25, 0, 0.5, 0.866025, -0.5, -0.75, 0.433013, 0, 5, 0)
+visible = false
+shadow_enabled = true
+
+[node name="DeckAnchor" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 0, -1.5)
+
+[node name="DeckPileVisual" type="MeshInstance3D" parent="DeckAnchor"]
+mesh = SubResource("DeckMesh")
+surface_material_override/0 = SubResource("DeckMat")
+
+[node name="DeckPileVisual2" type="MeshInstance3D" parent="DeckAnchor"]
+visible = false
+mesh = SubResource("DeckMesh")
+surface_material_override/0 = SubResource("DeckMat")
+
+[node name="DeckClickArea" type="Area3D" parent="DeckAnchor"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DeckAnchor/DeckClickArea"]
+shape = SubResource("DeckShape")
+
+[node name="SlotAnchor" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 0, 1.0864367)
