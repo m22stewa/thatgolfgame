@@ -28,6 +28,9 @@ signal deck_changed()
 # Active card modifiers (cards that are currently affecting the shot)
 var active_card_modifiers: Array[CardModifier] = []
 
+# State
+var club_selection_locked: bool = false
+
 
 func _ready() -> void:
 	# Auto-find systems if not explicitly set
@@ -82,35 +85,129 @@ func _auto_setup() -> void:
 	card_system_ready.emit()
 
 
-func _on_request_club_selection() -> void:
-	"""Open club selection UI"""
-	# Get available cards
+# --- Turn Selection Flow ---
+
+signal turn_selection_complete(club_card: CardInstance, modifier_card: CardInstance)
+
+var selected_club_card: CardInstance = null
+var selected_modifier_card: CardInstance = null
+var current_selection_ui: CardSelectionUI = null
+var _current_modifier_candidates: Array[CardInstance] = []
+
+func start_turn_selection() -> void:
+	"""Begin the turn sequence: Club -> Modifier -> Shot"""
+	selected_club_card = null
+	selected_modifier_card = null
+	_current_modifier_candidates.clear()
+	club_selection_locked = false
+	
+	_start_club_selection()
+
+
+func _start_club_selection() -> void:
+	# Get available club cards
 	var cards = club_deck_manager._draw_pile
 	
-	# Instantiate the new UI
+	# Show UI
+	_show_selection_ui(cards, _on_club_selected, club_deck_widget)
+
+
+func _on_club_selected(card: CardInstance) -> void:
+	if selected_club_card != null:
+		return # Already selected
+		
+	selected_club_card = card
+	
+	# Close UI
+	if current_selection_ui:
+		current_selection_ui.queue_free()
+		current_selection_ui = null
+	
+	# Move card to active pile
+	club_deck_manager.draw_specific_card(card)
+	
+	# Apply club immediately
+	_apply_club_selection(card)
+	
+	# Proceed to modifier selection
+	# Don't auto-start modifier selection. Wait for user to click modifier deck.
+	# _start_modifier_selection()
+
+
+func _start_modifier_selection() -> void:
+	# Guard: Don't start if already selecting or if club not selected yet
+	if current_selection_ui != null:
+		return
+	if selected_club_card == null:
+		# Optional: Shake deck or show warning?
+		return
+
+	# Draw hand for modifiers (e.g. 3 cards)
+	var hand_size = 3
+	_current_modifier_candidates = deck_manager.draw_candidates(hand_size)
+	
+	if _current_modifier_candidates.is_empty():
+		# No cards? Skip to end
+		_on_modifier_selected(null)
+		return
+		
+	# Show UI
+	_show_selection_ui(_current_modifier_candidates, _on_modifier_selected, deck_widget)
+
+
+func _on_modifier_selected(card: CardInstance) -> void:
+	selected_modifier_card = card
+	
+	# Close UI
+	if current_selection_ui:
+		current_selection_ui.queue_free()
+		current_selection_ui = null
+	
+	# Handle candidates
+	if card:
+		# Play the selected card
+		deck_manager.play_candidate(card)
+		activate_card_modifier(card)
+		
+		# Remove from candidates list so we don't discard it
+		_current_modifier_candidates.erase(card)
+	
+	# Discard the rest
+	deck_manager.discard_candidates(_current_modifier_candidates)
+	_current_modifier_candidates.clear()
+	
+	# Signal completion
+	turn_selection_complete.emit(selected_club_card, selected_modifier_card)
+
+
+func _show_selection_ui(cards: Array[CardInstance], callback: Callable, source_widget: Control = null) -> void:
 	var selection_ui_scene = load("res://scenes/ui/card_selection_ui.tscn")
 	if not selection_ui_scene:
 		push_error("CardSelectionUI scene not found!")
 		return
 		
 	var selection_ui = selection_ui_scene.instantiate()
+	current_selection_ui = selection_ui
 	
-	# Calculate deck position for animation origin
+	# Calculate deck position
 	var deck_pos = Vector2.ZERO
 	var front_texture = null
 	
-	if club_deck_widget:
-		# If it's a Control (DeckWidget or SubViewportContainer)
-		deck_pos = club_deck_widget.global_position + (club_deck_widget.size / 2.0)
-		if club_deck_widget is DeckWidget:
-			front_texture = club_deck_widget.card_front_texture
+	if source_widget:
+		deck_pos = source_widget.global_position + (source_widget.size / 2.0)
+		if source_widget is DeckWidget:
+			front_texture = source_widget.card_front_texture
 	
 	# Add to UI layer
 	var control = get_tree().current_scene.get_node_or_null("Control")
+	# Or find MainUI
+	if not control:
+		control = get_tree().current_scene.find_child("MainUI", true, false)
+		
 	if control:
 		control.add_child(selection_ui)
 		selection_ui.setup(cards, deck_pos, front_texture)
-		selection_ui.card_selected.connect(_select_club_card)
+		selection_ui.card_selected.connect(callback)
 
 
 func _select_club_card(card: CardInstance) -> void:
@@ -130,6 +227,9 @@ func _apply_club_selection(card_instance: CardInstance) -> void:
 	if shot_manager and shot_manager.hole_controller:
 		if shot_manager.hole_controller.has_method("set_club_by_name"):
 			shot_manager.hole_controller.set_club_by_name(club_name)
+			
+			# Lock selection after choosing
+			club_selection_locked = true
 
 
 func _find_node_by_class(class_name_str: String) -> Node:
@@ -152,23 +252,33 @@ func _recursive_find(node: Node, class_name_str: String) -> Node:
 
 func _setup_deck_ui() -> void:
 	"""Find or create the DeckView3D component via overlay"""
-	var control = get_tree().current_scene.get_node_or_null("Control")
-	if not control: return
-	
-	# Explicitly remove old HandUI/DeckUI if they exist
-	var old_hand = control.get_node_or_null("HandUI")
-	if old_hand: old_hand.queue_free()
-	var old_deck = control.get_node_or_null("DeckUI")
-	if old_deck: old_deck.queue_free()
-	
-	# Find all DeckWidgets in Control
 	var widgets = []
-	for child in control.get_children():
-		if child is DeckWidget:
-			widgets.append(child)
-		elif child.name == "DeckOverlay" or child.name == "ClubDeckOverlay":
-			# Fallback for old overlays or manually named nodes
-			widgets.append(child)
+	
+	# Try to find MainUI first
+	var main_ui = get_tree().current_scene.find_child("MainUI", true, false)
+	if main_ui and main_ui.get("modifier_deck_widget"):
+		if main_ui.modifier_deck_widget:
+			widgets.append(main_ui.modifier_deck_widget)
+		if main_ui.club_deck_widget:
+			widgets.append(main_ui.club_deck_widget)
+	
+	# Fallback to searching Control
+	if widgets.is_empty():
+		var control = get_tree().current_scene.get_node_or_null("Control")
+		if control:
+			# Explicitly remove old HandUI/DeckUI if they exist
+			var old_hand = control.get_node_or_null("HandUI")
+			if old_hand: old_hand.queue_free()
+			var old_deck = control.get_node_or_null("DeckUI")
+			if old_deck: old_deck.queue_free()
+			
+			# Find all DeckWidgets in Control
+			for child in control.get_children():
+				if child is DeckWidget:
+					widgets.append(child)
+				elif child.name == "DeckOverlay" or child.name == "ClubDeckOverlay":
+					# Fallback for old overlays or manually named nodes
+					widgets.append(child)
 	
 	for widget in widgets:
 		var is_club_deck = false
@@ -184,6 +294,14 @@ func _setup_deck_ui() -> void:
 		if is_club_deck:
 			# Club Deck
 			club_deck_widget = widget
+			
+			# Ensure correct textures for Club Deck
+			if widget is DeckWidget:
+				if not widget.card_front_texture or widget.card_front_texture.resource_path.contains("card-front.png"):
+					widget.card_front_texture = load("res://textures/card-front-clubs.png")
+				if not widget.card_back_texture or widget.card_back_texture.resource_path.contains("card-back.png"):
+					widget.card_back_texture = load("res://textures/card-back-clubs.png")
+			
 			if widget.has_method("get_deck_view"):
 				club_deck_view = widget.get_deck_view()
 				widget.setup(club_deck_manager)
@@ -193,12 +311,20 @@ func _setup_deck_ui() -> void:
 					club_deck_view.setup(club_deck_manager)
 					club_deck_view.interaction_mode = DeckView3D.InteractionMode.SELECT_FROM_UI
 			
-			if club_deck_view and not club_deck_view.request_club_selection.is_connected(_on_request_club_selection):
-				club_deck_view.request_club_selection.connect(_on_request_club_selection)
+			if club_deck_view and not club_deck_view.request_club_selection.is_connected(start_turn_selection):
+				club_deck_view.request_club_selection.connect(start_turn_selection)
 				
 		else:
 			# Modifier Deck (Default)
 			deck_widget = widget
+			
+			# Ensure correct textures for Modifier Deck
+			if widget is DeckWidget:
+				if not widget.card_front_texture:
+					widget.card_front_texture = load("res://textures/card-front.png")
+				if not widget.card_back_texture:
+					widget.card_back_texture = load("res://textures/card-back.png")
+			
 			if widget.has_method("get_deck_view"):
 				deck_view = widget.get_deck_view()
 				widget.setup(deck_manager)
@@ -206,17 +332,25 @@ func _setup_deck_ui() -> void:
 				deck_view = widget.get_node_or_null("SubViewport/DeckView3D")
 				if deck_view:
 					deck_view.setup(deck_manager)
-					deck_view.interaction_mode = DeckView3D.InteractionMode.DRAW_TOP
+					# Use SELECT_FROM_UI mode to trigger custom logic instead of auto-draw
+					deck_view.interaction_mode = DeckView3D.InteractionMode.SELECT_FROM_UI
 			
-			# Ensure signal is disconnected (reverting previous change)
-			if deck_view and deck_view.request_club_selection.is_connected(_on_request_club_selection):
-				deck_view.request_club_selection.disconnect(_on_request_club_selection)
+			# Connect modifier deck click to modifier selection
+			if deck_view:
+				if deck_view.request_club_selection.is_connected(start_turn_selection):
+					deck_view.request_club_selection.disconnect(start_turn_selection)
+				
+				if not deck_view.request_club_selection.is_connected(_start_modifier_selection):
+					deck_view.request_club_selection.connect(_start_modifier_selection)
 
 
 # --- Public API ---
 
 func initialize_starter_deck() -> void:
 	"""Initialize the deck with starter cards for a new run"""
+	# Reset lock
+	club_selection_locked = false
+
 	# Ensure ClubDeckManager exists (it might not be set by external caller)
 	if club_deck_manager == null:
 		club_deck_manager = DeckManager.new()
@@ -300,6 +434,9 @@ func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot finishes"""
 	# Clear active modifiers
 	_clear_active_modifiers()
+	
+	# Unlock club selection for next shot
+	club_selection_locked = false
 
 
 func _clear_active_modifiers() -> void:

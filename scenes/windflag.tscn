@@ -1,7 +1,8 @@
-[gd_scene load_steps=8 format=3 uid="uid://d1ainf01k8fjh"]
+[gd_scene load_steps=9 format=3 uid="uid://d1ainf01k8fjh"]
 
 [ext_resource type="Shader" uid="uid://de6xtbbn1ibxo" path="res://scripts/flag.gdshader" id="1_6j6w7"]
 [ext_resource type="Texture2D" uid="uid://c2i1fnty3x2cx" path="res://textures/titleist-logo-png_seeklogo-140305.png" id="2_mms44"]
+[ext_resource type="PackedScene" uid="uid://cpj7ij2my7hyy" path="res://models/direction_arrow.glb" id="3_yx1li"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_6j6w7"]
 noise_type = 3
@@ -40,18 +41,23 @@ albedo_color = Color(0.6858353, 0.68583524, 0.6858352, 1)
 
 [node name="Flag" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.2526546, 0, 0)
+visible = false
 material_override = SubResource("ShaderMaterial_sbv0s")
 mesh = SubResource("QuadMesh_ssbv6")
 
 [node name="CSGCylinder3D" type="CSGCylinder3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.101846695, -0.04448569, 0)
+visible = false
 radius = 0.067871094
 height = 2.309082
 material = SubResource("StandardMaterial3D_sbv0s")
 
 [node name="CSGSphere3D" type="CSGSphere3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.101846695, 1.1654198, 0)
+visible = false
 radius = 0.1648941
 radial_segments = 24
 rings = 12
 material = SubResource("StandardMaterial3D_sbv0s")
+
+[node name="Sketchfab_Scene" parent="." instance=ExtResource("3_yx1li")]

@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
+
+[sub_resource type="Resource" id="Resource_effect"]
+script = ExtResource("2_effect")
+target_stat = "power_mod"
+value = 2.0
+set_mode = false
+
+[resource]
+script = ExtResource("1_script")
+card_id = "crushed_it"
+card_name = "Crushed It"
+description = "Distance +2 tiles."
+flavor_text = "Big distance boost, exciting on drives."
+rarity = 2
+card_type = 0
+play_cost = 0
+requires_target = false
+requires_shot_in_progress = true
+can_upgrade = true
+max_upgrade_level = 3
+max_uses = -1
+tags = PackedStringArray("distance")
+effects = Array[Resource]([SubResource("Resource_effect")])

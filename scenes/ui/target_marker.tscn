@@ -1,0 +1,33 @@
+[gd_scene load_steps=5 format=3 uid="uid://drlnmr27wf4nb"]
+
+[ext_resource type="Script" uid="uid://cvsqk181qdqb0" path="res://scripts/ui/target_marker.gd" id="1_script"]
+[ext_resource type="FontFile" uid="uid://csixfh5trj68q" path="res://theme/Unbounded-VariableFont_wght.ttf" id="2_axnm6"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_1"]
+top_radius = 0.55
+bottom_radius = 0.55
+height = 0.05
+radial_segments = 6
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1"]
+transparency = 1
+cull_mode = 2
+shading_mode = 0
+albedo_color = Color(1, 1, 1, 0.6)
+
+[node name="TargetMarker" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+mesh = SubResource("CylinderMesh_1")
+surface_material_override/0 = SubResource("StandardMaterial3D_1")
+
+[node name="Label3D" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.3093657, 0)
+billboard = 1
+no_depth_test = true
+text = "0 yds"
+font = ExtResource("2_axnm6")
+font_size = 255
+outline_size = 57

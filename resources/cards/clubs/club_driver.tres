@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=3 format=3 uid="uid://de65yqsih8yw2"]
+
+[ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/left-click.png" id="1_4eub7"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+card_id = "club_driver"
+card_name = "Driver"
+description = "Max distance off the tee."
+flavor_text = "FlavaFlave"
+rarity = 3
+card_type = 4
+target_club = "DRIVER"
+icon = ExtResource("1_4eub7")

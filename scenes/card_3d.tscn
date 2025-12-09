@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://cubpvmp3dd1sd"]
+[gd_scene load_steps=9 format=3 uid="uid://cubpvmp3dd1sd"]
 
 [ext_resource type="Script" uid="uid://djci7xdtp02ij" path="res://scripts/cards/card_3d.gd" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="2_front"]
@@ -12,6 +12,15 @@ resource_local_to_scene = true
 albedo_texture = ExtResource("2_front")
 uv1_scale = Vector3(3, 2, 1)
 
+[sub_resource type="StandardMaterial3D" id="Mat_Rarity"]
+resource_local_to_scene = true
+shading_mode = 0
+albedo_color = Color(0.6, 0.6, 0.6, 1)
+
+[sub_resource type="BoxMesh" id="Mesh_Rarity"]
+material = SubResource("Mat_Rarity")
+size = Vector3(3.8, 0.15, 0.01)
+
 [sub_resource type="StandardMaterial3D" id="Mat_Back"]
 transparency = 4
 albedo_texture = ExtResource("3_back")
@@ -24,13 +33,17 @@ script = ExtResource("1_script")
 mesh = SubResource("CardMesh")
 surface_material_override/0 = SubResource("Mat_Front")
 
+[node name="RarityBar" type="MeshInstance3D" parent="MeshInstance3D"]
+transform = Transform3D(0.945, 0, 0, 0, 3.17, 0, 0, 0, 0.945, 0, 0.6439811, 0.03)
+mesh = SubResource("Mesh_Rarity")
+
 [node name="BackMesh" type="MeshInstance3D" parent="MeshInstance3D"]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, -0.026)
 mesh = SubResource("CardMesh")
 surface_material_override/0 = SubResource("Mat_Back")
 
 [node name="TitleLabel" type="Label3D" parent="MeshInstance3D"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.67556155, 0.03)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.64203036, 0.036384135)
 render_priority = 10
 text = "Card Name"
 font_size = 64
@@ -49,6 +62,33 @@ autowrap_mode = 3
 width = 1100.0
 
 [node name="IconSprite" type="Sprite3D" parent="MeshInstance3D"]
+transform = Transform3D(0.25, 0, 0, 0, 0.25, 0, 0, 0, 0.25, -1.4, 0.6, 0.03)
+double_sided = false
+render_priority = 10
+
+[node name="FlavorLabel" type="Label3D" parent="MeshInstance3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.6, 0.03)
+pixel_size = 0.0025
+render_priority = 10
+modulate = Color(0.3, 0.3, 0.3, 1)
+text = "Flavor text goes here."
+font_size = 64
+outline_size = 0
+autowrap_mode = 3
+width = 1200.0
+
+[node name="TagsLabel" type="Label3D" parent="MeshInstance3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.85, 0.03)
+pixel_size = 0.0025
+render_priority = 10
+modulate = Color(0.4, 0.4, 0.4, 1)
+text = "#tag1 #tag2"
+font_size = 56
+outline_size = 0
+autowrap_mode = 3
+width = 1200.0
+
+[node name="IconSprite2" type="Sprite3D" parent="MeshInstance3D"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.5, 0.6, 0.03)
 pixel_size = 0.005
 render_priority = 5

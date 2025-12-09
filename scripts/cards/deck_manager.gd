@@ -154,8 +154,44 @@ func draw_specific_card(card_instance: CardInstance) -> void:
 		card_activated.emit(card_instance)
 
 
+func draw_candidates(count: int) -> Array[CardInstance]:
+	"""Draw cards for selection but do not activate them yet"""
+	var candidates: Array[CardInstance] = []
+	for i in range(count):
+		if _draw_pile.is_empty():
+			if _discard_pile.is_empty():
+				break
+			shuffle_discard_into_deck()
+		
+		if not _draw_pile.is_empty():
+			candidates.append(_draw_pile.pop_back())
+	
+	# Note: Candidates are now in limbo (not in draw, active, or discard)
+	# The caller is responsible for playing or discarding them.
+	return candidates
+
+
+func play_candidate(card: CardInstance) -> void:
+	"""Play a card that was previously drawn as a candidate"""
+	_active_cards.append(card)
+	
+	# Use the card immediately (apply effects)
+	card.use()
+	
+	card_drawn.emit(card)
+	card_activated.emit(card)
+	active_cards_changed.emit(_active_cards)
+
+
+func discard_candidates(cards: Array[CardInstance]) -> void:
+	"""Discard cards that were drawn as candidates but not chosen"""
+	_discard_pile.append_array(cards)
+	# No signal needed for discard pile change usually, unless UI tracks it
+
+
+
 func draw_card() -> CardInstance:
-	"""Draw a card and place it in the active slot"""
+	"""Draw the top card from the deck"""
 	if _draw_pile.is_empty():
 		if _discard_pile.is_empty():
 			deck_empty.emit()

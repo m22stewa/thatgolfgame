@@ -385,6 +385,12 @@ func _control_wants_input(control: Control, mouse_pos: Vector2) -> bool:
 		if control.get_script() and "card_ui.gd" in control.get_script().resource_path:
 			return true
 			
+		# DeckWidget should always consume clicks
+		if "DeckWidget" in control.name:
+			return true
+		if control.get_script() and "deck_widget.gd" in control.get_script().resource_path:
+			return true
+			
 		# Check children recursively
 		for child in control.get_children():
 			if child is Control and child.visible:
@@ -412,6 +418,7 @@ func _input(event: InputEvent) -> void:
 		
 		if not is_interacting:
 			# If not interacting, check if UI wants this event (Press OR Release)
+			# This ensures we don't steal release events from UI
 			if _is_mouse_over_ui_control():
 				return
 

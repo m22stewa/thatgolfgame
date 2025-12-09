@@ -1,3 +1,4 @@
+@tool
 extends Node3D
 class_name DeckView3D
 
@@ -18,12 +19,36 @@ var card_scene: PackedScene = preload("res://scenes/card_3d.tscn")
 # State
 var active_card_node: Card3D = null
 var played_cards: Array[Card3D] = []
+var discarded_cards: Array[Card3D] = [] # Legacy support, kept for safety but unused
 
 # Configuration
 @export_group("Visuals")
 @export var card_back_texture: Texture2D = preload("res://textures/card-back.png")
 @export var card_front_texture: Texture2D = preload("res://textures/card.png") # Default front
-@export var deck_size: Vector3 = Vector3(4.0, 2.02, 0.5)
+
+@export var lock_aspect_ratio: bool = true:
+	set(value):
+		lock_aspect_ratio = value
+		if lock_aspect_ratio and deck_size.y > 0:
+			_aspect_ratio = deck_size.x / deck_size.y
+
+var _aspect_ratio: float = 4.0 / 2.02
+
+@export var deck_size: Vector3 = Vector3(4.0, 2.02, 0.5):
+	set(value):
+		if lock_aspect_ratio and deck_size != Vector3.ZERO:
+			var x_diff = abs(value.x - deck_size.x)
+			var y_diff = abs(value.y - deck_size.y)
+			
+			if x_diff > 0.001 and y_diff < 0.001:
+				value.y = value.x / _aspect_ratio
+			elif y_diff > 0.001 and x_diff < 0.001:
+				value.x = value.y * _aspect_ratio
+		
+		deck_size = value
+		if is_inside_tree():
+			_setup_deck_mesh()
+
 @export var corner_radius: float = 0.25
 @export var corner_segments: int = 8
 
@@ -275,30 +300,36 @@ func _on_card_drawn(card: CardInstance) -> void:
 
 func _on_active_cards_changed(cards: Array[CardInstance]) -> void:
 	# If empty, it means the round/shot ended.
-	# We might want to clear the visual pile here, or keep it until reshuffle.
-	# For now, let's clear the pile if the deck is reset.
 	if cards.is_empty():
-		# Move active card to discard pile if it exists
+		# Just keep the active card in the stack (it becomes "played")
 		if active_card_node:
-			_move_to_discard(active_card_node)
+			played_cards.append(active_card_node)
 			active_card_node = null
+		
+		# Check if the deck was fully reset (discard pile empty)
+		# This happens when generating a new hole
+		if deck_manager and deck_manager.get_discard_pile_count() == 0:
+			_clear_visual_stack()
 
 
-func _move_to_discard(card_node: Card3D) -> void:
-	# Animate card to discard pile
-	var target_pos = discard_anchor.position
-	# Stack randomly
-	target_pos.y += randf_range(0.0, 0.1)
-	target_pos.x += randf_range(-0.1, 0.1)
-	target_pos.z += randf_range(-0.1, 0.1)
+func _clear_visual_stack() -> void:
+	# Clear all played cards
+	for card in played_cards:
+		if is_instance_valid(card):
+			card.queue_free()
+	played_cards.clear()
 	
-	var target_rot = discard_anchor.rotation
-	target_rot.y += randf_range(-0.2, 0.2)
+	# Clear active card if any
+	if active_card_node:
+		if is_instance_valid(active_card_node):
+			active_card_node.queue_free()
+		active_card_node = null
 	
-	card_node.animate_move_to(target_pos, target_rot, 0.5, 0.0, 1.0)
-	
-	# Keep track of it? Or just let it sit there?
-	# For now, just let it sit.
+	# Clear discarded cards (legacy cleanup)
+	for card in discarded_cards:
+		if is_instance_valid(card):
+			card.queue_free()
+	discarded_cards.clear()
 
 
 func _spawn_active_card(card: CardInstance) -> void:
@@ -358,8 +389,8 @@ func _animate_draw(card: CardInstance) -> void:
 	target_pos.y += (stack_count + 1) * 0.08 # Increased spacing to prevent z-fighting
 	
 	# Use arc height of 2.0 for a nice flip effect
-	# Slowed down animation from 0.5 to 1.0
-	node.animate_move_to(target_pos, target_rot, 1.0, 0.0, 2.0)
+	# Speed up animation from 1.0 to 0.6
+	node.animate_move_to(target_pos, target_rot, 0.6, 0.0, 2.0)
 	
 	# Track as active
 	if active_card_node:

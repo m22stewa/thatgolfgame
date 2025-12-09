@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+card_id = "club_pw"
+card_name = "Pitching Wedge"
+description = "High loft for approach."
+flavor_text = ""
+rarity = 0
+card_type = 4
+target_club = "PITCHING_WEDGE"
+play_cost = 0
+requires_target = false
+requires_shot_in_progress = true
+can_upgrade = true
+max_upgrade_level = 3
+max_uses = -1
+tags = PackedStringArray()

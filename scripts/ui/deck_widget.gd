@@ -1,3 +1,4 @@
+@tool
 extends SubViewportContainer
 class_name DeckWidget
 
@@ -10,7 +11,29 @@ enum DeckType { MODIFIERS, CLUBS }
 @export var deck_type: DeckType = DeckType.MODIFIERS
 @export var card_back_texture: Texture2D
 @export var card_front_texture: Texture2D
-@export var deck_size: Vector3 = Vector3(4.0, 2.02, 0.5)
+
+@export var lock_aspect_ratio: bool = true:
+	set(value):
+		lock_aspect_ratio = value
+		if lock_aspect_ratio and deck_size.y > 0:
+			_aspect_ratio = deck_size.x / deck_size.y
+
+var _aspect_ratio: float = 4.0 / 2.02
+
+@export var deck_size: Vector3 = Vector3(4.0, 2.02, 0.5):
+	set(value):
+		if lock_aspect_ratio and deck_size != Vector3.ZERO:
+			var x_diff = abs(value.x - deck_size.x)
+			var y_diff = abs(value.y - deck_size.y)
+			
+			if x_diff > 0.001 and y_diff < 0.001:
+				value.y = value.x / _aspect_ratio
+			elif y_diff > 0.001 and x_diff < 0.001:
+				value.x = value.y * _aspect_ratio
+		
+		deck_size = value
+		_apply_config()
+
 @export var interaction_mode: DeckView3D.InteractionMode = DeckView3D.InteractionMode.DRAW_TOP
 
 # Internal references

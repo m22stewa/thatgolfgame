@@ -17,168 +17,227 @@ func _ready() -> void:
 
 
 func _register_all_cards() -> void:
+	# 1. Load data-driven resources first (they take precedence)
+	_load_resources_recursive("res://resources/cards")
+	
+	# 2. Load hardcoded cards (only if not already loaded)
 	_register_golf_cards()
 	_register_club_cards()
+
+
+func _load_resources_recursive(path: String) -> void:
+	var dir = DirAccess.open(path)
+	if dir:
+		dir.list_dir_begin()
+		var file_name = dir.get_next()
+		while file_name != "":
+			if dir.current_is_dir():
+				if file_name != "." and file_name != "..":
+					_load_resources_recursive(path + "/" + file_name)
+			else:
+				if file_name.ends_with(".tres") or file_name.ends_with(".res"):
+					var resource = load(path + "/" + file_name)
+					if resource is CardData:
+						# If ID is missing in resource, try to infer from filename
+						if resource.card_id.is_empty():
+							resource.card_id = file_name.get_basename()
+						_register(resource)
+			file_name = dir.get_next()
+	# else:
+	# 	print("Path not found: " + path) # Expected for some folders
 
 
 #region Card Registration
 
 func _register_club_cards() -> void:
 	# Register a card for each club type
+	# To add images: Place textures in "res://textures/cards/clubs/" matching the filename below
+	# or update the 'icon_path' manually.
 	var clubs = [
-		{"id": "club_driver", "name": "Driver", "club": "DRIVER", "desc": "Max distance off the tee."},
-		{"id": "club_3wood", "name": "3 Wood", "club": "WOOD_3", "desc": "Long distance fairway wood."},
-		{"id": "club_5wood", "name": "5 Wood", "club": "WOOD_5", "desc": "Versatile fairway wood."},
-		{"id": "club_3iron", "name": "3 Iron", "club": "IRON_3", "desc": "Long iron for distance."},
-		{"id": "club_5iron", "name": "5 Iron", "club": "IRON_5", "desc": "Mid-long iron."},
-		{"id": "club_6iron", "name": "6 Iron", "club": "IRON_6", "desc": "Mid iron utility."},
-		{"id": "club_7iron", "name": "7 Iron", "club": "IRON_7", "desc": "Standard mid iron."},
-		{"id": "club_8iron", "name": "8 Iron", "club": "IRON_8", "desc": "Short-mid iron."},
-		{"id": "club_9iron", "name": "9 Iron", "club": "IRON_9", "desc": "Short iron for approach."},
-		{"id": "club_pw", "name": "Pitching Wedge", "club": "PITCHING_WEDGE", "desc": "High loft for approach."},
-		{"id": "club_sw", "name": "Sand Wedge", "club": "SAND_WEDGE", "desc": "Max loft, best for bunkers."},
-		{"id": "club_putter", "name": "Putter", "club": "PUTTER", "desc": "For the green."}
+		{"id": "club_driver", "name": "Driver", "club": "DRIVER", "desc": "Max distance off the tee.", "icon_path": "res://textures/cards/clubs/driver.png"},
+		{"id": "club_3wood", "name": "3 Wood", "club": "WOOD_3", "desc": "Long distance fairway wood.", "icon_path": "res://textures/cards/clubs/3wood.png"},
+		{"id": "club_5wood", "name": "5 Wood", "club": "WOOD_5", "desc": "Versatile fairway wood.", "icon_path": "res://textures/cards/clubs/5wood.png"},
+		{"id": "club_3iron", "name": "3 Iron", "club": "IRON_3", "desc": "Long iron for distance.", "icon_path": "res://textures/cards/clubs/3iron.png"},
+		{"id": "club_5iron", "name": "5 Iron", "club": "IRON_5", "desc": "Mid-long iron.", "icon_path": "res://textures/cards/clubs/5iron.png"},
+		{"id": "club_6iron", "name": "6 Iron", "club": "IRON_6", "desc": "Mid iron utility.", "icon_path": "res://textures/cards/clubs/6iron.png"},
+		{"id": "club_7iron", "name": "7 Iron", "club": "IRON_7", "desc": "Standard mid iron.", "icon_path": "res://textures/cards/clubs/7iron.png"},
+		{"id": "club_8iron", "name": "8 Iron", "club": "IRON_8", "desc": "Short-mid iron.", "icon_path": "res://textures/cards/clubs/8iron.png"},
+		{"id": "club_9iron", "name": "9 Iron", "club": "IRON_9", "desc": "Short iron for approach.", "icon_path": "res://textures/cards/clubs/9iron.png"},
+		{"id": "club_pw", "name": "Pitching Wedge", "club": "PITCHING_WEDGE", "desc": "High loft for approach.", "icon_path": "res://textures/cards/clubs/pw.png"},
+		{"id": "club_sw", "name": "Sand Wedge", "club": "SAND_WEDGE", "desc": "Max loft, best for bunkers.", "icon_path": "res://textures/cards/clubs/sw.png"},
+		{"id": "club_putter", "name": "Putter", "club": "PUTTER", "desc": "For the green.", "icon_path": "res://textures/cards/clubs/putter.png"}
 	]
 	
 	for c in clubs:
+		# Skip if already registered via resource
+		if _cards.has(c.id):
+			continue
+			
 		var card = CardData.create(c.id, c.name, CardData.Rarity.COMMON)
 		card.card_type = CardData.CardType.CLUB
 		card.target_club = c.club
 		card.description = c.desc
+		
+		# Load icon if it exists
+		if c.has("icon_path") and ResourceLoader.exists(c.icon_path):
+			card.icon = load(c.icon_path)
+			
+		# Check for Resource override (Legacy check, now handled by _load_resources_recursive)
+		# But kept for specific overrides not in the main folder if needed
+		var resource_path = "res://resources/cards/clubs/%s.tres" % c.id
+		if ResourceLoader.exists(resource_path):
+			var override_card = load(resource_path)
+			if override_card is CardData:
+				card = override_card
+				# Ensure ID matches just in case
+				card.card_id = c.id
+				card.card_type = CardData.CardType.CLUB
+				card.target_club = c.club
+		
 		_register(card)
 
 
 func _register_golf_cards() -> void:
 	# === CLEAN STRIKE (4) ===
-	var clean_strike = CardData.create("clean_strike", "Clean Strike", CardData.Rarity.COMMON)
-	clean_strike.card_type = CardData.CardType.SHOT
-	clean_strike.description = "No change to distance, accuracy, roll, or score."
-	clean_strike.flavor_text = "Represents a normal, expected shot."
-	clean_strike.tags = ["neutral"]
-	_register(clean_strike)
+	if not _cards.has("clean_strike"):
+		var clean_strike = CardData.create("clean_strike", "Clean Strike", CardData.Rarity.COMMON)
+		clean_strike.card_type = CardData.CardType.SHOT
+		clean_strike.description = "No change to distance, accuracy, roll, or score."
+		clean_strike.flavor_text = "Represents a normal, expected shot."
+		clean_strike.tags = ["neutral"]
+		_register(clean_strike)
 	
 	# === CONTROLLED AIM (2) ===
-	var controlled_aim = CardData.create("controlled_aim", "Controlled Aim", CardData.Rarity.COMMON)
-	controlled_aim.card_type = CardData.CardType.SHOT
-	controlled_aim.description = "AOE radius -1 ring (minimum 0)."
-	controlled_aim.flavor_text = "Small precision boost, no distance change."
-	controlled_aim.tags = ["accuracy"]
-	
-	var ca_effect = EffectSimpleStat.new()
-	ca_effect.target_stat = "aoe_radius"
-	ca_effect.value = -1
-	controlled_aim.effects.append(ca_effect)
-	_register(controlled_aim)
+	if not _cards.has("controlled_aim"):
+		var controlled_aim = CardData.create("controlled_aim", "Controlled Aim", CardData.Rarity.COMMON)
+		controlled_aim.card_type = CardData.CardType.SHOT
+		controlled_aim.description = "AOE radius -1 ring (minimum 0)."
+		controlled_aim.flavor_text = "Small precision boost, no distance change."
+		controlled_aim.tags = ["accuracy"]
+		
+		var ca_effect = EffectSimpleStat.new()
+		ca_effect.target_stat = "aoe_radius"
+		ca_effect.value = -1
+		controlled_aim.effects.append(ca_effect)
+		_register(controlled_aim)
 	
 	# === SLIGHTLY SHORT (3) ===
-	var slightly_short = CardData.create("slightly_short", "Slightly Short", CardData.Rarity.COMMON)
-	slightly_short.card_type = CardData.CardType.SHOT
-	slightly_short.description = "Distance -1 tile."
-	slightly_short.flavor_text = "Common small distance miss."
-	slightly_short.tags = ["distance"]
-	
-	var ss_effect = EffectSimpleStat.new()
-	ss_effect.target_stat = "power_mod"
-	ss_effect.value = -1
-	slightly_short.effects.append(ss_effect)
-	_register(slightly_short)
+	if not _cards.has("slightly_short"):
+		var slightly_short = CardData.create("slightly_short", "Slightly Short", CardData.Rarity.COMMON)
+		slightly_short.card_type = CardData.CardType.SHOT
+		slightly_short.description = "Distance -1 tile."
+		slightly_short.flavor_text = "Common small distance miss."
+		slightly_short.tags = ["distance"]
+		
+		var ss_effect = EffectSimpleStat.new()
+		ss_effect.target_stat = "power_mod"
+		ss_effect.value = -1
+		slightly_short.effects.append(ss_effect)
+		_register(slightly_short)
 	
 	# === WAY SHORT (1) ===
-	var way_short = CardData.create("way_short", "Way Short", CardData.Rarity.UNCOMMON)
-	way_short.card_type = CardData.CardType.SHOT
-	way_short.description = "Distance -2 tiles."
-	way_short.flavor_text = "Larger mishit, but not catastrophic."
-	way_short.tags = ["distance"]
-	
-	var ws_effect = EffectSimpleStat.new()
-	ws_effect.target_stat = "power_mod"
-	ws_effect.value = -2
-	way_short.effects.append(ws_effect)
-	_register(way_short)
+	if not _cards.has("way_short"):
+		var way_short = CardData.create("way_short", "Way Short", CardData.Rarity.UNCOMMON)
+		way_short.card_type = CardData.CardType.SHOT
+		way_short.description = "Distance -2 tiles."
+		way_short.flavor_text = "Larger mishit, but not catastrophic."
+		way_short.tags = ["distance"]
+		
+		var ws_effect = EffectSimpleStat.new()
+		ws_effect.target_stat = "power_mod"
+		ws_effect.value = -2
+		way_short.effects.append(ws_effect)
+		_register(way_short)
 	
 	# === SOLID CONTACT (1) ===
-	var solid_contact = CardData.create("solid_contact", "Solid Contact", CardData.Rarity.COMMON)
-	solid_contact.card_type = CardData.CardType.SHOT
-	solid_contact.description = "Distance +1 tile."
-	solid_contact.flavor_text = "Minor distance bonus for well-struck shots."
-	solid_contact.tags = ["distance"]
-	
-	var sc_effect = EffectSimpleStat.new()
-	sc_effect.target_stat = "power_mod"
-	sc_effect.value = 1
-	solid_contact.effects.append(sc_effect)
-	_register(solid_contact)
+	if not _cards.has("solid_contact"):
+		var solid_contact = CardData.create("solid_contact", "Solid Contact", CardData.Rarity.COMMON)
+		solid_contact.card_type = CardData.CardType.SHOT
+		solid_contact.description = "Distance +1 tile."
+		solid_contact.flavor_text = "Minor distance bonus for well-struck shots."
+		solid_contact.tags = ["distance"]
+		
+		var sc_effect = EffectSimpleStat.new()
+		sc_effect.target_stat = "power_mod"
+		sc_effect.value = 1
+		solid_contact.effects.append(sc_effect)
+		_register(solid_contact)
 	
 	# === CRUSHED IT (1) ===
-	var crushed_it = CardData.create("crushed_it", "Crushed It", CardData.Rarity.RARE)
-	crushed_it.card_type = CardData.CardType.SHOT
-	crushed_it.description = "Distance +2 tiles."
-	crushed_it.flavor_text = "Big distance boost, exciting on drives."
-	crushed_it.tags = ["distance"]
-	
-	var ci_effect = EffectSimpleStat.new()
-	ci_effect.target_stat = "power_mod"
-	ci_effect.value = 2
-	crushed_it.effects.append(ci_effect)
-	_register(crushed_it)
+	if not _cards.has("crushed_it"):
+		var crushed_it = CardData.create("crushed_it", "Crushed It", CardData.Rarity.RARE)
+		crushed_it.card_type = CardData.CardType.SHOT
+		crushed_it.description = "Distance +2 tiles."
+		crushed_it.flavor_text = "Big distance boost, exciting on drives."
+		crushed_it.tags = ["distance"]
+		
+		var ci_effect = EffectSimpleStat.new()
+		ci_effect.target_stat = "power_mod"
+		ci_effect.value = 2
+		crushed_it.effects.append(ci_effect)
+		_register(crushed_it)
 	
 	# === SHANK (2) ===
-	var shank = CardData.create("shank", "Shank", CardData.Rarity.UNCOMMON)
-	shank.card_type = CardData.CardType.SHOT
-	shank.description = "AOE radius +1 ring."
-	shank.flavor_text = "Less accurate shot, larger landing zone."
-	shank.tags = ["accuracy"]
-	
-	var shank_effect = EffectSimpleStat.new()
-	shank_effect.target_stat = "aoe_radius"
-	shank_effect.value = 1
-	shank.effects.append(shank_effect)
-	_register(shank)
+	if not _cards.has("shank"):
+		var shank = CardData.create("shank", "Shank", CardData.Rarity.UNCOMMON)
+		shank.card_type = CardData.CardType.SHOT
+		shank.description = "AOE radius +1 ring."
+		shank.flavor_text = "Less accurate shot, larger landing zone."
+		shank.tags = ["accuracy"]
+		
+		var shank_effect = EffectSimpleStat.new()
+		shank_effect.target_stat = "aoe_radius"
+		shank_effect.value = 1
+		shank.effects.append(shank_effect)
+		_register(shank)
 	
 	# === WILD PUSH (1) ===
-	var wild_push = CardData.create("wild_push", "Wild Push", CardData.Rarity.UNCOMMON)
-	wild_push.card_type = CardData.CardType.SHOT
-	wild_push.description = "AOE radius +1 ring; add small curve toward miss side."
-	wild_push.flavor_text = "Feels like a directional hook/slice miss."
-	wild_push.tags = ["accuracy", "curve"]
-	
-	var wp_aoe = EffectSimpleStat.new()
-	wp_aoe.target_stat = "aoe_radius"
-	wp_aoe.value = 1
-	wild_push.effects.append(wp_aoe)
-	
-	var wp_curve = EffectCurveShot.new()
-	wp_curve.curve_direction = 2 # Random
-	wp_curve.curve_strength = 0.2
-	wild_push.effects.append(wp_curve)
-	_register(wild_push)
+	if not _cards.has("wild_push"):
+		var wild_push = CardData.create("wild_push", "Wild Push", CardData.Rarity.UNCOMMON)
+		wild_push.card_type = CardData.CardType.SHOT
+		wild_push.description = "AOE radius +1 ring; add small curve toward miss side."
+		wild_push.flavor_text = "Feels like a directional hook/slice miss."
+		wild_push.tags = ["accuracy", "curve"]
+		
+		var wp_aoe = EffectSimpleStat.new()
+		wp_aoe.target_stat = "aoe_radius"
+		wp_aoe.value = 1
+		wild_push.effects.append(wp_aoe)
+		
+		var wp_curve = EffectCurveShot.new()
+		wp_curve.curve_direction = 2 # Random
+		wp_curve.curve_strength = 0.2
+		wild_push.effects.append(wp_curve)
+		_register(wild_push)
 	
 	# === LASER LINE (1) ===
-	var laser_line = CardData.create("laser_line", "Laser Line", CardData.Rarity.RARE)
-	laser_line.card_type = CardData.CardType.SHOT
-	laser_line.description = "Set AOE radius to 0."
-	laser_line.flavor_text = "Very accurate \"sniper\" shot."
-	laser_line.tags = ["accuracy"]
-	
-	var ll_effect = EffectSimpleStat.new()
-	ll_effect.target_stat = "aoe_radius"
-	ll_effect.value = 0
-	ll_effect.set_mode = true
-	laser_line.effects.append(ll_effect)
-	_register(laser_line)
+	if not _cards.has("laser_line"):
+		var laser_line = CardData.create("laser_line", "Laser Line", CardData.Rarity.RARE)
+		laser_line.card_type = CardData.CardType.SHOT
+		laser_line.description = "Set AOE radius to 0."
+		laser_line.flavor_text = "Very accurate \"sniper\" shot."
+		laser_line.tags = ["accuracy"]
+		
+		var ll_effect = EffectSimpleStat.new()
+		ll_effect.target_stat = "aoe_radius"
+		ll_effect.value = 0
+		ll_effect.set_mode = true
+		laser_line.effects.append(ll_effect)
+		_register(laser_line)
 	
 	# === HEAVY SPIN (1) ===
-	var heavy_spin = CardData.create("heavy_spin", "Heavy Spin", CardData.Rarity.UNCOMMON)
-	heavy_spin.card_type = CardData.CardType.SHOT
-	heavy_spin.description = "Roll -1 tile (minimum 0)."
-	heavy_spin.flavor_text = "Helps shots stop faster, good for approaches."
-	heavy_spin.tags = ["roll", "spin"]
-	
-	var hs_effect = EffectSimpleStat.new()
-	hs_effect.target_stat = "roll_mod"
-	hs_effect.value = -1
-	heavy_spin.effects.append(hs_effect)
-	_register(heavy_spin)
+	if not _cards.has("heavy_spin"):
+		var heavy_spin = CardData.create("heavy_spin", "Heavy Spin", CardData.Rarity.UNCOMMON)
+		heavy_spin.card_type = CardData.CardType.SHOT
+		heavy_spin.description = "Roll -1 tile (minimum 0)."
+		heavy_spin.flavor_text = "Helps shots stop faster, good for approaches."
+		heavy_spin.tags = ["roll", "spin"]
+		
+		var hs_effect = EffectSimpleStat.new()
+		hs_effect.target_stat = "roll_mod"
+		hs_effect.value = -1
+		heavy_spin.effects.append(hs_effect)
+		_register(heavy_spin)
 	
 	# === HOT BOUNCE (1) ===
 	var hot_bounce = CardData.create("hot_bounce", "Hot Bounce", CardData.Rarity.UNCOMMON)

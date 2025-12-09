@@ -6,12 +6,13 @@ class_name ShotUI
 
 # Swing meter scene
 const SwingMeterScene = preload("res://scenes/ui/SwingMeter.tscn")
+const ShotNumberScene = preload("res://scenes/ui/shot_number.tscn")
 
 # UI element references - set via unique names
 @onready var hole_label: Label = %HoleLabel
 @onready var par_label: Label = %ParLabel
 @onready var yardage_label: Label = %YardageLabel
-@onready var shot_label: Label = %ShotLabel
+@onready var shot_numbers: HBoxContainer = %ShotNumbers
 @onready var distance_label: Label = %DistanceLabel
 
 @onready var club_name: Label = %ClubName
@@ -162,8 +163,32 @@ func set_hole_info(hole: int, par: int, yardage: int) -> void:
 func update_shot_info(shot_num: int, distance_to_flag: int) -> void:
 	"""Update shot counter and distance"""
 	shots_this_hole = shot_num
-	shot_label.text = "Shot %d" % shot_num
+	_update_shot_counter_visuals(shot_num)
 	distance_label.text = "%d yds to flag" % distance_to_flag
+
+
+func _update_shot_counter_visuals(current_shot: int) -> void:
+	if not shot_numbers: return
+	
+	# Clear existing
+	for child in shot_numbers.get_children():
+		child.queue_free()
+	
+	# Determine range (e.g. up to Par + 2, or current shot if higher)
+	var max_display = max(current_par + 2, current_shot + 1)
+	if max_display < 5: max_display = 5 # Minimum 5
+	
+	for i in range(1, max_display + 1):
+		var shot_node = ShotNumberScene.instantiate()
+		shot_numbers.add_child(shot_node)
+		shot_node.set_number(i)
+		
+		if i == current_shot:
+			shot_node.set_state("current")
+		elif i < current_shot:
+			shot_node.set_state("past")
+		else:
+			shot_node.set_state("future")
 
 
 func update_current_terrain(terrain_type: int) -> void:
@@ -179,11 +204,22 @@ func update_target_info(terrain_type: int, distance: int) -> void:
 	target_terrain.text = terrain_names.get(terrain_type, "---")
 	target_distance.text = "%d yds" % distance
 	
+	# Check if club is selected
+	var club_selected = true
+	if hole_controller and hole_controller.has_method("is_club_selected"):
+		club_selected = hole_controller.is_club_selected()
+	
 	# Show swing meter when target is valid (replaces confirm button)
-	if terrain_type >= 0 and swing_meter and not swing_meter.visible:
-		# Configure swing meter for current club/lie
-		swing_meter.configure_for_shot(current_club_difficulty, current_lie_difficulty, current_power_cap)
-		swing_meter.show_meter(1.0)
+	if terrain_type >= 0 and swing_meter and club_selected:
+		if not swing_meter.visible:
+			# Configure swing meter for current club/lie
+			swing_meter.configure_for_shot(current_club_difficulty, current_lie_difficulty, current_power_cap)
+			swing_meter.show_meter(1.0)
+			
+			# Force layout update to ensure track width is correct
+			swing_meter.reset_size()
+			swing_meter.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+			swing_meter.position.y -= 50 # Offset from bottom
 
 
 func update_club_display() -> void:
@@ -458,9 +494,9 @@ func _on_shot_started(context: ShotContext) -> void:
 		var terrain = hole_controller.get_cell(context.start_tile.x, context.start_tile.y)
 		update_current_terrain(terrain)
 	
-	# Hide swing meter until target is selected
-	if swing_meter:
-		swing_meter.hide_meter()
+	# Don't hide swing meter here - if user pre-aimed, we want it visible!
+	# if swing_meter:
+	# 	swing_meter.hide_meter()
 
 
 func _on_aoe_computed(context: ShotContext) -> void:
@@ -485,6 +521,11 @@ func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> voi
 		return
 	
 	if not shot_manager.is_shot_in_progress:
+		# If shot not started yet (e.g. pre-aiming), we can't confirm.
+		# But we shouldn't just fail silently if the meter was visible.
+		# Maybe we should auto-start the shot? Or just warn.
+		# For now, just return, but the meter shouldn't have been clickable if hidden.
+		# If it WAS visible, it means we allowed pre-aiming.
 		push_warning("ShotUI: No shot in progress - cannot confirm")
 		return
 	

@@ -1,16 +1,11 @@
-[gd_scene load_steps=66 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=57 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
-[ext_resource type="Texture2D" uid="uid://bto2fkglva4rq" path="res://textures/card-back.png" id="3_do8f8"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
 [ext_resource type="PackedScene" uid="uid://bm4yp6kkayc83" path="res://scenes/hole-generator.tscn" id="4_81eei"]
-[ext_resource type="PackedScene" uid="uid://dsma18qptjtff" path="res://scenes/WindWidget.tscn" id="4_fkwjp"]
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_2xvcl"]
-[ext_resource type="Shader" uid="uid://cwotan7qgy7bh" path="res://scenes/tilt.gdshader" id="5_q0ffo"]
-[ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="5_shot_ui"]
-[ext_resource type="PackedScene" path="res://scenes/ui/deck_widget.tscn" id="6_eulkx"]
+[ext_resource type="PackedScene" uid="uid://cdby66rujphi3" path="res://scenes/ui/main_ui.tscn" id="5_main_ui"]
 [ext_resource type="Shader" uid="uid://dw8e21t3mum1l" path="res://scripts/weather-rain.gdshader" id="6_ynlb6"]
-[ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="7_hole_viewer"]
 [ext_resource type="Shader" uid="uid://chnhearr3oxlt" path="res://scripts/screenTransition.gdshader" id="7_mitcx"]
 [ext_resource type="Shader" uid="uid://cxfr44i8gar3k" path="res://scripts/clouds-topdown.gdshader" id="7_xe5jh"]
 [ext_resource type="Shader" uid="uid://b2d6hfrj0p11" path="res://scripts/mainBG.gdshader" id="8_1crsh"]
@@ -19,9 +14,6 @@
 [ext_resource type="FontFile" uid="uid://csixfh5trj68q" path="res://theme/Unbounded-VariableFont_wght.ttf" id="9_pyvcl"]
 [ext_resource type="PackedScene" uid="uid://brd1rbth2tvmv" path="res://scenes/rolling-ball.tscn" id="10_fkwjp"]
 [ext_resource type="Shader" uid="uid://b4a5pybeu403q" path="res://scripts/ice.gdshader" id="10_jfa70"]
-[ext_resource type="Texture2D" uid="uid://jxeniu88y6gg" path="res://textures/card-back-clubs.png" id="15_dn5wk"]
-[ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="16_6l36g"]
-[ext_resource type="Texture2D" uid="uid://b7223pksok6fj" path="res://textures/card-front-clubs.png" id="18_uydiq"]
 
 [sub_resource type="Gradient" id="Gradient_81eei"]
 
@@ -79,27 +71,6 @@ seamless = true
 shader = ExtResource("8_1crsh")
 shader_parameter/timeScaleFactor = 0.04
 shader_parameter/noise_texture = SubResource("NoiseTexture2D_fkwjp")
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_2xvcl"]
-shader = ExtResource("5_q0ffo")
-shader_parameter/limit = 0.2410000114475
-shader_parameter/blur = 2.0
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lieinfo"]
-content_margin_left = 12.0
-content_margin_top = 8.0
-content_margin_right = 12.0
-content_margin_bottom = 8.0
-bg_color = Color(0.1, 0.12, 0.18, 0.92)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.3, 0.45, 0.6, 1)
-corner_radius_top_left = 6
-corner_radius_top_right = 6
-corner_radius_bottom_right = 6
-corner_radius_bottom_left = 6
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_ynlb6"]
 shader = ExtResource("6_ynlb6")
@@ -278,6 +249,10 @@ transparency = 1
 cull_mode = 2
 albedo_color = Color(0, 0, 0, 0)
 
+[sub_resource type="VoxelGIData" id="VoxelGIData_06m3i"]
+propagation = 0.29
+interior = true
+
 [node name="GOLF" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -353,134 +328,8 @@ grow_horizontal = 2
 grow_vertical = 2
 rotation = -1.5707964
 
-[node name="HoleViewer" parent="Control" instance=ExtResource("7_hole_viewer")]
+[node name="MainUI" parent="Control" instance=ExtResource("5_main_ui")]
 layout_mode = 1
-min_zoom = 20.0
-max_zoom = 100.0
-
-[node name="tiltshift" type="ColorRect" parent="Control"]
-material = SubResource("ShaderMaterial_2xvcl")
-layout_mode = 0
-offset_right = 800.0
-offset_bottom = 1080.0
-
-[node name="WindWidget" parent="Control" instance=ExtResource("4_fkwjp")]
-layout_mode = 0
-offset_left = 40.0
-offset_top = 54.0
-offset_right = 168.0
-offset_bottom = 182.0
-
-[node name="ShotUI" parent="Control" instance=ExtResource("5_shot_ui")]
-layout_mode = 1
-
-[node name="LieInfoPanel" type="PanelContainer" parent="Control"]
-unique_name_in_owner = true
-layout_mode = 0
-offset_left = 1665.0
-offset_top = 190.0
-offset_right = 1869.0
-offset_bottom = 428.0
-theme_override_styles/panel = SubResource("StyleBoxFlat_lieinfo")
-
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/LieInfoPanel"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Title" type="Label" parent="Control/LieInfoPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.6, 0.75, 0.9, 1)
-theme_override_font_sizes/font_size = 13
-text = "LIE INFO"
-
-[node name="LieName" type="Label" parent="Control/LieInfoPanel/VBoxContainer"]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "Tee Box"
-
-[node name="LieDescription" type="RichTextLabel" parent="Control/LieInfoPanel/VBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 35)
-layout_mode = 2
-bbcode_enabled = true
-text = "[i]Perfect lie on a tee.[/i]"
-fit_content = true
-
-[node name="Separator" type="HSeparator" parent="Control/LieInfoPanel/VBoxContainer"]
-layout_mode = 2
-
-[node name="LieModifiers" type="RichTextLabel" parent="Control/LieInfoPanel/VBoxContainer"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 100)
-layout_mode = 2
-bbcode_enabled = true
-text = "[color=white]Power: 100%[/color]
-[color=white]Accuracy: 100%[/color]
-[color=white]Spin: 100%[/color]
-[color=white]Curve: 100%[/color]
-[color=white]Roll: 100%[/color]"
-fit_content = true
-
-[node name="HFlowContainer" type="HFlowContainer" parent="Control"]
-layout_mode = 0
-offset_left = 931.0
-offset_top = 168.0
-offset_right = 1364.0
-offset_bottom = 249.0
-
-[node name="Button" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "Driver"
-
-[node name="Button2" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "3 Wood"
-
-[node name="Button3" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "5 Wood"
-
-[node name="Button4" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "3 Iron"
-
-[node name="Button5" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "5 Iron"
-
-[node name="Button6" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "6 Iron"
-
-[node name="Button7" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "7 Iron"
-
-[node name="Button8" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "8 Iron"
-
-[node name="Button9" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "9 Iron"
-
-[node name="Button10" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "Pitching Wedge"
-
-[node name="Button11" type="Button" parent="Control/HFlowContainer"]
-layout_mode = 2
-text = "Sand Wedge"
-
-[node name="Button" type="Button" parent="Control"]
-layout_mode = 0
-offset_left = 1661.0
-offset_top = 102.0
-offset_right = 1872.0
-offset_bottom = 170.0
-theme = ExtResource("5_2xvcl")
-text = "Generate new hole"
 
 [node name="CanvasLayer" type="CanvasLayer" parent="Control"]
 
@@ -601,24 +450,6 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="DeckOverlay" parent="Control" instance=ExtResource("6_eulkx")]
-layout_mode = 1
-offset_left = -725.0
-offset_top = -602.0
-offset_right = 75.0
-offset_bottom = -2.0
-card_back_texture = ExtResource("3_do8f8")
-card_front_texture = ExtResource("16_6l36g")
-
-[node name="ClubDeckOverlay" parent="Control" instance=ExtResource("6_eulkx")]
-layout_mode = 1
-offset_top = -599.0
-offset_bottom = 1.0
-deck_type = 1
-card_back_texture = ExtResource("15_dn5wk")
-card_front_texture = ExtResource("18_uydiq")
-interaction_mode = 1
-
 [node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]
 
 [node name="HexGrid" type="Node3D" parent="HoleGenerator"]
@@ -638,4 +469,5 @@ mesh = SubResource("PlaneMesh_q0ffo")
 material_override = SubResource("StandardMaterial3D_fkwjp")
 mesh = SubResource("PlaneMesh_q0ffo")
 
-[connection signal="pressed" from="Control/Button" to="HoleGenerator/HexGrid" method="_on_button_pressed"]
+[node name="VoxelGI" type="VoxelGI" parent="."]
+data = SubResource("VoxelGIData_06m3i")

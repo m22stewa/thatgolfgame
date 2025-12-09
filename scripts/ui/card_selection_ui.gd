@@ -5,8 +5,8 @@ signal card_selected(card: CardInstance)
 signal cancelled()
 
 @export var card_scene: PackedScene = preload("res://scenes/ui/card_ui.tscn")
-@export var animation_duration: float = 0.4
-@export var stagger_delay: float = 0.05
+@export var animation_duration: float = 0.25
+@export var stagger_delay: float = 0.03
 
 var cards: Array[CardInstance] = []
 var origin_position: Vector2 = Vector2.ZERO
@@ -58,10 +58,19 @@ func _animate_entrance() -> void:
 		if card_size == Vector2.ZERO: card_size = Vector2(240, 160)
 	
 	var padding = 20
-	var columns = 5 # Wider grid for clubs
+	
+	# Layout constraint: First 800px are unusable
+	var usable_x_offset = 800.0
+	var available_width = screen_size.x - usable_x_offset
+	
+	# Calculate max columns that fit in available space
+	var columns = int(available_width / (card_size.x + padding))
+	if columns < 1: columns = 1
 	
 	var total_width = (columns * card_size.x) + ((columns - 1) * padding)
-	var start_x = (screen_size.x - total_width) / 2.0
+	
+	# Center within the usable space (offset + half remaining width - half grid width)
+	var start_x = usable_x_offset + (available_width - total_width) / 2.0
 	var start_y = 150.0 # Top margin
 	
 	for i in range(card_nodes.size()):

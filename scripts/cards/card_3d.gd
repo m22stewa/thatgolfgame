@@ -9,6 +9,17 @@ class_name Card3D
 @onready var title_label: Label3D = $MeshInstance3D/TitleLabel
 @onready var desc_label: Label3D = $MeshInstance3D/DescLabel
 @onready var icon_sprite: Sprite3D = $MeshInstance3D/IconSprite
+@onready var flavor_label: Label3D = $MeshInstance3D/FlavorLabel
+@onready var tags_label: Label3D = $MeshInstance3D/TagsLabel
+@onready var rarity_bar: MeshInstance3D = $MeshInstance3D/RarityBar
+
+# Rarity colors
+const RARITY_COLORS = {
+	CardData.Rarity.COMMON: Color(0.6, 0.6, 0.6),
+	CardData.Rarity.UNCOMMON: Color(0.2, 0.6, 0.2),
+	CardData.Rarity.RARE: Color(0.2, 0.4, 0.8),
+	CardData.Rarity.LEGENDARY: Color(0.9, 0.7, 0.1)
+}
 
 # Data
 var card_instance: CardInstance = null
@@ -64,10 +75,34 @@ func _update_visuals() -> void:
 		
 	if title_label:
 		title_label.text = card_instance.data.card_name
-		# Color based on rarity?
+		
+	if rarity_bar:
+		var mat = rarity_bar.get_active_material(0)
+		if mat:
+			# Duplicate to ensure unique instance
+			mat = mat.duplicate()
+			mat.albedo_color = RARITY_COLORS.get(card_instance.data.rarity, Color.GRAY)
+			rarity_bar.set_surface_override_material(0, mat)
 		
 	if desc_label:
 		desc_label.text = card_instance.get_full_description()
+		
+	if flavor_label:
+		flavor_label.text = card_instance.data.flavor_text
+		flavor_label.visible = not card_instance.data.flavor_text.is_empty()
+		
+	if tags_label:
+		var tags_text = ""
+		for tag in card_instance.data.tags:
+			tags_text += "#" + tag + " "
+		tags_label.text = tags_text.strip_edges()
+		tags_label.visible = not tags_text.is_empty()
+		
+	if icon_sprite and card_instance.data.icon:
+		icon_sprite.texture = card_instance.data.icon
+		icon_sprite.visible = true
+	elif icon_sprite:
+		icon_sprite.visible = false
 		
 	# TODO: Set texture based on card type/data
 	# For now, we rely on the material set in the scene
@@ -95,7 +130,7 @@ func _setup_rounded_mesh() -> void:
 		front_mat = front_mat.duplicate()
 		
 		front_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-		front_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		front_mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 		front_mat.uv1_scale = Vector3(1, 1, 1)
 		front_mat.uv1_offset = Vector3(0, 0, 0)
 		# Force correct texture to be sure
@@ -111,7 +146,7 @@ func _setup_rounded_mesh() -> void:
 		back_mat = back_mat.duplicate()
 		
 		back_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-		back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 		back_mat.uv1_scale = Vector3(1, 1, 1)
 		back_mat.uv1_offset = Vector3(0, 0, 0)
 		# Force correct texture to be sure

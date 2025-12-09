@@ -133,7 +133,10 @@ const CLUB_STATS = {
 }
 
 # Current selected club
-var current_club: ClubType = ClubType.DRIVER
+var current_club: int = -1 # -1 = None
+
+func is_club_selected() -> bool:
+	return current_club != -1
 
 func set_club_by_name(club_name: String) -> void:
 	"""Set current club by string name (e.g. 'DRIVER', 'IRON_5')"""
@@ -276,7 +279,8 @@ var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary 
 var target_locked: bool = false
 var locked_cell: Vector2i = Vector2i(-1, -1)
 var locked_target_pos: Vector3 = Vector3.ZERO
-var target_highlight_mesh: MeshInstance3D = null  # White highlight on active/locked cell
+var target_highlight_mesh: Node3D = null  # White highlight on active/locked cell (TargetMarker instance)
+# var target_distance_label: Label3D = null # Now handled inside TargetMarker
 
 # Animation state
 var pending_next_shot: bool = false  # True if player has pre-aimed during animation
@@ -927,45 +931,8 @@ func _ready() -> void:
 
 func _init_club_menu() -> void:
 	"""Initialize club selection buttons"""
-	var control = get_node_or_null("../../Control")
-	if not control:
-		return
-	
-	var container = control.get_node_or_null("HFlowContainer")
-	if not container:
-		return
-	
-	# Map button names to club types
-	var button_club_map = {
-		"Button": ClubType.DRIVER,
-		"Button2": ClubType.WOOD_3,
-		"Button3": ClubType.WOOD_5,
-		"Button4": ClubType.IRON_3,
-		"Button5": ClubType.IRON_5,
-		"Button6": ClubType.IRON_6,
-		"Button7": ClubType.IRON_7,
-		"Button8": ClubType.IRON_8,
-		"Button9": ClubType.IRON_9,
-		"Button10": ClubType.PITCHING_WEDGE,
-		"Button11": ClubType.SAND_WEDGE,
-	}
-	
-	# Connect all club buttons
-	for button_name in button_club_map:
-		var button = container.get_node_or_null(button_name)
-		if button and button is Button:
-			var club_type = button_club_map[button_name]
-			club_buttons.append(button)
-			
-			# Connect pressed signal with club type
-			button.pressed.connect(_on_club_button_pressed.bind(club_type))
-			
-			# Connect hover signals for range preview
-			button.mouse_entered.connect(_on_club_button_hover.bind(club_type))
-			button.mouse_exited.connect(_on_club_button_hover_end)
-	
-	# Update button visuals to show selected club
-	_update_club_button_visuals()
+	# Deprecated: Club selection is now handled by the card system
+	pass
 
 
 func _on_spin_button_toggled(spin: SpinType) -> void:
@@ -1034,7 +1001,7 @@ func _on_club_button_pressed(club_type: ClubType) -> void:
 	"""Handle club button click - select the club"""
 	current_club = club_type
 	trajectory_height = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
-	_update_club_button_visuals()
+	# _update_club_button_visuals() # Deprecated
 	_hide_range_preview()
 	_update_dim_overlays()  # Update dim overlays for new club range
 
@@ -1123,27 +1090,8 @@ func _hide_range_preview() -> void:
 
 func _update_club_button_visuals() -> void:
 	"""Update button appearance to show which club is selected"""
-	var club_types = [
-		ClubType.DRIVER, ClubType.WOOD_3, ClubType.WOOD_5,
-		ClubType.IRON_3, ClubType.IRON_5, ClubType.IRON_6,
-		ClubType.IRON_7, ClubType.IRON_8, ClubType.IRON_9,
-		ClubType.PITCHING_WEDGE, ClubType.SAND_WEDGE
-	]
-	
-	for i in range(mini(club_buttons.size(), club_types.size())):
-		var button = club_buttons[i]
-		var club_type = club_types[i]
-		
-		if club_type == current_club:
-			# Selected club - make it stand out
-			button.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))  # Gold
-			button.add_theme_color_override("font_pressed_color", Color(1.0, 0.85, 0.0))
-			button.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.3))
-		else:
-			# Unselected - normal appearance
-			button.remove_theme_color_override("font_color")
-			button.remove_theme_color_override("font_pressed_color")
-			button.remove_theme_color_override("font_hover_color")
+	# Deprecated: Club selection is now handled by the card system
+	pass
 
 
 func _get_club_name(club: ClubType) -> String:
@@ -1435,6 +1383,10 @@ func _try_lock_target(cell: Vector2i) -> void:
 	"""Attempt to lock target to the specified cell"""
 	if cell.x < 0 or cell.y < 0:
 		return
+		
+	# Require club selection
+	if not is_club_selected():
+		return
 	
 	# Check if forward from ball
 	if golf_ball:
@@ -1479,6 +1431,10 @@ func _try_lock_target(cell: Vector2i) -> void:
 		var ball_tile = world_to_grid(golf_ball.position)
 		var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
 		shot_ui.update_target_info(terrain, distance)
+		
+		# Update on-screen label
+		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
+			target_highlight_mesh.set_distance(distance)
 
 
 func _update_aoe_for_cell(cell: Vector2i) -> void:
@@ -1580,6 +1536,10 @@ func set_aim_cell(cell: Vector2i) -> bool:
 		var ball_tile = world_to_grid(golf_ball.position)
 		var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
 		shot_ui.update_target_info(terrain, distance)
+		
+		# Update on-screen label
+		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
+			target_highlight_mesh.set_distance(distance)
 	
 	# Display debug info for the clicked tile
 	_display_tile_debug_info(locked_cell)
@@ -1983,7 +1943,30 @@ func _is_near_green(tile: Vector2i, max_distance: int) -> bool:
 
 func _find_and_setup_ui() -> void:
 	"""Find ShotUI nodes and connect them to systems"""
-	# Try to find UI nodes in the Control node
+	# Try to find MainUI first
+	var main_ui = get_tree().current_scene.find_child("MainUI", true, false)
+	if main_ui and main_ui.has_method("get_class") and main_ui.get_script():
+		# If it's our MainUI script
+		shot_ui = main_ui.shot_ui
+		lie_info_panel = main_ui.lie_info_panel
+		lie_name_label = main_ui.lie_name_label
+		lie_description_label = main_ui.lie_desc_label
+		lie_modifiers_label = main_ui.lie_mods_label
+		
+		# Also get hole label if needed
+		holelabel = main_ui.hole_info_label
+		
+		# Connect Generate Button
+		if main_ui.generate_button:
+			if not main_ui.generate_button.pressed.is_connected(_on_button_pressed):
+				main_ui.generate_button.pressed.connect(_on_button_pressed)
+		
+		# Connect ShotUI
+		if shot_ui:
+			shot_ui.setup(shot_manager, self)
+		return
+
+	# Fallback to old search method
 	var control = get_tree().current_scene.get_node_or_null("Control")
 	if control:
 		shot_ui = control.get_node_or_null("ShotUI")
@@ -2052,15 +2035,60 @@ func _start_new_shot() -> void:
 	if putting_system and putting_system.is_putting_mode:
 		putting_system.exit_putting_mode()
 	
-	shot_manager.start_shot(golf_ball, ball_tile)
+	# Reset club selection for new shot
+	current_club = -1
 	
-	# Update dim overlays for new ball position
-	_update_dim_overlays()
-	
-	# Update UI with distance to flag
+	# Update UI with distance to flag (useful for club selection)
 	if shot_ui and flag_position.x >= 0:
 		var dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
 		shot_ui.update_shot_info(shot_manager.current_context.shot_index, dist_to_flag)
+	
+	# Start turn selection flow (Club -> Modifier -> Shot)
+	if card_system:
+		if not card_system.turn_selection_complete.is_connected(_on_turn_selection_complete):
+			card_system.turn_selection_complete.connect(_on_turn_selection_complete)
+		
+		# Don't auto-start selection. Wait for user to click deck.
+		# card_system.start_turn_selection()
+		
+		# Just update overlays for current state (likely empty/default)
+		_update_dim_overlays()
+	else:
+		# Fallback
+		shot_manager.start_shot(golf_ball, ball_tile)
+		_update_dim_overlays()
+
+
+func _on_turn_selection_complete(club_card: CardInstance, modifier_card: CardInstance) -> void:
+	"""Called when player has finished selecting club and modifiers"""
+	if golf_ball == null:
+		return
+		
+	var ball_tile = world_to_grid(golf_ball.position)
+	
+	# Start the actual shot lifecycle
+	shot_manager.start_shot(golf_ball, ball_tile)
+	
+	# If we have a locked target from pre-aiming, apply it to the new shot
+	if target_locked and locked_cell.x >= 0:
+		var adjusted_landing = get_shape_adjusted_landing(locked_cell)
+		shot_manager.set_aim_target(adjusted_landing)
+		
+		# Also refresh UI to show SwingMeter now that shot is in progress
+		if shot_ui:
+			var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
+			var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
+			shot_ui.update_target_info(terrain, distance)
+	else:
+		# If no target locked, try to lock to current hovered cell if valid
+		if hovered_cell.x >= 0:
+			_try_lock_target(hovered_cell)
+		else:
+			# If not hovering, we can't show meter yet. User must point at grid.
+			pass
+	
+	# Update dim overlays for new ball position and selected club
+	_update_dim_overlays()
 
 
 func _calculate_distance_yards(from: Vector2i, to: Vector2i) -> int:
@@ -3219,23 +3247,15 @@ func _create_highlight_mesh() -> void:
 	add_child(highlight_mesh)
 	
 	# Create white target highlight for locked/active cell
-	target_highlight_mesh = MeshInstance3D.new()
-	var target_cylinder = CylinderMesh.new()
-	target_cylinder.top_radius = TILE_SIZE * 0.55
-	target_cylinder.bottom_radius = TILE_SIZE * 0.55
-	target_cylinder.height = 0.05
-	target_cylinder.radial_segments = 6
-	target_highlight_mesh.mesh = target_cylinder
-	
-	var target_mat = StandardMaterial3D.new()
-	target_mat.albedo_color = Color(1.0, 1.0, 1.0, 0.6)  # White, semi-transparent
-	target_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	target_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	target_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	target_highlight_mesh.material_override = target_mat
-	target_highlight_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	
+	var target_marker_scene = load("res://scenes/ui/target_marker.tscn")
+	if target_marker_scene:
+		target_highlight_mesh = target_marker_scene.instantiate()
+	else:
+		# Fallback if scene missing
+		target_highlight_mesh = Node3D.new()
+		
 	target_highlight_mesh.visible = false
+	add_child(target_highlight_mesh)
 	add_child(target_highlight_mesh)
 	
 	# AOE highlights are now created dynamically via _get_or_create_aoe_highlight()
@@ -4971,7 +4991,16 @@ func _play_opening_transition() -> void:
 
 func _play_transition_out(duration: float = 1.5, show_loading: bool = false) -> void:
 	"""Transition OUT (1.0 -> 0.0) to reveal the scene"""
-	var transition_rect = get_node_or_null("%sceen-transition")
+	# Try to find transition rect in MainUI first
+	var transition_rect = null
+	var main_ui = get_tree().current_scene.find_child("MainUI", true, false)
+	if main_ui:
+		transition_rect = main_ui.find_child("sceen-transition", true, false)
+	
+	# Fallback to old path
+	if not transition_rect:
+		transition_rect = get_node_or_null("%sceen-transition")
+		
 	if not transition_rect:
 		return
 	
@@ -5010,7 +5039,16 @@ func _play_transition_out(duration: float = 1.5, show_loading: bool = false) -> 
 
 func _play_transition_in(duration: float = 0.8, show_loading: bool = false) -> void:
 	"""Transition IN (0.0 -> 1.0) to cover the scene"""
-	var transition_rect = get_node_or_null("%sceen-transition")
+	# Try to find transition rect in MainUI first
+	var transition_rect = null
+	var main_ui = get_tree().current_scene.find_child("MainUI", true, false)
+	if main_ui:
+		transition_rect = main_ui.find_child("sceen-transition", true, false)
+	
+	# Fallback to old path
+	if not transition_rect:
+		transition_rect = get_node_or_null("%sceen-transition")
+		
 	if not transition_rect:
 		return
 	

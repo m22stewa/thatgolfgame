@@ -55,13 +55,7 @@ var inspect_center: Vector2 = Vector2.ZERO  # Center position during inspection
 var inspect_tilt_amount: float = 5.0  # Max tilt in degrees (subtle 3D effect)
 
 # Child node references
-@onready var background: ColorRect = $Background
-@onready var card_front: TextureRect = $TextureRect
-@onready var card_name_label: Label = $CardName
-@onready var description_label: RichTextLabel = $Description
-@onready var rarity_indicator: ColorRect = $RarityIndicator
-@onready var type_icon: TextureRect = $TypeIcon
-@onready var cost_label: Label = $CostLabel
+@onready var card_3d_view = $SubViewportContainer/SubViewport/Node3D/Card3D
 
 # Rarity colors
 const RARITY_COLORS = {
@@ -116,7 +110,10 @@ func _process_drag(delta: float) -> void:
 	wiggle_amount = clamp(wiggle_amount, -0.1, 0.1)  # Smaller max rotation
 	
 	# Apply smooth tilt (no oscillation, just direct tilt based on movement)
-	rotation = lerp(rotation, wiggle_amount, delta * 10.0)
+	if card_3d_view:
+		card_3d_view.rotation.z = lerp(card_3d_view.rotation.z, -wiggle_amount, delta * 10.0)
+	else:
+		rotation = lerp(rotation, wiggle_amount, delta * 10.0)
 	
 	# Decay tilt when not moving
 	wiggle_amount = move_toward(wiggle_amount, 0.0, delta * wiggle_decay * 0.3)
@@ -139,6 +136,11 @@ func _process_idle(delta: float) -> void:
 	
 	# Decay any remaining wiggle
 	wiggle_amount = move_toward(wiggle_amount, 0.0, delta * wiggle_decay)
+	
+	# Reset 3D rotation when idle
+	if card_3d_view:
+		card_3d_view.rotation.x = lerp(card_3d_view.rotation.x, 0.0, delta * 5.0)
+		card_3d_view.rotation.y = lerp(card_3d_view.rotation.y, 0.0, delta * 5.0)
 
 
 func _process_inspection(delta: float) -> void:
@@ -156,31 +158,25 @@ func _process_inspection(delta: float) -> void:
 	var normalized_x = clamp(offset_from_center.x / (card_half_size.x * 1.5), -1.0, 1.0)
 	var normalized_y = clamp(offset_from_center.y / (card_half_size.y * 1.5), -1.0, 1.0)
 	
-	# Simulate 3D rotation using 2D transforms:
-	# We combine rotation and non-uniform scaling to create a perspective effect
-	
-	var tilt_strength = inspect_tilt_amount
-	
-	# Primary rotation based on horizontal mouse position (Y-axis rotation feel)
-	# Plus subtle twist when mouse is in corners
-	var base_rotation = normalized_x * tilt_strength * 0.5
-	var corner_twist = normalized_x * normalized_y * tilt_strength * 0.15
-	var target_rot = deg_to_rad(base_rotation + corner_twist)
-	
-	# Perspective scaling to simulate depth (very subtle):
-	# - Horizontal: side closer to mouse appears slightly larger
-	# - Vertical: top/bottom closer to mouse appears slightly larger
-	var perspective_x = 1.0 + (normalized_x * 0.02)  # 0.98 to 1.02
-	var perspective_y = 1.0 + (normalized_y * 0.02)  # 0.98 to 1.02
-	var final_scale = Vector2(
-		target_scale.x * perspective_x,
-		target_scale.y * perspective_y
-	)
+	if card_3d_view:
+		# Apply 3D rotation
+		# Mouse X -> Rotate Y (Yaw)
+		# Mouse Y -> Rotate X (Pitch)
+		var target_rot_y = normalized_x * deg_to_rad(inspect_tilt_amount * 3.0)
+		var target_rot_x = -normalized_y * deg_to_rad(inspect_tilt_amount * 3.0)
+		
+		card_3d_view.rotation.y = lerp(card_3d_view.rotation.y, target_rot_y, delta * 10.0)
+		card_3d_view.rotation.x = lerp(card_3d_view.rotation.x, target_rot_x, delta * 10.0)
+		
+		# Reset 2D rotation/scale to base target
+		rotation = lerp(rotation, 0.0, delta * 10.0)
+		scale = scale.lerp(target_scale, delta * 10.0)
+	else:
+		# Fallback for no 3D view (shouldn't happen after refactor)
+		pass
 	
 	# Smooth animation
 	position = position.lerp(target_position, delta * animation_speed)
-	rotation = lerp(rotation, target_rot, delta * 10.0)
-	scale = scale.lerp(final_scale, delta * 10.0)
 
 
 func setup(instance: CardInstance) -> void:
@@ -192,46 +188,21 @@ func setup(instance: CardInstance) -> void:
 
 func set_custom_front_texture(texture: Texture2D) -> void:
 	custom_front_texture = texture
-	if is_node_ready() and card_front:
-		card_front.texture = texture
+	if is_node_ready() and card_3d_view:
+		# Note: Card3D seems to swap front/back textures internally, so we pass as back to show on front
+		card_3d_view.set_textures(null, texture)
 
 
 func refresh_display() -> void:
 	"""Update visual display from card data"""
-	if not card_instance or not card_instance.data:
+	if not card_instance:
 		return
 	
-	var data = card_instance.data
-	
-	# Custom front texture
-	if custom_front_texture and card_front:
-		card_front.texture = custom_front_texture
-	
-	# Card name
-	if card_name_label:
-		card_name_label.text = data.card_name
-		if card_instance.upgrade_level > 0:
-			card_name_label.text += " +" + str(card_instance.upgrade_level)
-	
-	# Description
-	if description_label:
-		description_label.text = card_instance.get_full_description()
-	
-	# Rarity indicator
-	if rarity_indicator:
-		rarity_indicator.color = RARITY_COLORS.get(data.rarity, Color.GRAY)
-	
-	# Background color based on type
-	if background:
-		background.color = TYPE_COLORS.get(data.card_type, Color(0.2, 0.2, 0.2))
-	
-	# Cost/uses display
-	if cost_label:
-		if data.card_type == CardData.CardType.CONSUMABLE:
-			cost_label.text = "%d/%d" % [card_instance.uses_remaining, data.max_uses]
-			cost_label.visible = true
-		else:
-			cost_label.visible = false
+	if card_3d_view:
+		card_3d_view.setup(card_instance)
+		if custom_front_texture:
+			# Note: Card3D seems to swap front/back textures internally, so we pass as back to show on front
+			card_3d_view.set_textures(null, custom_front_texture)
 	
 	# Apply exhausted visual if needed
 	_update_exhausted_visual()
