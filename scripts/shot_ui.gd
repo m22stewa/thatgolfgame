@@ -4,12 +4,16 @@ class_name ShotUI
 ## ShotUI - Visual interface for the shot system
 ## Connect this to ShotManager signals and hex_grid for live updates
 
+# Signals
+signal next_hole_requested()
+
 # Swing meter scene
 const SwingMeterScene = preload("res://scenes/ui/SwingMeter.tscn")
 const ShotNumberScene = preload("res://scenes/ui/shot_number.tscn")
 
 # UI element references - set via unique names
 @onready var hole_label: Label = %HoleLabel
+@onready var hole_progress_label: Label = %HoleProgressLabel if has_node("%HoleProgressLabel") else null
 @onready var par_label: Label = %ParLabel
 @onready var yardage_label: Label = %YardageLabel
 @onready var shot_numbers: HBoxContainer = %ShotNumbers
@@ -40,8 +44,13 @@ var current_lie_info: Dictionary = {}  # Store for recalculating when club chang
 
 # Persistent score display in TopBar - get by path since it may not have unique name
 var persistent_score_label: Label = null
+var chips_label: Label = null  # Display for currency
 var score_tween: Tween = null
 var displayed_score: int = 0  # For animated counting
+var displayed_chips: int = 0  # For animated chip counting
+
+# Currency reference
+var currency_manager: CurrencyManager = null
 
 @onready var hole_complete_popup: PanelContainer = $HoleCompletePopup
 @onready var hole_complete_title: Label = %HoleCompleteTitle
@@ -52,6 +61,7 @@ var displayed_score: int = 0  # For animated counting
 # References to game systems (set externally)
 var shot_manager: ShotManager = null
 var hole_controller: Node3D = null  # hex_grid reference
+var run_state: RunStateManager = null  # Run progression tracking
 
 # Game state
 var current_hole: int = 1
@@ -59,6 +69,7 @@ var current_par: int = 4
 var current_yardage: int = 0
 var total_points: int = 0
 var shots_this_hole: int = 0
+var total_holes: int = 9
 
 # Club data (name, min_yards, max_yards)
 var clubs = [
@@ -145,6 +156,28 @@ func setup(p_shot_manager: ShotManager, p_hole_controller: Node3D) -> void:
 		shot_manager.shot_completed.connect(_on_shot_completed)
 
 
+func set_currency_manager(p_currency: CurrencyManager) -> void:
+	"""Connect to currency manager for chips display"""
+	currency_manager = p_currency
+	if currency_manager:
+		if not currency_manager.currency_changed.is_connected(_on_currency_changed):
+			currency_manager.currency_changed.connect(_on_currency_changed)
+		# Initial update
+		_update_chips_display(currency_manager.get_balance())
+
+
+func _on_currency_changed(new_amount: int, _delta: int) -> void:
+	"""Handle currency change - update chips display"""
+	_update_chips_display(new_amount)
+
+
+func _update_chips_display(amount: int) -> void:
+	"""Update the chips label with animation"""
+	if chips_label:
+		chips_label.text = "💰 %d" % amount
+	displayed_chips = amount
+
+
 func set_hole_info(hole: int, par: int, yardage: int) -> void:
 	"""Update hole information display"""
 	current_hole = hole
@@ -160,10 +193,12 @@ func set_hole_info(hole: int, par: int, yardage: int) -> void:
 		yardage_label.text = "%d yds" % yardage
 
 
-func update_shot_info(shot_num: int, distance_to_flag: int) -> void:
-	"""Update shot counter and distance"""
-	shots_this_hole = shot_num
-	_update_shot_counter_visuals(shot_num)
+func update_shot_info(strokes_taken: int, distance_to_flag: int) -> void:
+	"""Update shot counter and distance. strokes_taken is how many shots have been made."""
+	shots_this_hole = strokes_taken
+	# Display shows which shot number we're ON (next shot to take)
+	# After 0 strokes, we're on shot 1. After 1 stroke, we're on shot 2.
+	_update_shot_counter_visuals(strokes_taken + 1)
 	distance_label.text = "%d yds to flag" % distance_to_flag
 
 
@@ -209,7 +244,7 @@ func update_target_info(terrain_type: int, distance: int) -> void:
 	if hole_controller and hole_controller.has_method("is_club_selected"):
 		club_selected = hole_controller.is_club_selected()
 	
-	# Show swing meter when target is valid (replaces confirm button)
+	# Show swing meter when target is valid and club is selected
 	if terrain_type >= 0 and swing_meter and club_selected:
 		if not swing_meter.visible:
 			# Configure swing meter for current club/lie
@@ -219,7 +254,11 @@ func update_target_info(terrain_type: int, distance: int) -> void:
 			# Force layout update to ensure track width is correct
 			swing_meter.reset_size()
 			swing_meter.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-			swing_meter.position.y -= 50 # Offset from bottom
+			# Set fixed offset from bottom (don't accumulate)
+			swing_meter.anchor_top = 1.0
+			swing_meter.anchor_bottom = 1.0
+			swing_meter.offset_top = -150
+			swing_meter.offset_bottom = -50
 
 
 func update_club_display() -> void:
@@ -459,21 +498,43 @@ func show_hole_complete(strokes: int, par: int, hole_points: int) -> void:
 	var diff = strokes - par
 	var score_name = ""
 	
-	match diff:
-		-3: score_name = "Albatross! (-3)"
-		-2: score_name = "Eagle! (-2)"
-		-1: score_name = "Birdie! (-1)"
-		0: score_name = "Par (E)"
-		1: score_name = "Bogey (+1)"
-		2: score_name = "Double Bogey (+2)"
-		_:
-			if diff < -3:
-				score_name = "Incredible! (%d)" % diff
-			else:
-				score_name = "+%d" % diff
+	# Get par bonus from run state if available
+	var par_bonus = 0
+	if run_state:
+		par_bonus = run_state._calculate_par_bonus(diff)
+		score_name = run_state.get_par_name(diff)
+	else:
+		match diff:
+			-3: score_name = "Albatross! (-3)"
+			-2: score_name = "Eagle! (-2)"
+			-1: score_name = "Birdie! (-1)"
+			0: score_name = "Par (E)"
+			1: score_name = "Bogey (+1)"
+			2: score_name = "Double Bogey (+2)"
+			_:
+				if diff < -3:
+					score_name = "Incredible! (%d)" % diff
+				else:
+					score_name = "+%d" % diff
 	
-	hole_score.text = score_name
-	total_score.text = "Total: %d pts" % total_points
+	# Update hole complete title with hole number
+	if hole_complete_title:
+		hole_complete_title.text = "Hole %d Complete!" % current_hole
+	
+	hole_score.text = "%s\n%d strokes" % [score_name, strokes]
+	
+	# Show score breakdown
+	var score_text = "Hole Score: %d pts" % hole_points
+	if par_bonus > 0:
+		score_text += "\nPar Bonus: +%d pts" % par_bonus
+	score_text += "\n\nTotal: %d pts" % total_points
+	total_score.text = score_text
+	
+	# Update button text based on whether this is the final hole
+	if run_state and run_state.is_final_hole():
+		next_button.text = "Finish Round"
+	else:
+		next_button.text = "Next Hole"
 	
 	hole_complete_popup.visible = true
 
@@ -487,7 +548,9 @@ func hide_hole_complete() -> void:
 
 func _on_shot_started(context: ShotContext) -> void:
 	"""Called when a new shot begins"""
-	update_shot_info(context.shot_index, 0)
+	# Use run_state stroke count if available, otherwise fall back to context
+	var stroke_count = run_state.strokes_this_hole if run_state else context.shot_index
+	update_shot_info(stroke_count, 0)
 	
 	# Update current terrain from ball position
 	if hole_controller and context.start_tile.x >= 0:
@@ -520,14 +583,22 @@ func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> voi
 		push_error("ShotUI: No shot_manager reference! Cannot confirm shot.")
 		return
 	
+	# If shot not started yet, auto-start it now (player did pre-aiming)
 	if not shot_manager.is_shot_in_progress:
-		# If shot not started yet (e.g. pre-aiming), we can't confirm.
-		# But we shouldn't just fail silently if the meter was visible.
-		# Maybe we should auto-start the shot? Or just warn.
-		# For now, just return, but the meter shouldn't have been clickable if hidden.
-		# If it WAS visible, it means we allowed pre-aiming.
-		push_warning("ShotUI: No shot in progress - cannot confirm")
-		return
+		# We need to start the shot lifecycle first
+		if hole_controller and hole_controller.has_method("force_start_shot"):
+			hole_controller.force_start_shot()
+		else:
+			# Fallback: try to start shot directly
+			var ball = hole_controller.golf_ball if hole_controller else null
+			if ball:
+				var ball_tile = hole_controller.world_to_grid(ball.position)
+				shot_manager.start_shot(ball, ball_tile)
+				
+				# Also set the aim target if we have a locked cell
+				if hole_controller.target_locked and hole_controller.locked_cell.x >= 0:
+					var adjusted = hole_controller.get_shape_adjusted_landing(hole_controller.locked_cell)
+					shot_manager.set_aim_target(adjusted)
 	
 	# Store swing meter results directly in context
 	var ctx = shot_manager.current_context
@@ -548,8 +619,15 @@ func _on_swing_cancelled() -> void:
 func _on_next_hole_pressed() -> void:
 	"""Next hole button clicked"""
 	hide_hole_complete()
-	# Signal to hex_grid to generate new hole
-	if hole_controller and hole_controller.has_method("_on_regenerate_button_pressed"):
-		hole_controller._on_regenerate_button_pressed()
-		current_hole += 1
-		# Hole info will be updated when new hole generates
+	# Emit signal for hex_grid to handle hole transition
+	next_hole_requested.emit()
+
+
+func set_hole_display(display_text: String) -> void:
+	"""Set the hole progress display (e.g., 'Hole 1 of 9')"""
+	if hole_progress_label:
+		hole_progress_label.text = display_text
+	# Also update the main hole label if no progress label
+	elif hole_label:
+		# Parse hole number from display text if possible
+		pass  # hole_label is set by set_hole_info

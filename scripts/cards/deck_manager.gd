@@ -225,6 +225,15 @@ func get_active_cards() -> Array[CardInstance]:
 	return _active_cards
 
 
+func get_all_deck_cards() -> Array[CardInstance]:
+	"""Get all cards in the deck (draw + discard + active) for viewing/upgrading"""
+	var all_cards: Array[CardInstance] = []
+	all_cards.append_array(_draw_pile)
+	all_cards.append_array(_active_cards)
+	all_cards.append_array(_discard_pile)
+	return all_cards
+
+
 func get_draw_pile_size() -> int:
 	return _draw_pile.size()
 

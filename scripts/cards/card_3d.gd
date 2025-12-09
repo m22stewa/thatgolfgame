@@ -37,11 +37,21 @@ const CORNER_SEGMENTS = 8
 # Static cache for the mesh
 static var _shared_rounded_mesh: ArrayMesh
 
+# Static texture cache to avoid repeated load() calls
+static var _default_front_texture: Texture2D
+static var _default_back_texture: Texture2D
+
 # Texture overrides
 var front_texture_override: Texture2D
 var back_texture_override: Texture2D
 
 func _ready() -> void:
+	# Cache default textures once
+	if not _default_front_texture:
+		_default_front_texture = load("res://textures/card-front.png")
+	if not _default_back_texture:
+		_default_back_texture = load("res://textures/card-back.png")
+	
 	# Setup collision shape if not present (for clicks)
 	if not has_node("CollisionShape3D"):
 		var shape = CollisionShape3D.new()
@@ -124,21 +134,20 @@ func _setup_rounded_mesh() -> void:
 	
 	mesh_instance.mesh = _shared_rounded_mesh
 	
-	# Assign materials and disable transparency since geometry handles the shape
+	# Assign materials - use UNSHADED for performance (no lighting calculations)
 	if front_mat:
 		# Duplicate material to ensure uniqueness per card instance
 		front_mat = front_mat.duplicate()
 		
 		front_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-		front_mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		front_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		front_mat.uv1_scale = Vector3(1, 1, 1)
 		front_mat.uv1_offset = Vector3(0, 0, 0)
-		# Force correct texture to be sure
-		# Swapping textures based on user report that front shows back
+		# Use cached texture
 		if back_texture_override:
 			front_mat.albedo_texture = back_texture_override
 		else:
-			front_mat.albedo_texture = load("res://textures/card-back.png")
+			front_mat.albedo_texture = _default_back_texture
 		mesh_instance.set_surface_override_material(0, front_mat)
 	
 	if back_mat:
@@ -146,20 +155,20 @@ func _setup_rounded_mesh() -> void:
 		back_mat = back_mat.duplicate()
 		
 		back_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-		back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		back_mat.uv1_scale = Vector3(1, 1, 1)
 		back_mat.uv1_offset = Vector3(0, 0, 0)
-		# Force correct texture to be sure
+		# Use cached texture
 		if front_texture_override:
 			back_mat.albedo_texture = front_texture_override
 		else:
-			back_mat.albedo_texture = load("res://textures/card-front.png")
+			back_mat.albedo_texture = _default_front_texture
 		mesh_instance.set_surface_override_material(1, back_mat)
 	
-	# Edge material
+	# Edge material - also unshaded
 	var edge_mat = StandardMaterial3D.new()
 	edge_mat.albedo_color = Color(0.9, 0.9, 0.9)
-	edge_mat.roughness = 0.8
+	edge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mesh_instance.set_surface_override_material(2, edge_mat)
 
 

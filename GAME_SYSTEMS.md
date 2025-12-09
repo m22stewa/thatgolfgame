@@ -373,19 +373,52 @@ The ball now flies in a natural curved path when hook/slice/draw/fade is applied
 | Negative | Draw/Hook | Ball curves left (for right-hander) |
 | Positive | Fade/Slice | Ball curves right (for right-hander) |
 
-### Not Yet Implemented
-- **Wind System**: Referenced in code comments but not functional as a gameplay modifier
-  - Visual wind shaders exist (trees, sky, grass)
-  - Loft stat is noted to "affect wind sensitivity" but currently unused
-  - Would need: wind direction, wind strength, loft-based calculations
+### Wind System Status
+The wind system infrastructure is implemented but not fully integrated:
+
+**Implemented:**
+- `wind_system.gd` - Wind generation with direction, speed, gustiness
+- `effect_wind.gd` - WindModifier class with proper modifier interface
+- Wind generated per hole based on difficulty
+- 8 cardinal/ordinal directions (N, NE, E, SE, S, SW, W, NW)
+- Speed categories: Calm (<5), Light (5-13), Moderate (13-26), Strong (26-41), Very Strong (41+) km/h
+- Loft-based sensitivity (higher loft = more wind effect)
+
+**Not Yet Connected:**
+- WindModifier not auto-added to ModifierManager at shot start
+- Wind effects calculated but not applied to ball trajectory
+- Wind UI widget exists but not dynamically updating
+
+**To Complete Wind Integration:**
+1. Add WindModifier to ModifierManager when shot starts
+2. Call `apply_on_shot()` during shot execution phase
+3. Update wind widget on hole generation
+
+### Current Development Focus
+
+**Immediate Next Steps:**
+1. **Run State Manager** - Track hole number, strokes, cumulative score
+2. **End-of-Hole Flow** - Score display, continue to next hole
+3. **Shop System** - Card purchasing between holes
+4. **Hand of Cards** - Playable items/actions during shots
+
+**Gameplay Loop Gaps:**
+- No between-hole transition flow
+- No score accumulation across holes
+- No card shop/upgrade system
+- No win/lose conditions
+- No difficulty progression
 
 ### Potential Improvements
-- [ ] Implement wind as a modifier affecting trajectory
+- [ ] Complete wind system integration
 - [ ] Add elevation-based distance calculations beyond slope
 - [ ] Consider club wear/fatigue system
 - [ ] Add weather effects (rain = more roll reduction, etc.)
+- [ ] Implement card upgrade system
+- [ ] Add special tile effects (gold tiles, warp tiles, etc.)
+- [ ] Multiplayer support (turn-based or real-time)
 
 ---
 
 *Last updated: December 2024*
-*Source files: `shot_manager.gd`, `lie_system.gd`, `modifier_manager.gd`, `aoe_system.gd`, `putting_system.gd`, `cards/`*
+*Source files: `shot_manager.gd`, `lie_system.gd`, `modifier_manager.gd`, `aoe_system.gd`, `putting_system.gd`, `wind_system.gd`, `cards/`*

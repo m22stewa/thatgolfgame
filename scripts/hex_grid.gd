@@ -295,6 +295,12 @@ var shot_ui: ShotUI = null
 var putting_system: Node = null  # PuttingSystem for green play
 var wind_system: Node = null  # WindSystem for environmental effects
 var hole_viewer: Node = null  # HoleViewer reference
+var run_state: RunStateManager = null  # Tracks progression across holes
+
+# Economy system components
+var currency_manager: CurrencyManager = null
+var shop_manager: ShopManager = null
+var shop_ui: ShopUI = null
 
 # Card system components
 var card_system: CardSystemManager = null
@@ -925,6 +931,14 @@ func _ready() -> void:
 	_generate_course()
 	_generate_grid()
 	_log_hole_info()
+	
+	# Initialize run state with first hole info
+	if run_state:
+		run_state.start_hole(current_par, current_yardage)
+	
+	# Update UI
+	_update_ui_hole_info()
+	
 	_start_new_shot()
 	_play_opening_transition()
 
@@ -1379,19 +1393,40 @@ func _is_mouse_over_ui() -> bool:
 	return false
 
 
-func _try_lock_target(cell: Vector2i) -> void:
-	"""Attempt to lock target to the specified cell"""
-	if cell.x < 0 or cell.y < 0:
-		return
-		
+func is_valid_target(cell: Vector2i) -> bool:
+	"""Check if a cell is a valid target for the current shot"""
+	# Check bounds
+	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+		return false
+	
+	# Check surface (no water, no empty)
+	var surface = get_cell(cell.x, cell.y)
+	if surface == -1 or surface == SurfaceType.WATER:
+		return false
+	
 	# Require club selection
 	if not is_club_selected():
-		return
+		return false
 	
-	# Check if forward from ball
+	# Must be forward from ball
 	if golf_ball:
 		if not is_forward_from_ball(cell):
-			return
+			return false
+		
+		# Must be within club range
+		var ball_tile = world_to_grid(golf_ball.position)
+		var max_dist = get_current_club_distance()
+		var tile_dist = get_tile_distance(ball_tile, cell)
+		if tile_dist > max_dist:
+			return false
+	
+	return true
+
+
+func _try_lock_target(cell: Vector2i) -> void:
+	"""Attempt to lock target to the specified cell"""
+	if not is_valid_target(cell):
+		return
 	
 	# Lock to this cell
 	locked_cell = cell
@@ -1486,14 +1521,9 @@ func _update_aoe_for_cell(cell: Vector2i) -> void:
 ## Public function to set aim target from external sources (like HoleViewer)
 func set_aim_cell(cell: Vector2i) -> bool:
 	"""Set the aim target to a specific cell. Returns true if successful."""
-	# Validate cell is in bounds
-	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+	# Use unified validation
+	if not is_valid_target(cell):
 		return false
-	
-	# Check if target is forward from ball
-	if golf_ball:
-		if not is_forward_from_ball(cell):
-			return false
 	
 	# Lock target to this cell
 	locked_cell = cell
@@ -1550,54 +1580,48 @@ func set_aim_cell(cell: Vector2i) -> bool:
 ## Set hovered cell for highlighting (from external sources like HoleViewer)
 func set_hover_cell(cell: Vector2i) -> void:
 	"""Set the currently hovered cell and update all highlighting"""
-	# Validate cell bounds
-	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
-		if not target_locked:
-			hovered_cell = Vector2i(-1, -1)
-			highlight_mesh.visible = false
-			_hide_all_aoe_highlights()
-			trajectory_mesh.visible = false
-			trajectory_shadow_mesh.visible = false
-			curved_trajectory_mesh.visible = false
-		return
-	
-	var surface = get_cell(cell.x, cell.y)
-	if surface == -1 or surface == SurfaceType.WATER:
-		if not target_locked:
-			hovered_cell = Vector2i(-1, -1)
-			highlight_mesh.visible = false
-			_hide_all_aoe_highlights()
-		return
-	
-	# Always track hovered_cell for click detection
-	hovered_cell = cell
-	
 	# If target is locked, don't update visuals - keep it on locked cell
 	if target_locked:
 		_update_trajectory(locked_target_pos)
 		return
 	
-	# Check if cell is forward from ball
-	var is_forward = is_forward_from_ball(cell)
+	# Check basic validity (bounds, surface type)
+	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+		hovered_cell = Vector2i(-1, -1)
+		highlight_mesh.visible = false
+		_hide_all_aoe_highlights()
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
+		curved_trajectory_mesh.visible = false
+		return
+	
+	var surface = get_cell(cell.x, cell.y)
+	if surface == -1 or surface == SurfaceType.WATER:
+		hovered_cell = Vector2i(-1, -1)
+		highlight_mesh.visible = false
+		_hide_all_aoe_highlights()
+		return
+	
+	# Check if forward from ball
+	if not is_forward_from_ball(cell):
+		hovered_cell = Vector2i(-1, -1)
+		highlight_mesh.visible = false
+		_hide_all_aoe_highlights()
+		return
 	
 	# Hide all previous AOE highlights before showing new ones
 	_hide_all_aoe_highlights()
 	
-	# Don't show any highlight for tiles behind the ball
-	if not is_forward:
-		highlight_mesh.visible = false
+	# Use unified validation to check if this is a clickable target
+	var is_clickable = is_valid_target(cell)
+	
+	# Only set hovered_cell for valid, clickable targets
+	if is_clickable:
+		hovered_cell = cell
+	else:
 		hovered_cell = Vector2i(-1, -1)
-		return
 	
-	# Check if cell is in range
-	var in_range = true
-	if golf_ball:
-		var ball_tile = world_to_grid(golf_ball.position)
-		var tile_dist = get_tile_distance(ball_tile, cell)
-		var max_dist = get_current_club_distance()
-		in_range = tile_dist <= max_dist
-	
-	# Position highlight mesh at the cell
+	# Position highlight mesh at the cell (show for both clickable and non-clickable for feedback)
 	var width = TILE_SIZE
 	var hex_height = TILE_SIZE * sqrt(3.0)
 	var x_pos = cell.x * width * 1.5
@@ -1608,16 +1632,16 @@ func set_hover_cell(cell: Vector2i) -> void:
 	highlight_mesh.rotation.y = PI / 6.0
 	highlight_mesh.visible = true
 	
-	# Change highlight color based on range
+	# Change highlight color based on clicka
 	var mat = highlight_mesh.material_override as StandardMaterial3D
 	if mat:
-		if in_range:
-			mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Gold = in range
+		if is_clickable:
+			mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Gold = clickable
 		else:
-			mat.albedo_color = Color(1.0, 0.2, 0.2, 0.6)  # Red = out of range
+			mat.albedo_color = Color(1.0, 0.2, 0.2, 0.6)  # Red = not clickable
 	
-	# Only show AOE and trajectory if in range
-	if in_range:
+	# Only show AOE and trajectory if valid target (in range)
+	if is_clickable:
 		# Get AOE offset based on shot shape
 		var aoe_offset = get_shape_aoe_offset()
 		var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
@@ -1780,6 +1804,15 @@ func _display_tile_debug_info(cell: Vector2i) -> void:
 
 func _init_shot_system() -> void:
 	"""Initialize shot system components and connect signals"""
+	# Create Run State Manager
+	run_state = RunStateManager.new()
+	run_state.name = "RunStateManager"
+	add_child(run_state)
+	run_state.start_new_run(9)  # 9-hole round by default
+	
+	# Initialize economy system (must be after run_state)
+	_init_economy_system()
+	
 	# Create AOE system
 	aoe_system = AOESystem.new()
 	aoe_system.name = "AOESystem"
@@ -1877,6 +1910,42 @@ func _init_putting_system() -> void:
 		push_warning("Could not load putting_system.gd")
 
 
+func _init_economy_system() -> void:
+	"""Initialize the economy/shop system for between-hole purchases"""
+	# Create currency manager
+	currency_manager = CurrencyManager.new()
+	currency_manager.name = "CurrencyManager"
+	add_child(currency_manager)
+	
+	# Connect to run state
+	currency_manager.set_run_state(run_state)
+	
+	# Create shop manager
+	shop_manager = ShopManager.new()
+	shop_manager.name = "ShopManager"
+	add_child(shop_manager)
+	
+	# Connect shop manager signals
+	if shop_manager:
+		shop_manager.card_purchased.connect(_on_shop_card_purchased)
+		shop_manager.shop_closed.connect(_on_shop_closed)
+	
+	# Shop UI will be found/created in _find_and_setup_ui
+
+
+func _on_shop_card_purchased(card_data: CardData) -> void:
+	"""Called when a card is purchased from the shop"""
+	# Add to deck via card system
+	if deck_manager:
+		deck_manager.add_card_to_deck(card_data)
+	print("[HexGrid] Card purchased: %s" % card_data.card_name)
+
+
+func _on_shop_closed() -> void:
+	"""Called when player closes the shop - proceed to next hole"""
+	_proceed_to_next_hole()
+
+
 func _on_putting_mode_entered() -> void:
 	"""Called when entering putting mode"""
 	# Hide regular shot UI elements
@@ -1891,7 +1960,16 @@ func _on_putting_mode_exited() -> void:
 
 func _on_putt_started(target_tile: Vector2i, power: float) -> void:
 	"""Called when a putt is executed"""
-	pass
+	# Record the stroke in run state
+	if run_state:
+		run_state.record_stroke(0)  # Putts don't score points
+		# Update UI with new stroke count
+		if shot_ui:
+			var dist_to_flag = 0
+			if golf_ball and flag_position.x >= 0:
+				var ball_tile = world_to_grid(golf_ball.position)
+				dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
+			shot_ui.update_shot_info(run_state.strokes_this_hole, dist_to_flag)
 
 
 func _on_putt_completed(final_tile: Vector2i) -> void:
@@ -1964,6 +2042,17 @@ func _find_and_setup_ui() -> void:
 		# Connect ShotUI
 		if shot_ui:
 			shot_ui.setup(shot_manager, self)
+			# Connect next hole signal
+			if not shot_ui.next_hole_requested.is_connected(_on_next_hole_requested):
+				shot_ui.next_hole_requested.connect(_on_next_hole_requested)
+			# Pass run state reference
+			shot_ui.run_state = run_state
+			# Connect currency manager for chips display
+			if currency_manager:
+				shot_ui.set_currency_manager(currency_manager)
+		
+		# Setup shop UI
+		_setup_shop_ui()
 		return
 
 	# Fallback to old search method
@@ -1990,12 +2079,57 @@ func _find_and_setup_ui() -> void:
 	# Connect ShotUI
 	if shot_ui:
 		shot_ui.setup(shot_manager, self)
+		# Connect next hole signal
+		if not shot_ui.next_hole_requested.is_connected(_on_next_hole_requested):
+			shot_ui.next_hole_requested.connect(_on_next_hole_requested)
+		# Pass run state reference
+		shot_ui.run_state = run_state
+		# Connect currency manager for chips display
+		if currency_manager:
+			shot_ui.set_currency_manager(currency_manager)
+	
+	# Setup shop UI
+	_setup_shop_ui()
+
+
+func _setup_shop_ui() -> void:
+	"""Find or create shop UI"""
+	# Try to find existing shop UI in scene
+	shop_ui = get_tree().current_scene.find_child("ShopUI", true, false)
+	
+	# If not found, try to instantiate from scene
+	if not shop_ui:
+		var shop_scene_path = "res://scenes/ui/shop_ui.tscn"
+		if ResourceLoader.exists(shop_scene_path):
+			var shop_scene = load(shop_scene_path)
+			if shop_scene:
+				shop_ui = shop_scene.instantiate()
+				shop_ui.name = "ShopUI"
+				
+				# Add to scene tree (as sibling of other UI)
+				var ui_root = get_tree().current_scene.find_child("CanvasLayer", true, false)
+				if ui_root:
+					ui_root.add_child(shop_ui)
+				else:
+					get_tree().current_scene.add_child(shop_ui)
+	
+	# Connect shop signals
+	if shop_ui:
+		shop_ui.set_managers(shop_manager, currency_manager, deck_manager)
+		if not shop_ui.shop_closed.is_connected(_on_shop_closed):
+			shop_ui.shop_closed.connect(_on_shop_closed)
 
 
 func _update_ui_hole_info() -> void:
 	"""Update UI with current hole information"""
 	if shot_ui:
-		shot_ui.set_hole_info(1, current_par, current_yardage)
+		var hole_num = run_state.current_hole if run_state else 1
+		shot_ui.set_hole_info(hole_num, current_par, current_yardage)
+		if run_state:
+			shot_ui.total_points = run_state.total_score
+			shot_ui.set_hole_display(run_state.get_hole_display())
+			# Reset stroke display for new hole
+			shot_ui.update_shot_info(run_state.strokes_this_hole, current_yardage)
 
 
 func _start_new_shot() -> void:
@@ -2038,10 +2172,15 @@ func _start_new_shot() -> void:
 	# Reset club selection for new shot
 	current_club = -1
 	
+	# Hide swing meter (will show again when club is selected and target locked)
+	if shot_ui and shot_ui.swing_meter:
+		shot_ui.swing_meter.hide_meter()
+	
 	# Update UI with distance to flag (useful for club selection)
 	if shot_ui and flag_position.x >= 0:
 		var dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
-		shot_ui.update_shot_info(shot_manager.current_context.shot_index, dist_to_flag)
+		var stroke_count = run_state.strokes_this_hole if run_state else (shot_manager.current_context.shot_index if shot_manager and shot_manager.current_context else 0)
+		shot_ui.update_shot_info(stroke_count, dist_to_flag)
 	
 	# Start turn selection flow (Club -> Modifier -> Shot)
 	if card_system:
@@ -2089,6 +2228,22 @@ func _on_turn_selection_complete(club_card: CardInstance, modifier_card: CardIns
 	
 	# Update dim overlays for new ball position and selected club
 	_update_dim_overlays()
+
+
+func force_start_shot() -> void:
+	"""Force start the shot lifecycle - used when player completes swing before card selection"""
+	if golf_ball == null:
+		return
+	
+	var ball_tile = world_to_grid(golf_ball.position)
+	
+	# Start the shot lifecycle
+	shot_manager.start_shot(golf_ball, ball_tile)
+	
+	# If we have a locked target, apply it
+	if target_locked and locked_cell.x >= 0:
+		var adjusted_landing = get_shape_adjusted_landing(locked_cell)
+		shot_manager.set_aim_target(adjusted_landing)
 
 
 func _calculate_distance_yards(from: Vector2i, to: Vector2i) -> int:
@@ -2247,6 +2402,17 @@ func _on_landing_resolved(context: ShotContext) -> void:
 func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot is finished - animate ball flight, then update state"""
 	
+	# Record the stroke in run state
+	if run_state:
+		run_state.record_stroke(context.final_score)
+		# Update UI with new stroke count
+		if shot_ui:
+			var dist_to_flag = 0
+			if golf_ball and flag_position.x >= 0:
+				var ball_tile = world_to_grid(golf_ball.position)
+				dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
+			shot_ui.update_shot_info(run_state.strokes_this_hole, dist_to_flag)
+	
 	# Reset target lock state
 	target_locked = false
 	target_highlight_mesh.visible = false
@@ -2329,8 +2495,8 @@ func _on_shot_completed(context: ShotContext) -> void:
 	if context.has_metadata("reached_flag"):
 		# Show hole complete popup
 		if shot_ui:
-			# Pass 0 for total_points as ShotUI tracks it internally
-			shot_ui.show_hole_complete(context.shot_index, current_par, 0)
+			var strokes = run_state.strokes_this_hole if run_state else context.shot_index
+			shot_ui.show_hole_complete(strokes, current_par, 0)
 	else:
 		# Start next shot
 		_start_new_shot()
@@ -2404,41 +2570,117 @@ func _trigger_hole_complete() -> void:
 	# Trigger confetti on the flag
 	_play_hole_confetti()
 	
-	# Wait 0.5 seconds for confetti celebration
-	await get_tree().create_timer(0.5).timeout
+	# Complete the hole in run state
+	var hole_result = {}
+	if run_state:
+		hole_result = run_state.complete_hole()
 	
-	# Play transition while generating new hole
+	# Wait for confetti celebration
+	await get_tree().create_timer(0.8).timeout
+	
+	# Show hole complete popup
+	if shot_ui:
+		var strokes = run_state.strokes_this_hole if run_state else (shot_manager.current_context.shot_index if shot_manager and shot_manager.current_context else 0)
+		var hole_score = hole_result.get("score", 0)
+		shot_ui.show_hole_complete(strokes, current_par, hole_score)
+		
+		# Update total score display
+		if run_state:
+			shot_ui.total_points = run_state.total_score
+	
+	# Don't auto-advance - wait for player to click "Next Hole" button
+
+
+func _on_next_hole_requested() -> void:
+	"""Called when player clicks Next Hole button in shot_ui"""
+	if not run_state:
+		# Fallback: just regenerate
+		_regenerate_hole()
+		return
+	
+	# Check if run is complete
+	if run_state.is_final_hole():
+		# Show run complete screen (for now, just restart)
+		_show_run_complete()
+		return
+	
+	# Show shop between holes
+	_open_shop()
+
+
+func _open_shop() -> void:
+	"""Open the between-hole shop"""
+	if shop_ui:
+		shop_ui.set_managers(shop_manager, currency_manager, deck_manager)
+		shop_ui.open()
+	else:
+		# No shop UI - skip directly to next hole
+		_proceed_to_next_hole()
+
+
+func _proceed_to_next_hole() -> void:
+	"""Actually advance to the next hole (called after shop closes)"""
+	# Advance to next hole
+	run_state.advance_to_next_hole()
+	
+	# Regenerate with transition
 	_play_transition_loading(func():
-		# Reset for next hole
-		hole_complete_triggered = false
-		
-		# Reset shot counter and club selection
-		if shot_manager and shot_manager.current_context:
-			shot_manager.current_context.shot_index = 0
-		current_club = ClubType.DRIVER
-		_update_club_button_visuals()
-		
-		# Reset target lock
-		target_locked = false
-		locked_cell = Vector2i(-1, -1)
-		trajectory_mesh.visible = false
-		trajectory_shadow_mesh.visible = false
-		curved_trajectory_mesh.visible = false
-		target_highlight_mesh.visible = false
-		_hide_all_aoe_highlights()
-		
-		# Cancel any in-progress shot
-		if shot_manager:
-			shot_manager.cancel_shot()
-		
-		_clear_course_nodes()
-		_generate_course()
-		_generate_grid()
-		_log_hole_info()
-		
-		# Start a fresh shot
-		_start_new_shot()
+		_regenerate_hole()
 	)
+
+
+func _show_run_complete() -> void:
+	"""Show run completion screen - TODO: implement full run complete UI"""
+	# For now, start a new run
+	if run_state:
+		run_state.start_new_run(9)
+	
+	_play_transition_loading(func():
+		_regenerate_hole()
+	)
+
+
+func _regenerate_hole() -> void:
+	"""Internal helper to regenerate the hole"""
+	# Reset for next hole
+	hole_complete_triggered = false
+	
+	# Reset shot counter (club selection happens in _start_new_shot)
+	if shot_manager and shot_manager.current_context:
+		shot_manager.current_context.shot_index = 0
+	current_club = -1  # Reset club selection
+	
+	# Reset card deck for new hole
+	if card_system:
+		card_system.initialize_starter_deck()
+	
+	# Reset target lock
+	target_locked = false
+	locked_cell = Vector2i(-1, -1)
+	trajectory_mesh.visible = false
+	trajectory_shadow_mesh.visible = false
+	curved_trajectory_mesh.visible = false
+	target_highlight_mesh.visible = false
+	_hide_all_aoe_highlights()
+	
+	# Cancel any in-progress shot
+	if shot_manager:
+		shot_manager.cancel_shot()
+	
+	_clear_course_nodes()
+	_generate_course()
+	_generate_grid()
+	_log_hole_info()
+	
+	# Notify run state of new hole
+	if run_state:
+		run_state.start_hole(current_par, current_yardage)
+	
+	# Update UI with new hole info
+	_update_ui_hole_info()
+	
+	# Start a fresh shot
+	_start_new_shot()
 
 
 func _play_hole_confetti() -> void:
@@ -3663,7 +3905,6 @@ func _update_tile_highlight() -> void:
 	
 	if external_camera and external_viewport:
 		camera = external_camera
-		# Get mouse position relative to the external viewport's container
 		# The HoleViewer will update hovered_cell directly via set_hover_cell
 		# So we skip mouse-based updates when using external camera
 		return
@@ -3685,118 +3926,11 @@ func _update_tile_highlight() -> void:
 	if intersection:
 		# Convert world position to grid coordinates
 		var cell = world_to_grid(intersection)
-		
-		if cell.x >= 0 and cell.x < grid_width and cell.y >= 0 and cell.y < grid_height:
-			var surface = get_cell(cell.x, cell.y)
-			if surface != -1 and surface != SurfaceType.WATER:
-				# Always track hovered_cell for click detection
-				hovered_cell = cell
-				
-				# If target is locked, don't update visuals - keep highlight and AOE on locked cell
-				if target_locked:
-					_update_trajectory(locked_target_pos)
-					return
-				
-				# Check if cell is forward from ball (or if flag is behind, allow all directions)
-				var is_forward = is_forward_from_ball(cell)
-				
-				# Hide all previous AOE highlights before showing new ones
-				_hide_all_aoe_highlights()
-				
-				# Don't show any highlight for tiles behind the ball (unless flag is behind)
-				if not is_forward:
-					highlight_mesh.visible = false
-					hovered_cell = Vector2i(-1, -1)  # Clear hovered cell so click won't work
-					return
-				
-				# Check if cell is in range
-				var in_range = true
-				if golf_ball:
-					var ball_tile = world_to_grid(golf_ball.position)
-					var tile_dist = get_tile_distance(ball_tile, cell)
-					var max_dist = get_current_club_distance()
-					in_range = tile_dist <= max_dist
-				
-				# Position highlight mesh at the cell
-				var width = TILE_SIZE
-				var hex_height = TILE_SIZE * sqrt(3.0)
-				var x_pos = cell.x * width * 1.5
-				var z_pos = cell.y * hex_height + (cell.x % 2) * (hex_height / 2.0)
-				# Position well above the tile to be visible
-				var y_pos = get_elevation(cell.x, cell.y) + 0.5
-				
-				highlight_mesh.position = Vector3(x_pos, y_pos, z_pos)
-				highlight_mesh.rotation.y = PI / 6.0  # Match tile rotation
-				highlight_mesh.visible = true
-				
-				# Change highlight color based on range (gold=in range, red=out of range)
-				var mat = highlight_mesh.material_override as StandardMaterial3D
-				if mat:
-					if in_range:
-						mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Gold = in range
-					else:
-						mat.albedo_color = Color(1.0, 0.2, 0.2, 0.6)  # Red = out of range
-				
-				# Only show AOE and trajectory if in range
-				if in_range:
-					# Get AOE offset based on shot shape (shifts AOE center laterally)
-					var aoe_offset = get_shape_aoe_offset()
-					var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
-					
-					# Clamp AOE center to grid bounds
-					aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
-					
-					# Update adjacent highlights (ring 1) around the offset AOE center
-					var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
-					for neighbor in neighbors:
-						if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
-							var n_surface = get_cell(neighbor.x, neighbor.y)
-							if n_surface != -1 and n_surface != SurfaceType.WATER:
-								var highlight = _get_or_create_aoe_highlight(neighbor, 1)
-								var n_x = neighbor.x * width * 1.5
-								var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-								var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
-								highlight.position = Vector3(n_x, n_y, n_z)
-								highlight.rotation.y = PI / 6.0
-								highlight.visible = true
-					
-					# Update outer ring highlights (ring 2) around the offset AOE center
-					var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
-					for outer_cell in outer_cells:
-						if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
-							var o_surface = get_cell(outer_cell.x, outer_cell.y)
-							if o_surface != -1 and o_surface != SurfaceType.WATER:
-								var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
-								var o_x = outer_cell.x * width * 1.5
-								var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-								var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
-								highlight.position = Vector3(o_x, o_y, o_z)
-								highlight.rotation.y = PI / 6.0
-								highlight.visible = true
-					
-					# Update trajectory arc - use locked target if set, otherwise hovered
-					if target_locked:
-						_update_trajectory(locked_target_pos)
-					else:
-						var target_y = get_elevation(cell.x, cell.y)
-						_update_trajectory(Vector3(x_pos, target_y, z_pos))
-				else:
-					# Out of range - hide trajectory unless locked
-					if not target_locked:
-						trajectory_mesh.visible = false
-						trajectory_shadow_mesh.visible = false
-						curved_trajectory_mesh.visible = false
-				return
-	
-	# No valid hover
-	hovered_cell = Vector2i(-1, -1)
-	highlight_mesh.visible = false
-	_hide_all_aoe_highlights()
-	# Keep trajectory visible if locked
-	if not target_locked:
-		trajectory_mesh.visible = false
-		trajectory_shadow_mesh.visible = false
-		curved_trajectory_mesh.visible = false
+		# Use set_hover_cell to handle all validation and highlighting
+		set_hover_cell(cell)
+	else:
+		# No valid hover - clear everything
+		set_hover_cell(Vector2i(-1, -1))
 
 
 # Convert world position to grid cell coordinates

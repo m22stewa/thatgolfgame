@@ -12,15 +12,20 @@ Copilot should help **refactor** and **extend** the project into small, single�
 
 ## IMPLEMENTATION STATUS
 
+*Last Updated: December 2024*
+
 ### ✅ Completed Systems
 
 **Core Shot System** (in `scripts/`)
 - `shot_context.gd` - Data object for shot state (chips, mult, AOE, physics, curve, bounce tracking)
-- `shot_manager.gd` - Shot lifecycle phases with signals
-- `modifier_manager.gd` - Holds modifiers, calls lifecycle methods
+- `shot_manager.gd` - Shot lifecycle phases with signals (10 phases from start to cleanup)
+- `modifier_manager.gd` - Holds modifiers, calls lifecycle methods at each phase
 - `aoe_system.gd` - Computes AOE tiles from center
-- `shot_ui.gd` - Basic shot UI display
+- `shot_ui.gd` - Complete shot UI display with swing meter integration
 - `hex_tile.gd` - Tile data with terrain, elevation, tags
+- `lie_system.gd` - Terrain-based shot modifiers (power, accuracy, spin, roll)
+- `putting_system.gd` - Separate putting flow with aim circle and power bar
+- `wind_system.gd` - Wind generation and effect calculation (not yet fully integrated with shots)
 
 **Cards & Deck System** (in `scripts/cards/`)
 - `card_data.gd` - Resource class for card blueprints (id, name, rarity, type, effects)
@@ -30,6 +35,9 @@ Copilot should help **refactor** and **extend** the project into small, single�
 - `card_modifier.gd` - Bridge class connecting CardInstance to ModifierManager
 - `card_library.gd` - Static library of all cards with factory methods
 - `card_system_manager.gd` - Central controller integrating cards with shot system
+- `deck_definition.gd` - Resource for defining deck contents (starter deck, club deck)
+- `deck_view_3d.gd` - 3D deck visualization with draw animations
+- `card_3d.gd` - 3D card representation for deck view
 
 **Card Effects** (in `scripts/cards/effects/`)
 - `effect_chips_bonus.gd` - Flat chip bonus
@@ -42,37 +50,87 @@ Copilot should help **refactor** and **extend** the project into small, single�
 - `effect_curve_shot.gd` - Adds curve/spin to trajectory
 
 **Card Types Defined:**
-- Shot - Played to modify current shot
-- Passive - Always provides effect while in hand
-- Consumable - Single-use powerful effects
-- Joker - Always active, persist between shots
+- **Club** - Determines which club is used for the shot
+- **Shot** - Played to modify current shot
+- **Passive** - Always provides effect while in hand
+- **Consumable** - Single-use powerful effects
+- **Joker** - Always active, persist between shots
 
-**Rarities:** Common, Uncommon, Rare, Legendary
+**Rarities:** Common (60%), Uncommon (25%), Rare (12%), Legendary (3%)
 
 **Starter Deck Cards:**
 - Power Drive (Common Shot) - +10 chips
 - Steady Putter (Common Shot) - Bonus for short shots
 - Fairway Finder (Common Passive) - Bonus on fairway landing
 
+**Club Deck** - Full set of golf clubs as selectable cards:
+- Driver, 3 Wood, 5 Wood
+- 3 Iron through 9 Iron
+- Pitching Wedge, Sand Wedge
+- Putter
+
 **UI Components** (in `scenes/ui/`)
 - `card_ui.tscn` / `card_ui.gd` - Individual card visual with hover/select states
 - `hand_ui.tscn` / `hand_ui.gd` - Hand display with fan layout
+- `card_selection_ui.tscn` - Grid-based card selection overlay
+- `deck_widget.tscn` - 3D deck container for HUD
+- `deck_view_3d.tscn` - Interactive 3D deck with draw animation
+- `SwingMeter.tscn` - 3-click timing mechanic for power/accuracy/curve
+- `shot_ui.tscn` - Main shot interface (hole info, club info, terrain, shot counter)
+- `target_marker.tscn` - Visual indicator for aim target
+- `hole_viewer.tscn` - Camera controller for viewing the hole
 
-### 🔄 Integration Needed
+**Gameplay Loop (Current State):**
+1. ✅ Ball placed on tee at hole start
+2. ✅ Player clicks Club Deck to select club
+3. ✅ Player clicks Modifier Deck to draw modifier cards (3 choices)
+4. ✅ Player hovers/clicks to aim at target tile
+5. ✅ Visual trajectory and AOE landing zone shown
+6. ✅ Player clicks to lock target, SwingMeter appears
+7. ✅ 3-click timing: Power → Accuracy → Curve
+8. ✅ Ball animates along curved flight path
+9. ✅ Ball rolls based on spin, terrain, elevation
+10. ✅ Scoring calculated (chips × mult)
+11. ✅ If on green, putting mode activates
+12. ✅ Hole complete when ball reaches flag
 
-1. **Add CardSystemManager to main scene** - Needs to be a child of the hex_grid or scene root
-2. **Call initialize_starter_deck()** at hole/run start
-3. **Wire HandUI into Control node** - Add the hand_ui.tscn to the game UI
-4. **Connect play button to card system** - When player confirms shot, played card effects apply
+### 🔄 Partially Implemented
+
+1. **Wind System** - WindSystem exists and generates wind per hole, but:
+   - `effect_wind.gd` WindModifier created but not auto-added to ModifierManager
+   - Wind effects on trajectory not fully applied during shot execution
+   - UI widget exists but may not display dynamically
+
+2. **Scoring Display** - Chips/mult calculated but:
+   - No running total display
+   - No end-of-hole score popup
+   - No cumulative run score
+
+3. **Card Hand System** - HandUI exists but:
+   - Not connected to active gameplay
+   - No "play from hand" mechanic implemented
 
 ### 📋 Next Priority: Roguelike Run Structure
 
-Per the design doc, the next major system is the **Run State** that tracks:
-- Current hole number
-- Total strokes
-- Score/money
+Per the design doc, the next major systems to implement:
+
+**Run State Manager** - Tracks:
+- Current hole number (1-18 or endless)
+- Total strokes taken
+- Score/money accumulated
 - Deck composition between holes
-- Shop/reward screens between holes
+- Unlocked cards/upgrades
+
+**Shop System** - Between holes:
+- Purchase new cards to add to deck
+- Upgrade existing cards
+- Remove negative/weak cards
+- Spend accumulated chips/score
+
+**Progression System:**
+- Par bonuses for under-par finishes
+- Streak bonuses for consecutive good shots
+- Risk/reward card trades (Gloomhaven style)
 
 ---
 

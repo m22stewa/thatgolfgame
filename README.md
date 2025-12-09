@@ -1,10 +1,10 @@
 # That Golf Game
 
-A procedural golf game built with Godot 4 featuring realistic shot mechanics and hex-based course generation.
+A **Balatro-style roguelike golf game** built with Godot 4, featuring procedural hex-based courses, deck-building mechanics, and arcade-style scoring.
 
 ## Overview
 
-This project is a golf game prototype with procedurally generated 3D golf holes, realistic terrain, hazards, and a full shot system with club selection, shot shapes, spin effects, and ball physics.
+This project combines procedurally generated 3D golf holes with card-based modifiers inspired by Gloomhaven and Balatro. Each shot can be enhanced by cards that modify distance, accuracy, scoring multipliers, and more. The goal is to complete holes while building up chips and multipliers for high scores.
 
 ## Features
 
@@ -16,45 +16,74 @@ This project is a golf game prototype with procedurally generated 3D golf holes,
 - **Elevation System**: Dynamic terrain with hills, valleys, and slopes affecting gameplay
 - **Foliage System**: Automatically places grass patches, bushes, rocks, and flowers based on terrain type
 - **Tree Placement**: Random tree spawning with multiple tree models and color variations
+- **Par System**: Holes generated as Par 3, 4, or 5 with appropriate yardage
+
+### Card System (Roguelike Core)
+- **Two-Deck System**:
+  - **Club Deck**: Select your club for each shot (Driver through Putter)
+  - **Modifier Deck**: Draw cards that add bonuses to your shot
+- **Card Types**: Shot modifiers, Passives, Consumables, and Jokers
+- **Rarities**: Common (60%), Uncommon (25%), Rare (12%), Legendary (3%)
+- **Card Effects**: Chip bonuses, multiplier bonuses, AOE expansion, terrain bonuses, curve shots, roll modifiers
+- **3D Deck Visualization**: Interactive deck with draw animations
 
 ### Shot System
 - **Full Club Selection**: Driver through Sand Wedge with realistic distances (90-220 yards)
-- **Club Arc Heights**: Each club has appropriate trajectory height
-- **Distance Validation**: Tiles outside club range are dimmed and unavailable
+- **Swing Meter**: Traditional 3-click golf game mechanic (Power → Accuracy → Curve)
+- **Lie System**: Terrain affects shot stats (rough reduces distance, sand loses accuracy, etc.)
+- **Club Stats**: Distance, accuracy, roll, loft, and arc height per club
 
 ### Shot Shapes
-- **Hook/Draw**: Curves left for right-handed golfers (loses 1-2 tiles distance)
-- **Fade/Slice**: Curves right for right-handed golfers (loses 1-2 tiles distance)
-- **Handedness Toggle**: Switch between right-handed and left-handed (reverses curve directions)
-- **Visual Trajectory**: White arc shows aim direction, cyan arc shows actual curved path
+- **Hook/Draw**: Curves left for right-handed golfers
+- **Fade/Slice**: Curves right for right-handed golfers
+- **Visual Trajectory**: White arc shows aim, cyan arc shows curved flight path
+- **Swing Meter Curve**: Third click timing determines shot curve
 
 ### Ball Physics
-- **Natural Rollout**: Ball rolls after landing based on club type (Driver rolls 3 tiles, wedges land soft)
-- **Elevation Effects**: Downhill adds roll (+1 tile), uphill reduces roll (-1 tile)
-- **Spin Effects**: Topspin adds forward roll, backspin pulls ball back (applied after natural roll)
+- **Natural Rollout**: Ball rolls after landing based on club type
+- **Elevation Effects**: Downhill adds roll, uphill reduces roll
+- **Spin Effects**: Topspin adds forward roll, backspin pulls ball back
 - **Hazard Stops**: Ball stops at water, sand, or trees
-- **Hole Detection**: Ball reaching the flag during flight, roll, or spin completes the hole
+- **Curved Flight**: Ball follows realistic curved trajectory when hook/slice applied
 
-### AOE Landing Zone
-- **Shape-Adjusted AOE**: Landing zone shifts based on shot shape selection
-- **Visual Feedback**: Shows potential landing tiles with probability rings
+### Putting System
+- **Dedicated Putting Mode**: Activates when ball lands on green
+- **Aim Circle**: Visual indicator around ball showing direction
+- **Power Charging**: Click and hold to charge putt power
+- **Slope Physics**: Green contours affect putt direction and speed
+
+### Scoring System (Balatro-Style)
+- **Chips**: Base points earned from shot distance and terrain
+- **Multiplier**: Bonus multiplier from cards and achievements
+- **Final Score**: Chips × Mult for each shot
+- **Terrain Bonuses**: Fairway landing, green landing, hole-in-one multipliers
 
 ## Project Structure
 
 ```
 ├── scenes/           # Godot scenes (.tscn files)
-│   ├── hole-generator.tscn   # Main scene for hole generation
+│   ├── GOLF.tscn             # Main game scene
 │   ├── golf_ball.tscn        # Golf ball with shader support
-│   └── tiles/                # Tile models (teebox, etc.)
+│   ├── tiles/                # Tile models (teebox, etc.)
+│   └── ui/                   # UI scenes (SwingMeter, CardUI, etc.)
 ├── scripts/          # GDScript files
-│   ├── hex_grid.gd           # Main game logic and shot system
-│   ├── golf_ball.gd          # Ball visuals and effects
-│   ├── shot_manager.gd       # Shot state management
-│   ├── modifier_manager.gd   # Shot modifiers
-│   └── *.gdshader            # Custom shaders (grass, water, sky, etc.)
+│   ├── hex_grid.gd           # Main game logic and course generation
+│   ├── shot_manager.gd       # Shot lifecycle management
+│   ├── modifier_manager.gd   # Shot modifier system
+│   ├── lie_system.gd         # Terrain-based modifiers
+│   ├── putting_system.gd     # Putting mechanics
+│   ├── wind_system.gd        # Wind generation and effects
+│   └── cards/                # Card system scripts
+│       ├── card_system_manager.gd  # Central card controller
+│       ├── deck_manager.gd         # Deck pile management
+│       ├── card_library.gd         # All card definitions
+│       └── effects/                # Individual card effect scripts
 ├── models/           # 3D models
 │   ├── features/     # Foliage models (bushes, grass, rocks, flowers)
 │   └── ...           # Trees, golf ball, terrain meshes
+├── resources/        # Resource files
+│   ├── decks/        # Deck definitions (starter_deck.tres, club_deck.tres)
+│   └── cards/        # Card resources
 ├── assets/           # Third-party assets and addons
 │   ├── fly_camera_addon/     # Free 3D camera navigation
 │   └── kenney-platforms/     # Platform assets
@@ -69,12 +98,20 @@ This project is a golf game prototype with procedurally generated 3D golf holes,
 - **Right Mouse Button**: Toggle mouse look
 
 ### Gameplay
-- **Club Buttons**: Select club (Driver, 3W, 5W, 3i-9i, PW, SW)
-- **Shape Buttons**: Toggle Hook, Draw, Fade, or Slice
-- **Spin Buttons**: Toggle Topspin or Backspin
-- **Handedness Buttons**: Switch between Right-handed and Left-handed
-- **Left Click**: Lock target tile
+1. **Click Club Deck**: Select club for this shot
+2. **Click Modifier Deck**: Draw and select modifier cards
+3. **Hover/Click Tile**: Aim at target tile
+4. **Left Click (on valid tile)**: Lock target, start swing meter
+5. **Swing Meter** (3 clicks):
+   - First click: Set power (0-100%)
+   - Second click: Set accuracy (center = perfect)
+   - Third click: Set curve (left/right = hook/slice)
+6. **Ball Flies**: Watch the shot play out
+7. **Repeat**: Until ball is in the hole
+
+### Other Controls
 - **Regenerate Button**: Generate a new random hole
+- **Space** (during animation): Fast-forward ball flight
 
 ## Requirements
 
@@ -83,10 +120,18 @@ This project is a golf game prototype with procedurally generated 3D golf holes,
 ## Getting Started
 
 1. Open the project in Godot 4
-2. Run the main scene (`scenes/hole-generator.tscn`)
-3. Select a club and click on a tile to aim
-4. Use shape/spin modifiers for advanced shots
-5. Click the regenerate button to create new random holes
+2. Run the main scene (`scenes/GOLF.tscn`)
+3. Click the Club Deck to select a club
+4. Click the Modifier Deck to draw cards
+5. Click a tile to aim and take your shot
+6. Complete the hole, then regenerate for a new one
+
+## Documentation
+
+- `design.md` - Architecture and implementation status
+- `GAME_SYSTEMS.md` - Detailed reference for all game systems
+- `CARD_SYSTEM.md` - Card system documentation
+- `WIND_SYSTEM.md` - Wind system design document
 
 ## License
 
