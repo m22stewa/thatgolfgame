@@ -5,7 +5,7 @@
 [ext_resource type="FontFile" uid="uid://cn2g0aaqs3d6n" path="res://models/fonts/Fraunces-VariableFont_SOFT,WONK,opsz,wght.ttf" id="2_ueb5v"]
 
 [sub_resource type="Gradient" id="Gradient_oi40j"]
-colors = PackedColorArray(0.1548703, 0.2611953, 0.25895512, 1, 0.113654815, 0.21373945, 0.25431824, 1)
+colors = PackedColorArray(0.044617787, 0.2870689, 0.15982556, 1, 0.11372549, 0.38039216, 0.25490198, 1)
 
 [sub_resource type="GradientTexture2D" id="GradientTexture2D_nxo7y"]
 gradient = SubResource("Gradient_oi40j")
@@ -13,7 +13,7 @@ fill_from = Vector2(1, 1)
 fill_to = Vector2(0.4074074, 0)
 
 [sub_resource type="Gradient" id="Gradient_n5q2d"]
-colors = PackedColorArray(0.64941424, 0.8700898, 0.8643514, 1, 0.85944104, 0.9479157, 0.94561493, 1)
+colors = PackedColorArray(1, 1, 1, 1, 1, 1, 1, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_pbkhi"]
 gradient = SubResource("Gradient_n5q2d")

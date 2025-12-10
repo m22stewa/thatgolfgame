@@ -36,8 +36,9 @@ shading_mode = 0
 albedo_texture = ExtResource("2_back")
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_p2s11"]
+cull_mode = 2
 shading_mode = 0
-albedo_color = Color(0.9, 0.9, 0.9, 1)
+albedo_color = Color(0.2459839, 0.24598393, 0.24598393, 1)
 
 [sub_resource type="BoxShape3D" id="DeckShape"]
 size = Vector3(4, 2.02, 0.5)
@@ -46,7 +47,7 @@ size = Vector3(4, 2.02, 0.5)
 script = ExtResource("1_script")
 
 [node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.19199096, 0.98139673, 0, -0.98139673, 0.19199096, 0, 9.2276, 1.2532768)
+transform = Transform3D(1, 0, 0, 0, 0.41877067, 0.9080921, 0, -0.9080921, 0.41877067, 0, 7.4485474, 3.1865654)
 fov = 40.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]

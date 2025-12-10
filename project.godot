@@ -13,6 +13,8 @@ config_version=5
 config/name="GOLF"
 run/main_scene="uid://i0lqex70w705"
 config/features=PackedStringArray("4.5", "Forward Plus")
+boot_splash/bg_color=Color(0.063571535, 0.16677818, 0.09656479, 1)
+boot_splash/image="uid://0m3ktjyite15"
 config/icon="res://icon.svg"
 
 [display]

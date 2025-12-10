@@ -165,9 +165,9 @@ func _setup_rounded_mesh() -> void:
 			back_mat.albedo_texture = _default_front_texture
 		mesh_instance.set_surface_override_material(1, back_mat)
 	
-	# Edge material - also unshaded
+	# Edge material - darker for better contrast against white card faces
 	var edge_mat = StandardMaterial3D.new()
-	edge_mat.albedo_color = Color(0.9, 0.9, 0.9)
+	edge_mat.albedo_color = Color(0.65, 0.62, 0.58)  # Warm gray like card paper edge
 	edge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mesh_instance.set_surface_override_material(2, edge_mat)
 

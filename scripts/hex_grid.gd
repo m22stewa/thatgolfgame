@@ -223,6 +223,11 @@ const TILE_SIZE := 1.0
 # This offset places objects on top of the tile surface
 const TILE_SURFACE_OFFSET := 0.5
 
+# Tile vertical stretch - extends tile mesh downward to prevent gaps
+# between tiles at different elevations
+const TILE_Y_STRETCH := 2.5  # Multiplier for Y scale to fill gaps
+const TILE_Y_OFFSET := -0.5  # Offset to push stretched mesh downward
+
 # Ball radius offset - the ball mesh scaled at 0.3 has approximate radius 0.15
 # Add this to surface position so ball sits ON TOP of tile, not inside it
 const BALL_RADIUS_OFFSET := 0.15
@@ -313,6 +318,7 @@ var lie_info_panel: PanelContainer = null
 var lie_name_label: Label = null
 var lie_description_label: RichTextLabel = null
 var lie_modifiers_label: RichTextLabel = null
+var lie_view: Control = null  # LieView widget
 
 # Tile data storage - HexTile resources keyed by cell position
 var tile_data: Dictionary = {}  # Key: Vector2i, Value: HexTile
@@ -343,25 +349,26 @@ var landforms: Array = []  # Array of landform dictionaries
 
 # Surface-specific elevation offsets (realistic golf terrain)
 # Tees are slightly raised, bunkers are depressed, greens are gentle
+# Values increased 2.5x for more dramatic terrain
 const ELEVATION_OFFSETS = {
-	# TEE: Slightly raised platform for tee box
-	0: 0.15,
+	# TEE: Raised platform for tee box
+	0: 0.4,
 	# FAIRWAY: Gentle undulations
 	1: 0.0,
 	# ROUGH: More varied terrain
-	2: 0.05,
+	2: 0.12,
 	# DEEP_ROUGH: Higher mounds and dunes
-	3: 0.12,
+	3: 0.3,
 	# GREEN: Subtle slopes but relatively flat
-	4: 0.02,
+	4: 0.05,
 	# SAND: Depressed bunkers
-	5: -0.25,
+	5: -0.6,
 	# WATER: Lowest points
-	6: -0.35,
+	6: -0.8,
 	# TREE: On elevated rough/mounds
-	7: 0.15,
+	7: 0.4,
 	# FLAG: Same as green
-	8: 0.02
+	8: 0.05
 }
 
 
@@ -537,21 +544,22 @@ func _noise_at(col: int, row: int, seed_offset: int = 0) -> float:
 
 # Multi-octave noise for realistic terrain elevation
 # Combines multiple frequencies for natural-looking hills and mounds
+# Amplitudes increased 2x for more dramatic terrain
 func _terrain_noise(col: int, row: int) -> float:
 	var x = col * ELEVATION_SCALE + elevation_seed
 	var y = row * ELEVATION_SCALE
 	
 	# Octave 1: Large rolling hills (low frequency, high amplitude)
-	var octave1 = sin(x * 0.5 + y * 0.3) * cos(y * 0.4 - x * 0.2) * 0.5
+	var octave1 = sin(x * 0.5 + y * 0.3) * cos(y * 0.4 - x * 0.2) * 1.0
 	
 	# Octave 2: Medium undulations
-	var octave2 = sin(x * 1.2 + y * 0.9) * sin(y * 1.1 + x * 0.7) * 0.25
+	var octave2 = sin(x * 1.2 + y * 0.9) * sin(y * 1.1 + x * 0.7) * 0.5
 	
 	# Octave 3: Small mounds and bumps (high frequency, low amplitude)
-	var octave3 = sin(x * 2.5 + y * 2.1) * cos(y * 2.3 - x * 1.8) * 0.12
+	var octave3 = sin(x * 2.5 + y * 2.1) * cos(y * 2.3 - x * 1.8) * 0.25
 	
 	# Octave 4: Fine detail
-	var octave4 = sin(x * 4.0 + y * 3.5) * sin(y * 4.2 + x * 3.8) * 0.06
+	var octave4 = sin(x * 4.0 + y * 3.5) * sin(y * 4.2 + x * 3.8) * 0.12
 	
 	return octave1 + octave2 + octave3 + octave4
 
@@ -574,7 +582,7 @@ func _generate_landforms() -> void:
 	for i in range(num_hills):
 		_place_landform(LandformType.HILL, {
 			"radius": 4.0 + randf() * 4.0,    # 4-8 cell radius
-			"height": 0.4 + randf() * 0.4,    # 0.4-0.8 height
+			"height": 1.0 + randf() * 0.8,    # 1.0-1.8 height (increased)
 			"falloff": 2.0                     # Gradual falloff
 		})
 	
@@ -582,7 +590,7 @@ func _generate_landforms() -> void:
 	for i in range(num_mounds):
 		_place_landform(LandformType.MOUND, {
 			"radius": 1.5 + randf() * 2.0,    # 1.5-3.5 cell radius
-			"height": 0.15 + randf() * 0.2,   # 0.15-0.35 height
+			"height": 0.4 + randf() * 0.4,    # 0.4-0.8 height (increased)
 			"falloff": 1.5                     # Steeper falloff
 		})
 	
@@ -590,7 +598,7 @@ func _generate_landforms() -> void:
 	for i in range(num_valleys):
 		_place_landform(LandformType.VALLEY, {
 			"radius": 3.0 + randf() * 3.0,    # 3-6 cell radius
-			"height": -0.3 - randf() * 0.2,   # -0.3 to -0.5 depth
+			"height": -0.7 - randf() * 0.5,   # -0.7 to -1.2 depth (increased)
 			"falloff": 2.5                     # Very gradual edges
 		})
 	
@@ -655,7 +663,7 @@ func _place_ridge() -> void:
 		"row": start_row,
 		"angle": angle,
 		"length": length,
-		"height": 0.25 + randf() * 0.2,  # 0.25-0.45 height
+		"height": 0.6 + randf() * 0.4,  # 0.6-1.0 height (increased)
 		"width": 1.5 + randf() * 1.0     # 1.5-2.5 cells wide
 	})
 
@@ -676,7 +684,7 @@ func _place_swale() -> void:
 		"row": start_row,
 		"curve": curve,
 		"length": length,
-		"depth": -0.15 - randf() * 0.1,  # -0.15 to -0.25 depth
+		"depth": -0.4 - randf() * 0.3,  # -0.4 to -0.7 depth (increased)
 		"width": 2.0 + randf() * 1.5     # 2-3.5 cells wide
 	})
 
@@ -702,7 +710,7 @@ func _place_dune_cluster() -> void:
 			"col": offset_col,
 			"row": offset_row,
 			"radius": 1.5 + randf() * 2.0,
-			"height": 0.2 + randf() * 0.25,
+			"height": 0.5 + randf() * 0.5,  # 0.5-1.0 height (increased)
 			"falloff": 1.2
 		})
 
@@ -1256,11 +1264,16 @@ func is_tile_available(cell: Vector2i) -> bool:
 
 
 func _update_dim_overlays() -> void:
-	"""Create or update dim overlays for unavailable tiles (only forward, out of range)"""
+	"""Create or update dim overlays for unavailable tiles (only forward, out of range)
+	   Only shows overlays when a club has been selected."""
 	# Clear existing overlays
 	_clear_dim_overlays()
 	
 	if golf_ball == null:
+		return
+	
+	# Don't dim tiles until a club is selected
+	if current_club < 0:
 		return
 	
 	var ball_tile = world_to_grid(golf_ball.position)
@@ -2031,6 +2044,10 @@ func _find_and_setup_ui() -> void:
 		lie_description_label = main_ui.lie_desc_label
 		lie_modifiers_label = main_ui.lie_mods_label
 		
+		# Get LieView widget reference
+		if main_ui.has_method("get") and main_ui.get("lie_view"):
+			lie_view = main_ui.lie_view
+		
 		# Also get hole label if needed
 		holelabel = main_ui.hole_info_label
 		
@@ -2141,6 +2158,11 @@ func _start_new_shot() -> void:
 	# Get ball's current tile
 	var ball_tile = world_to_grid(golf_ball.position)
 	var ball_surface = get_cell(ball_tile.x, ball_tile.y)
+	
+	# Update LieView widget with current surface
+	if lie_view and lie_view.has_method("set_lie"):
+		var lie_name = _surface_to_lie_name(ball_surface)
+		lie_view.set_lie(lie_name)
 	
 	# Check if ball is in the hole - don't start a new shot, trigger hole complete
 	if ball_tile == flag_position:
@@ -2253,6 +2275,27 @@ func _calculate_distance_yards(from: Vector2i, to: Vector2i) -> int:
 	return int(sqrt(dx * dx + dy * dy) * YARDS_PER_CELL)
 
 
+func _surface_to_lie_name(surface: int) -> String:
+	"""Convert a SurfaceType to the lie name string used by LieView"""
+	match surface:
+		SurfaceType.TEE:
+			return "TEE"
+		SurfaceType.FAIRWAY:
+			return "FAIRWAY"
+		SurfaceType.ROUGH:
+			return "ROUGH"
+		SurfaceType.DEEP_ROUGH:
+			return "DEEP_ROUGH"
+		SurfaceType.GREEN:
+			return "GREEN"
+		SurfaceType.SAND:
+			return "SAND"
+		SurfaceType.WATER:
+			return "WATER"
+		_:
+			return "FAIRWAY"
+
+
 func _on_shot_started(context: ShotContext) -> void:
 	"""Called when shot begins - calculate lie and update UI"""
 	
@@ -2263,6 +2306,11 @@ func _on_shot_started(context: ShotContext) -> void:
 		
 		# Update lie info panel in Control overlay
 		_update_lie_info_panel(lie_info)
+		
+		# Update LieView widget with current lie
+		if lie_view and lie_view.has_method("set_lie"):
+			var lie_name = lie_info.get("lie_name", "FAIRWAY")
+			lie_view.set_lie(lie_name)
 		
 		# Also update shot_ui if it has the method
 		if shot_ui and shot_ui.has_method("update_lie_info"):
@@ -2512,7 +2560,7 @@ func _skip_current_animation() -> void:
 
 
 func _handle_water_hazard() -> void:
-	"""Handle ball landing in water - show effect, return ball to previous tile, add penalty"""
+	"""Handle ball landing in water - show effect, return ball to previous tile, add penalty stroke"""
 	
 	# Show and fade in water effect overlay
 	if water_effect:
@@ -2530,9 +2578,17 @@ func _handle_water_hazard() -> void:
 		var return_pos = get_tile_surface_position(previous_valid_tile)
 		golf_ball.position = return_pos
 	
-	# Add penalty stroke
-	if shot_manager and shot_manager.current_context:
-		shot_manager.current_context.shot_index += 1
+	# Add penalty stroke (1 stroke penalty for water hazard per golf rules)
+	# This is in ADDITION to the stroke taken to hit into the water
+	if run_state:
+		run_state.record_stroke(0)  # Penalty stroke with 0 score bonus
+		# Update UI with new stroke count
+		if shot_ui:
+			var dist_to_flag = 0
+			if golf_ball and flag_position.x >= 0:
+				var ball_tile = world_to_grid(golf_ball.position)
+				dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
+			shot_ui.update_shot_info(run_state.strokes_this_hole, dist_to_flag)
 	
 	# Wait a moment before fading out
 	await get_tree().create_timer(0.3).timeout
@@ -2678,6 +2734,10 @@ func _regenerate_hole() -> void:
 	
 	# Update UI with new hole info
 	_update_ui_hole_info()
+	
+	# Set initial lie view to TEE
+	if lie_view and lie_view.has_method("set_lie"):
+		lie_view.set_lie("TEE")
 	
 	# Start a fresh shot
 	_start_new_shot()
@@ -4872,8 +4932,15 @@ func _generate_grid() -> void:
 			var x_pos = col * width * 1.5
 			var z_pos = row * height + (col % 2) * (height / 2.0)
 			var y_pos = get_elevation(col, row)  # Use elevation for Y position
+			
+			# Create basis with rotation and Y stretch to fill gaps
 			var rot = Basis(Vector3.UP, PI / 6.0)
-			var xform = Transform3D(rot, Vector3(x_pos, y_pos, z_pos))
+			# Scale Y to extend tile downward and prevent gaps
+			var scale_basis = Basis.from_scale(Vector3(1.0, TILE_Y_STRETCH, 1.0))
+			var combined_basis = rot * scale_basis
+			# Offset Y position to account for stretch (push mesh down so top stays at elevation)
+			var adjusted_y = y_pos + TILE_Y_OFFSET
+			var xform = Transform3D(combined_basis, Vector3(x_pos, adjusted_y, z_pos))
 			multimesh_nodes[surf].multimesh.set_instance_transform(idx, xform)
 			offsets[surf] += 1
 

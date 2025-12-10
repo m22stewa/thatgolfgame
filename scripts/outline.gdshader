@@ -1,13 +1,26 @@
 shader_type spatial;
-render_mode cull_front, unshaded;
 
-uniform vec3 color : source_color = vec3(0,0,0);
-uniform float thickness : hint_range(0.0, 1.0, 0.01) = 0.05;
+// Define uniforms to control the mask from a script
+uniform vec3 mask_center = vec3(0.0, 0.0, 0.0); // World position of the mask center
+uniform float mask_radius = 6.0;                 // Radius of the masking sphere
+uniform bool use_mask = true;                   // Toggle the mask effect
 
-void vertex() {
-	VERTEX += thickness*NORMAL;
-}
+// Define the texture uniform explicitly for Godot 4.x
+uniform sampler2D albedo_texture; 
 
 void fragment() {
-	ALBEDO = color;
+    if (use_mask) {
+        // Calculate the current pixel's world position using INV_VIEW_MATRIX
+        vec3 pixel_world_pos = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+        
+        // Calculate the distance from the pixel to the mask center
+        float dist = distance(pixel_world_pos, mask_center);
+        
+        // Discard the fragment (pixel) if it's within the mask radius
+        if (dist < mask_radius) {
+            discard;
+        }
+    }
+    // Standard albedo assignment using albedo_texture
+    ALBEDO = texture(albedo_texture, UV).rgb;
 }

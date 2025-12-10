@@ -82,6 +82,9 @@ func _setup_deck_mesh() -> void:
 		meshes.append(get_node("DeckAnchor/DeckPileVisual2"))
 		
 	for m in meshes:
+		# Capture existing edge material BEFORE replacing the mesh (mesh replacement clears overrides)
+		var existing_edge_mat = m.get_surface_override_material(2)
+		
 		m.mesh = mesh
 		
 		# Setup materials
@@ -98,10 +101,15 @@ func _setup_deck_mesh() -> void:
 		m.set_surface_override_material(0, mat)
 		m.set_surface_override_material(1, mat)
 		
-		var edge_mat = StandardMaterial3D.new()
-		edge_mat.albedo_color = Color(0.9, 0.9, 0.9)
-		edge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		m.set_surface_override_material(2, edge_mat)
+		# Use existing edge material from scene if it was set, otherwise create a dark one
+		if existing_edge_mat:
+			m.set_surface_override_material(2, existing_edge_mat)
+		else:
+			# No material was set - create a default dark edge
+			var edge_mat = StandardMaterial3D.new()
+			edge_mat.albedo_color = Color(0.1, 0.1, 0.1)  # Dark gray/black
+			edge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			m.set_surface_override_material(2, edge_mat)
 		
 		# Position mesh so Z=0 is at the bottom of the pile
 		# Original pile was centered at 0, thickness 0.5. So bottom was at -0.25.

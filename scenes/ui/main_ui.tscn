@@ -1,10 +1,11 @@
-[gd_scene load_steps=15 format=3 uid="uid://cdby66rujphi3"]
+[gd_scene load_steps=16 format=3 uid="uid://cdby66rujphi3"]
 
 [ext_resource type="Script" uid="uid://bryby6cgtarmo" path="res://scripts/ui/main_ui.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="2_shot_ui"]
-[ext_resource type="PackedScene" path="res://scenes/ui/deck_widget.tscn" id="3_deck_widget"]
+[ext_resource type="PackedScene" uid="uid://c8j2k3l4m5n6" path="res://scenes/ui/deck_widget.tscn" id="3_deck_widget"]
 [ext_resource type="Shader" uid="uid://cwotan7qgy7bh" path="res://scenes/tilt.gdshader" id="4_oi40j"]
 [ext_resource type="PackedScene" uid="uid://dsma18qptjtff" path="res://scenes/WindWidget.tscn" id="4_wind"]
+[ext_resource type="PackedScene" uid="uid://blt23k5ne8pqf" path="res://scenes/ui/LieView.tscn" id="5_lie_view"]
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_theme"]
 [ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="6_hole_viewer"]
 [ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="7_oi40j"]
@@ -121,9 +122,9 @@ fit_content = true
 
 [node name="ModifierDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
 layout_mode = 1
-offset_left = -701.0
+offset_left = -640.0
 offset_top = -510.0
-offset_right = -190.0
+offset_right = -129.0
 offset_bottom = -29.0
 card_back_texture = ExtResource("7_oi40j")
 card_front_texture = ExtResource("7_oi40j")
@@ -152,6 +153,17 @@ offset_left = -1900.0
 offset_top = 14.0
 offset_right = -1770.0
 offset_bottom = 144.0
+grow_horizontal = 0
+
+[node name="LieView" parent="." instance=ExtResource("5_lie_view")]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -1762.0
+offset_top = 5.0
+offset_right = -1622.0
+offset_bottom = 175.0
 grow_horizontal = 0
 
 [node name="HoleInfoLabel" type="Label" parent="."]
