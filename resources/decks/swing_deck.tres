@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DeckDefinition" load_steps=3 format=3 uid="uid://da1fjfrma2ikk"]
+
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_63pof"]
+[ext_resource type="Script" uid="uid://bqhyqgxuiige0" path="res://scripts/cards/deck_definition.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+deck_id = "swing_deck"
+display_name = "Swing Deck"
+description = "Cards that modify how you swing. Pick one per shot."
+card_ids = Array[String](["standard_swing", "standard_swing", "standard_swing", "precision_swing", "precision_swing", "go_for_it", "go_for_it", "safe_layup", "punch_draw", "controlled_fade", "high_soft_fade", "power_draw"])

@@ -30,106 +30,132 @@ var spin_buttons: Dictionary = {}   # SpinType -> Button
 
 # Complete club stats dictionary
 # distance: max tiles the club can hit
-# accuracy: base AOE rings (0=perfect, higher=worse aim spread)
+# accuracy: base AOE rings (higher = more rings = less accurate)
 # roll: tiles of roll after landing
-# loft: 1-5 scale, affects wind sensitivity & spin potential
+# loft: 1-5 scale, affects wind sensitivity & arc visual
+# arc_height: visual height of ball flight arc
+# swing_difficulty: 1-10 scale for future swing mechanics
 const CLUB_STATS = {
-	ClubType.DRIVER: {
-		"name": "Driver",
-		"distance": 22,
-		"accuracy": 1,      # Hardest to hit straight
-		"roll": 3,          # Hot landing, lots of roll
-		"loft": 1,          # Low loft
-		"arc_height": 12.0,
-	},
-	ClubType.WOOD_3: {
-		"name": "3 Wood",
-		"distance": 20,
-		"accuracy": 1,
-		"roll": 3,
-		"loft": 1,
-		"arc_height": 11.0,
-	},
-	ClubType.WOOD_5: {
-		"name": "5 Wood",
-		"distance": 18,
-		"accuracy": 1,
-		"roll": 2,
-		"loft": 2,
-		"arc_height": 10.0,
-	},
-	ClubType.IRON_3: {
-		"name": "3 Iron",
-		"distance": 17,
-		"accuracy": 1,
-		"roll": 2,
-		"loft": 2,
-		"arc_height": 9.0,
-	},
-	ClubType.IRON_5: {
-		"name": "5 Iron",
-		"distance": 16,
-		"accuracy": 0,
-		"roll": 2,
-		"loft": 2,
-		"arc_height": 8.5,
-	},
-	ClubType.IRON_6: {
-		"name": "6 Iron",
-		"distance": 15,
-		"accuracy": 0,
-		"roll": 1,
-		"loft": 3,
-		"arc_height": 8.0,
-	},
-	ClubType.IRON_7: {
-		"name": "7 Iron",
-		"distance": 14,
-		"accuracy": 0,
-		"roll": 1,
-		"loft": 3,
-		"arc_height": 7.5,
-	},
-	ClubType.IRON_8: {
-		"name": "8 Iron",
-		"distance": 13,
-		"accuracy": 0,
-		"roll": 1,
-		"loft": 3,
-		"arc_height": 7.0,
-	},
-	ClubType.IRON_9: {
-		"name": "9 Iron",
-		"distance": 12,
-		"accuracy": 0,
-		"roll": 1,
-		"loft": 4,
-		"arc_height": 6.5,
-	},
-	ClubType.PITCHING_WEDGE: {
-		"name": "Pitching Wedge",
-		"distance": 11,
-		"accuracy": 0,
-		"roll": 0,
-		"loft": 4,
-		"arc_height": 6.0,
-	},
-	ClubType.SAND_WEDGE: {
-		"name": "Sand Wedge",
-		"distance": 9,
-		"accuracy": 0,
-		"roll": 0,
-		"loft": 5,          # Highest loft
-		"arc_height": 5.0,
-	},
-	ClubType.PUTTER: {
-		"name": "Putter",
-		"distance": 5,
-		"accuracy": 0,
-		"roll": 5,
-		"loft": 0,
-		"arc_height": 0.0,
-	}
+	   ClubType.DRIVER: {
+		   "name": "Driver",
+		   "distance": 22,
+		   "accuracy": 3,      # 3 AOE rings - hardest to control
+		   "roll": 3,          # Hot landing, lots of roll
+		   "loft": 1,          # Low loft
+		   "arc_height": 5.0,
+		   "swing_difficulty": 10,
+		   "curve": 0,         # Base curve (0 = straight)
+	   },
+	   ClubType.WOOD_3: {
+		   "name": "3 Wood",
+		   "distance": 20,
+		   "accuracy": 3,
+		   "roll": 3,
+		   "loft": 1,
+		   "arc_height": 6.0,
+		   "swing_difficulty": 9,
+		   "curve": 0,
+	   },
+	   ClubType.WOOD_5: {
+		   "name": "5 Wood",
+		   "distance": 18,
+		   "accuracy": 3,
+		   "roll": 3,
+		   "loft": 1,
+		   "arc_height": 7.0,
+		   "swing_difficulty": 9,
+		   "curve": 0,
+	   },
+	   ClubType.IRON_3: {
+		   "name": "3 Iron",
+		   "distance": 17,
+		   "accuracy": 2,
+		   "roll": 2,
+		   "loft": 2,
+		   "arc_height": 8.0,
+		   "swing_difficulty": 8,
+		   "curve": 0,
+	   },
+	   ClubType.IRON_5: {
+		   "name": "5 Iron",
+		   "distance": 16,
+		   "accuracy": 2,
+		   "roll": 2,
+		   "loft": 2,
+		   "arc_height": 9.0,
+		   "swing_difficulty": 7,
+		   "curve": 0,
+	   },
+	   ClubType.IRON_6: {
+		   "name": "6 Iron",
+		   "distance": 15,
+		   "accuracy": 1,
+		   "roll": 2,
+		   "loft": 2,
+		   "arc_height": 9.0,
+		   "swing_difficulty": 6,
+		   "curve": 0,
+	   },
+	   ClubType.IRON_7: {
+		   "name": "7 Iron",
+		   "distance": 14,
+		   "accuracy": 1,
+		   "roll": 1,
+		   "loft": 3,
+		   "arc_height": 10.0,
+		   "swing_difficulty": 5,
+		   "curve": 0,
+	   },
+	   ClubType.IRON_8: {
+		   "name": "8 Iron",
+		   "distance": 13,
+		   "accuracy": 1,
+		   "roll": 1,
+		   "loft": 3,
+		   "arc_height": 10.0,
+		   "swing_difficulty": 4,
+		   "curve": 0,
+	   },
+	   ClubType.IRON_9: {
+		   "name": "9 Iron",
+		   "distance": 12,
+		   "accuracy": 1,
+		   "roll": 1,
+		   "loft": 4,
+		   "arc_height": 11.0,
+		   "swing_difficulty": 3,
+		   "curve": 0,
+	   },
+	   ClubType.PITCHING_WEDGE: {
+		   "name": "Pitching Wedge",
+		   "distance": 11,
+		   "accuracy": 1,
+		   "roll": 1,
+		   "loft": 4,
+		   "arc_height": 12.0,
+		   "swing_difficulty": 2,
+		   "curve": 0,
+	   },
+	   ClubType.SAND_WEDGE: {
+		   "name": "Sand Wedge",
+		   "distance": 9,
+		   "accuracy": 1,
+		   "roll": 0,
+		   "loft": 5,          # Highest loft
+		   "arc_height": 13.0,
+		   "swing_difficulty": 2,
+		   "curve": 0,
+	   },
+	   ClubType.PUTTER: {
+		   "name": "Putter",
+		   "distance": 5,
+		   "accuracy": 1,
+		   "roll": 5,
+		   "loft": 0,
+		   "arc_height": 0.0,
+		   "swing_difficulty": 1,
+		   "curve": 0,
+	   }
 }
 
 # Current selected club
@@ -162,7 +188,7 @@ const GOLFBALL = preload("res://scenes/golf_ball.tscn")
 
 # Deck Definitions
 @export var starter_deck: DeckDefinition = preload("res://resources/decks/starter_deck.tres")
-@export var club_deck: DeckDefinition = preload("res://resources/decks/club_deck.tres")
+@export var club_deck: DeckDefinition = preload("res://resources/decks/swing_deck.tres")  # Swing deck (shot modifiers)
 
 # Array of tree scenes to randomly choose from
 # Add more tree .tscn files here for variety!
@@ -279,6 +305,7 @@ var tile_nodes: Dictionary = {}  # Key: Vector2i cell position, Value: Node3D (t
 var trajectory_mesh: MeshInstance3D = null
 var trajectory_shadow_mesh: MeshInstance3D = null  # Shadow line on ground
 var curved_trajectory_mesh: MeshInstance3D = null  # Curved trajectory for hook/slice
+var modifier_trajectory_mesh: MeshInstance3D = null  # Shows modified distance (green for +, red for -)
 var trajectory_height: float = 5.0  # Peak height of ball flight arc (will vary by club)
 
 # Target locking
@@ -994,11 +1021,27 @@ func _refresh_trajectory() -> void:
 		var z_pos = hy * TILE_SIZE * sqrt(3.0) + (hx % 2) * TILE_SIZE * sqrt(3.0) / 2.0
 		var y_pos = get_elevation(hx, hy)
 		_update_trajectory(Vector3(x_pos, y_pos, z_pos))
+	else:
+		# No target, hide all trajectory arcs
+		if trajectory_mesh:
+			trajectory_mesh.visible = false
+		if trajectory_shadow_mesh:
+			trajectory_shadow_mesh.visible = false
+		if curved_trajectory_mesh:
+			curved_trajectory_mesh.visible = false
+		if modifier_trajectory_mesh:
+			modifier_trajectory_mesh.visible = false
 
 
 func get_shape_adjusted_landing(aim_tile: Vector2i) -> Vector2i:
-	"""Return the aim tile directly - curve is now handled by swing meter."""
-	return aim_tile
+	"""Return the landing tile offset by curve_strength.
+	   Negated so landing matches the direction the ball curves TO."""
+	var offset = 0
+	if shot_manager and shot_manager.current_context:
+		offset = -int(round(shot_manager.current_context.curve_strength))
+	var landing = Vector2i(aim_tile.x + offset, aim_tile.y)
+	landing.x = clampi(landing.x, 0, grid_width - 1)
+	return landing
 
 
 func _is_valid_landing_tile(tile: Vector2i) -> bool:
@@ -1016,7 +1059,10 @@ func get_shape_adjusted_world_position(aim_tile: Vector2i) -> Vector3:
 
 
 func get_shape_aoe_offset() -> int:
-	"""Returns 0 - curve is now handled by swing meter."""
+	"""Returns the curve offset in tiles (right = +, left = -) from shot context.
+	   Negated so AOE shifts in the direction the ball will curve TO."""
+	if shot_manager and shot_manager.current_context:
+		return -int(round(shot_manager.current_context.curve_strength))
 	return 0
 
 
@@ -1138,10 +1184,10 @@ func get_current_club_distance() -> int:
 	"""Get max distance in tiles for current club, modified by current lie"""
 	var base_distance = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).distance
 	
-	# Apply lie power modifier if we have a shot context with lie info
+	# Apply lie distance modifier if we have a shot context with lie info
 	if shot_manager and shot_manager.current_context:
-		var power_mod = int(shot_manager.current_context.power_mod)
-		return maxi(1, base_distance + power_mod)
+		var distance_mod = shot_manager.current_context.distance_mod
+		return maxi(1, base_distance + distance_mod)
 	
 	return base_distance
 
@@ -1151,14 +1197,66 @@ func get_current_club_base_distance() -> int:
 	return CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).distance
 
 
+func get_club_for_tile_distance(tile_distance: int) -> Dictionary:
+	"""Get the best club for a given tile distance.
+	Returns dictionary with 'type', 'name', 'distance', 'accuracy' or null if out of range.
+	Excludes putter (only used in putting mode)."""
+	
+	# Find the club with the smallest distance that can still reach the target
+	var best_club: int = -1
+	var best_club_data: Dictionary = {}
+	
+	for club_type in CLUB_STATS:
+		# Skip putter - it's exclusive to putting mode
+		if club_type == ClubType.PUTTER:
+			continue
+		
+		var stats = CLUB_STATS[club_type]
+		# Club can reach if its distance >= tile distance
+		if stats.distance >= tile_distance:
+			# Prefer the club with smallest distance that can still reach (shorter = more control)
+			if best_club == -1 or stats.distance < best_club_data.distance:
+				best_club = club_type
+				best_club_data = stats
+	
+	if best_club == -1:
+		return {}  # Out of range
+	
+	return {
+		"type": best_club,
+		"name": best_club_data.name,
+		"distance": best_club_data.distance,
+		"accuracy": best_club_data.accuracy,
+		"roll": best_club_data.roll,
+	}
+
+
+func get_max_club_distance() -> int:
+	"""Get the maximum distance any club can reach (Driver distance)"""
+	return CLUB_STATS[ClubType.DRIVER].distance
+
+
 func get_current_club_loft() -> int:
 	"""Get loft value for current club (1-5 scale)"""
 	return CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).loft
 
 
 func get_current_shot_stats() -> Dictionary:
-	"""Get complete shot stats: base club stats + all modifiers = final stats"""
-	var club_stats = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7])
+	"""Get complete shot stats: base club stats + all modifiers = final stats.
+	Uses the club that would be needed for the current aim target distance."""
+	
+	# Determine which club to use based on aim target distance
+	var club_type = current_club
+	if shot_manager and shot_manager.current_context and golf_ball:
+		var ball_tile = world_to_grid(golf_ball.position)
+		var aim_tile = shot_manager.current_context.aim_tile
+		if aim_tile.x >= 0:
+			var tile_dist = get_tile_distance(ball_tile, aim_tile)
+			var club_info = get_club_for_tile_distance(tile_dist)
+			if club_info and club_info.has("type"):
+				club_type = club_info.type
+	
+	var club_stats = CLUB_STATS.get(club_type, CLUB_STATS[ClubType.IRON_7])
 	
 	# Base stats from club
 	var base = {
@@ -1166,9 +1264,11 @@ func get_current_shot_stats() -> Dictionary:
 		"accuracy": club_stats.accuracy,
 		"roll": club_stats.roll,
 		"loft": club_stats.loft,
-		"curve": 0,  # Base curve is 0 (straight shot)
+		"curve": club_stats.curve,
 	}
-	
+
+	print("[SHOT] Base club stats: %s" % str(base))
+
 	# Modifiers from all sources (lie, cards, wind, etc.)
 	var mods = {
 		"distance_mod": 0,
@@ -1176,24 +1276,28 @@ func get_current_shot_stats() -> Dictionary:
 		"roll_mod": 0,
 		"curve_mod": 0,
 	}
-	
+
 	# Get modifiers from shot context (lie effects, cards, etc.)
 	if shot_manager and shot_manager.current_context:
 		var ctx = shot_manager.current_context
-		mods.distance_mod = int(ctx.power_mod)
-		mods.accuracy_mod = int(ctx.accuracy_mod)
-		mods.roll_mod = int(ctx.roll_mod)
-		mods.curve_mod = ctx.curve_mod
-	
+		mods.distance_mod = ctx.distance_mod
+		mods.accuracy_mod = ctx.accuracy_mod
+		mods.roll_mod = ctx.roll_mod
+		mods.curve_mod = ctx.curve_strength
+
+		print("[SHOT] Surface mods: distance_mod=%s, accuracy_mod=%s, roll_mod=%s, curve_mod=%s" % [str(ctx.distance_mod), str(ctx.accuracy_mod), str(ctx.roll_mod), str(ctx.curve_strength)])
+
 	# Final calculated stats
 	var final = {
 		"distance": maxi(1, base.distance + mods.distance_mod),
 		"accuracy": maxi(0, base.accuracy + mods.accuracy_mod),
 		"roll": maxi(0, base.roll + mods.roll_mod),
-		"curve": base.curve + mods.curve_mod,
 		"loft": base.loft,
+		"curve": base.curve + mods.curve_mod,
 	}
-	
+
+	print("[SHOT] Final shot stats: %s" % str(final))
+
 	return {
 		"club_name": club_stats.name,
 		"base": base,
@@ -1212,12 +1316,14 @@ func _set_club(club_type: ClubType) -> void:
 
 
 func _refresh_stats_panel() -> void:
-	"""Refresh the lie info panel with current club stats."""
-	if shot_manager and shot_manager.current_context and lie_system:
-		var ctx = shot_manager.current_context
-		if ctx.start_tile.x >= 0:
-			var lie_info = lie_system.calculate_lie(self, ctx.start_tile)
-			_update_lie_info_panel(lie_info)
+		"""Refresh the lie info panel with current club stats."""
+		if shot_manager and shot_manager.current_context and lie_system:
+			var ctx = shot_manager.current_context
+			if ctx.start_tile.x >= 0:
+				var lie_info = lie_system.calculate_lie(self, ctx.start_tile)
+				_update_lie_info_panel(lie_info)
+				# Always refresh AOE/trajectory visuals when stats change (including curve/accuracy)
+				_refresh_trajectory()
 
 
 func get_tile_distance(from: Vector2i, to: Vector2i) -> int:
@@ -1252,33 +1358,29 @@ func is_forward_from_ball(target_cell: Vector2i) -> bool:
 
 
 func is_tile_available(cell: Vector2i) -> bool:
-	"""Check if a tile is available to hit (in range AND forward)"""
+	"""Check if a tile is available to hit (in range of any club AND forward)"""
 	if golf_ball == null:
 		return true
 	
 	var ball_tile = world_to_grid(golf_ball.position)
 	var tile_dist = get_tile_distance(ball_tile, cell)
-	var max_dist = get_current_club_distance()
+	var max_dist = get_max_club_distance()  # Use max of any club (Driver)
 	
 	# Must be within range AND forward from ball
 	return tile_dist <= max_dist and is_forward_from_ball(cell)
 
 
 func _update_dim_overlays() -> void:
-	"""Create or update dim overlays for unavailable tiles (only forward, out of range)
-	   Only shows overlays when a club has been selected."""
+	"""Create or update dim overlays for unavailable tiles (only forward, out of range).
+	   Shows overlays for tiles beyond the max club range (Driver distance)."""
 	# Clear existing overlays
 	_clear_dim_overlays()
 	
 	if golf_ball == null:
 		return
 	
-	# Don't dim tiles until a club is selected
-	if current_club < 0:
-		return
-	
 	var ball_tile = world_to_grid(golf_ball.position)
-	var max_dist = get_current_club_distance()
+	var max_dist = get_max_club_distance()  # Max range = Driver distance
 	var width = TILE_SIZE
 	var hex_height = TILE_SIZE * sqrt(3.0)
 	
@@ -1408,7 +1510,8 @@ func _is_mouse_over_ui() -> bool:
 
 
 func is_valid_target(cell: Vector2i) -> bool:
-	"""Check if a cell is a valid target for the current shot"""
+	"""Check if a cell is a valid target for the current shot.
+	   No longer requires pre-selected club - auto-selects based on distance."""
 	# Check bounds
 	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
 		return false
@@ -1418,33 +1521,44 @@ func is_valid_target(cell: Vector2i) -> bool:
 	if surface == -1 or surface == SurfaceType.WATER:
 		return false
 	
-	# Require club selection
-	if not is_club_selected():
-		return false
-	
 	# Must be forward from ball
 	if golf_ball:
 		if not is_forward_from_ball(cell):
 			return false
 		
-		# Must be within club range
+		# Must be within range of ANY club (max is Driver distance)
 		var ball_tile = world_to_grid(golf_ball.position)
-		var max_dist = get_current_club_distance()
+		var max_dist = get_max_club_distance()
 		var tile_dist = get_tile_distance(ball_tile, cell)
 		if tile_dist > max_dist:
+			return false
+		
+		# Check if there's a club that can reach this distance
+		var club_info = get_club_for_tile_distance(tile_dist)
+		if club_info.is_empty():
 			return false
 	
 	return true
 
 
 func _try_lock_target(cell: Vector2i) -> void:
-	"""Attempt to lock target to the specified cell"""
+	"""Attempt to lock target to the specified cell.
+	   Auto-selects the appropriate club based on distance."""
 	if not is_valid_target(cell):
 		return
 	
 	# Lock to this cell
 	locked_cell = cell
 	target_locked = true
+	
+	# Auto-select club based on distance to target
+	if golf_ball:
+		var ball_tile = world_to_grid(golf_ball.position)
+		var tile_dist = get_tile_distance(ball_tile, cell)
+		var club_info = get_club_for_tile_distance(tile_dist)
+		if club_info and club_info.has("type"):
+			current_club = club_info.type
+			trajectory_height = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
 	
 	# Calculate locked target position
 	var width = TILE_SIZE
@@ -1474,47 +1588,68 @@ func _try_lock_target(cell: Vector2i) -> void:
 	if shot_manager and shot_manager.is_shot_in_progress:
 		shot_manager.set_aim_target(adjusted_landing)
 	
+	# Notify UI that a tile was selected
+	if shot_ui:
+		print("[HexGrid] Calling shot_ui.set_tile_selected(true)")
+		shot_ui.set_tile_selected(true)
+	else:
+		push_warning("[HexGrid] shot_ui is null, cannot set tile_selected!")
+	
 	# Update UI
 	if shot_ui and golf_ball:
 		var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
 		var ball_tile = world_to_grid(golf_ball.position)
 		var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
+		var tile_dist = get_tile_distance(ball_tile, adjusted_landing)
 		shot_ui.update_target_info(terrain, distance)
 		
-		# Update on-screen label
-		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
+		# Update on-screen label with club name
+		var club_info = get_club_for_tile_distance(tile_dist)
+		var club_name = club_info.get("name", "---") if club_info else "---"
+		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance_and_club"):
+			target_highlight_mesh.set_distance_and_club(distance, club_name)
+		elif target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
 			target_highlight_mesh.set_distance(distance)
 
 
 func _update_aoe_for_cell(cell: Vector2i) -> void:
-	"""Update AOE highlights around a cell"""
+	"""Update AOE highlights around a cell based on club accuracy"""
 	var width = TILE_SIZE
 	var hex_height = TILE_SIZE * sqrt(3.0)
 	
 	_hide_all_aoe_highlights()
 	
-	# Get AOE radius from shot context
+	# Get AOE radius based on club accuracy for the target distance
 	var aoe_radius = 1  # Default
+	if golf_ball:
+		var ball_tile = world_to_grid(golf_ball.position)
+		var tile_dist = get_tile_distance(ball_tile, cell)
+		var club_info = get_club_for_tile_distance(tile_dist)
+		if club_info:
+			aoe_radius = club_info.get("accuracy", 1)
+	
+	# Apply any modifiers from shot context (cards, lie, etc.)
 	if shot_manager and shot_manager.current_context:
-		aoe_radius = shot_manager.current_context.aoe_radius
+		aoe_radius = maxi(0, aoe_radius + shot_manager.current_context.accuracy_mod)
 	
 	var aoe_offset = get_shape_aoe_offset()
 	var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
 	aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
 	
-	# Show ring 1 AOE
-	var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
-	for neighbor in neighbors:
-		if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
-			var n_surface = get_cell(neighbor.x, neighbor.y)
-			if n_surface != -1 and n_surface != SurfaceType.WATER:
-				var highlight = _get_or_create_aoe_highlight(neighbor, 1)
-				var n_x = neighbor.x * width * 1.5
-				var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-				var n_y = get_elevation(neighbor.x, neighbor.y) + TILE_SURFACE_OFFSET
-				highlight.position = Vector3(n_x, n_y, n_z)
-				highlight.rotation.y = PI / 6.0
-				highlight.visible = true
+	# Show ring 1 AOE only if aoe_radius >= 1
+	if aoe_radius >= 1:
+		var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
+		for neighbor in neighbors:
+			if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
+				var n_surface = get_cell(neighbor.x, neighbor.y)
+				if n_surface != -1 and n_surface != SurfaceType.WATER:
+					var highlight = _get_or_create_aoe_highlight(neighbor, 1)
+					var n_x = neighbor.x * width * 1.5
+					var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
+					var n_y = get_elevation(neighbor.x, neighbor.y) + TILE_SURFACE_OFFSET
+					highlight.position = Vector3(n_x, n_y, n_z)
+					highlight.rotation.y = PI / 6.0
+					highlight.visible = true
 	
 	# Show ring 2 AOE only if radius >= 2
 	if aoe_radius >= 2:
@@ -1530,6 +1665,35 @@ func _update_aoe_for_cell(cell: Vector2i) -> void:
 					highlight.position = Vector3(o_x, o_y, o_z)
 					highlight.rotation.y = PI / 6.0
 					highlight.visible = true
+	
+	# Show ring 3 AOE for clubs with accuracy 3 (Driver, Woods)
+	if aoe_radius >= 3:
+		var ring3_cells = get_ring_3_cells(aoe_center.x, aoe_center.y)
+		for ring3_cell in ring3_cells:
+			if ring3_cell.x >= 0 and ring3_cell.x < grid_width and ring3_cell.y >= 0 and ring3_cell.y < grid_height:
+				var r3_surface = get_cell(ring3_cell.x, ring3_cell.y)
+				if r3_surface != -1 and r3_surface != SurfaceType.WATER:
+					var highlight = _get_or_create_aoe_highlight(ring3_cell, 3)
+					var r3_x = ring3_cell.x * width * 1.5
+					var r3_z = ring3_cell.y * hex_height + (ring3_cell.x % 2) * (hex_height / 2.0)
+					var r3_y = get_elevation(ring3_cell.x, ring3_cell.y) + TILE_SURFACE_OFFSET
+					highlight.position = Vector3(r3_x, r3_y, r3_z)
+					highlight.rotation.y = PI / 6.0
+					highlight.visible = true
+
+
+func refresh_aoe_display() -> void:
+	"""Public function to refresh AOE display after modifiers change.
+	   Call this when cards are applied that affect accuracy.
+	   Also hides AOE if no target is selected."""
+	if target_locked and locked_cell.x >= 0:
+		_update_aoe_for_cell(locked_cell)
+	elif hovered_cell.x >= 0:
+		# For hover preview, re-run the hover logic
+		set_hover_cell(hovered_cell)
+	else:
+		# No target selected, hide AOE
+		_hide_all_aoe_highlights()
 
 
 ## Public function to set aim target from external sources (like HoleViewer)
@@ -1579,10 +1743,15 @@ func set_aim_cell(cell: Vector2i) -> bool:
 		var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
 		var ball_tile = world_to_grid(golf_ball.position)
 		var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
+		var tile_dist = get_tile_distance(ball_tile, adjusted_landing)
 		shot_ui.update_target_info(terrain, distance)
 		
-		# Update on-screen label
-		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
+		# Update on-screen label with club name
+		var club_info = get_club_for_tile_distance(tile_dist)
+		var club_name = club_info.get("name", "---") if club_info else "---"
+		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance_and_club"):
+			target_highlight_mesh.set_distance_and_club(distance, club_name)
+		elif target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
 			target_highlight_mesh.set_distance(distance)
 	
 	# Display debug info for the clicked tile
@@ -1662,12 +1831,20 @@ func set_hover_cell(cell: Vector2i) -> void:
 	target_highlight_mesh.rotation.y = PI / 6.0
 	target_highlight_mesh.visible = true
 	
-	# Always show distance label on hover
+	# Always show distance and club name on hover
 	if golf_ball:
 		var ball_tile = world_to_grid(golf_ball.position)
-		var distance = _calculate_distance_yards(ball_tile, cell)
-		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
-			target_highlight_mesh.set_distance(distance)
+		var tile_dist = get_tile_distance(ball_tile, cell)
+		var distance_yards = _calculate_distance_yards(ball_tile, cell)
+		
+		# Get the best club for this distance
+		var club_info = get_club_for_tile_distance(tile_dist)
+		var club_name = club_info.get("name", "Out of Range") if club_info else "Out of Range"
+		
+		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance_and_club"):
+			target_highlight_mesh.set_distance_and_club(distance_yards, club_name)
+		elif target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
+			target_highlight_mesh.set_distance(distance_yards)
 	
 	# Only show AOE and trajectory if valid target (in range)
 	if is_clickable:
@@ -1676,10 +1853,17 @@ func set_hover_cell(cell: Vector2i) -> void:
 		var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
 		aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
 		
-		# Get AOE radius from shot context (accuracy modifiers applied)
-		var aoe_radius = 1  # Default
+		# Get the club's base accuracy for AOE display
+		var ball_tile = world_to_grid(golf_ball.position) if golf_ball else Vector2i(0, 0)
+		var tile_dist = get_tile_distance(ball_tile, cell)
+		var club_info = get_club_for_tile_distance(tile_dist)
+		
+		# Use club's accuracy as base AOE radius
+		var aoe_radius = club_info.get("accuracy", 1) if club_info else 1
+		
+		# Apply any modifiers from shot context
 		if shot_manager and shot_manager.current_context:
-			aoe_radius = shot_manager.current_context.aoe_radius
+			aoe_radius = maxi(0, aoe_radius + shot_manager.current_context.accuracy_mod)
 		
 		# Show AOE rings based on calculated radius
 		if aoe_radius >= 1:
@@ -1709,6 +1893,21 @@ func set_hover_cell(cell: Vector2i) -> void:
 						var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
 						var o_y = get_elevation(outer_cell.x, outer_cell.y) + TILE_SURFACE_OFFSET
 						highlight.position = Vector3(o_x, o_y, o_z)
+						highlight.rotation.y = PI / 6.0
+						highlight.visible = true
+		
+		# Update ring 3 highlights for clubs with accuracy 3 (Driver, Woods)
+		if aoe_radius >= 3:
+			var ring3_cells = get_ring_3_cells(aoe_center.x, aoe_center.y)
+			for ring3_cell in ring3_cells:
+				if ring3_cell.x >= 0 and ring3_cell.x < grid_width and ring3_cell.y >= 0 and ring3_cell.y < grid_height:
+					var r3_surface = get_cell(ring3_cell.x, ring3_cell.y)
+					if r3_surface != -1 and r3_surface != SurfaceType.WATER:
+						var highlight = _get_or_create_aoe_highlight(ring3_cell, 3)
+						var r3_x = ring3_cell.x * width * 1.5
+						var r3_z = ring3_cell.y * hex_height + (ring3_cell.x % 2) * (hex_height / 2.0)
+						var r3_y = get_elevation(ring3_cell.x, ring3_cell.y) + TILE_SURFACE_OFFSET
+						highlight.position = Vector3(r3_x, r3_y, r3_z)
 						highlight.rotation.y = PI / 6.0
 						highlight.visible = true
 		
@@ -1907,6 +2106,7 @@ func _init_card_system() -> void:
 	card_system.modifier_manager = modifier_manager
 	card_system.shot_manager = shot_manager
 	card_system.card_library = card_library
+	# shot_ui is assigned later in _find_and_setup_ui() after UI is found
 	add_child(card_system)
 	
 	# Initialize starter deck
@@ -2083,6 +2283,9 @@ func _find_and_setup_ui() -> void:
 			# Connect currency manager for chips display
 			if currency_manager:
 				shot_ui.set_currency_manager(currency_manager)
+			# Connect card system to shot_ui for swing button prerequisites
+			if card_system:
+				card_system.shot_ui = shot_ui
 		
 		# Setup shop UI
 		_setup_shop_ui()
@@ -2120,6 +2323,9 @@ func _find_and_setup_ui() -> void:
 		# Connect currency manager for chips display
 		if currency_manager:
 			shot_ui.set_currency_manager(currency_manager)
+		# Connect card system to shot_ui for swing button prerequisites
+		if card_system:
+			card_system.shot_ui = shot_ui
 	
 	# Setup shop UI
 	_setup_shop_ui()
@@ -2375,9 +2581,6 @@ func _update_lie_info_panel(lie_info: Dictionary) -> void:
 		# Roll row
 		lines.append(_format_stat_row("Roll", base.roll, mods.roll_mod, final.roll, true))
 		
-		# Curve row
-		lines.append(_format_stat_row("Curve", base.curve, mods.curve_mod, final.curve, true))
-		
 		# Add scoring bonuses if present
 		var chip_bonus = lie_info.get("chip_bonus", 0)
 		var mult_bonus = lie_info.get("mult_bonus", 0.0)
@@ -2479,7 +2682,21 @@ func _on_shot_completed(context: ShotContext) -> void:
 	
 	# Reset target lock state
 	target_locked = false
+	locked_cell = Vector2i(-1, -1)
+	locked_target_pos = Vector3.ZERO
+	hovered_cell = Vector2i(-1, -1)
 	target_highlight_mesh.visible = false
+	
+	# Hide all AOE and trajectory visuals
+	_hide_all_aoe_highlights()
+	if trajectory_mesh:
+		trajectory_mesh.visible = false
+	if trajectory_shadow_mesh:
+		trajectory_shadow_mesh.visible = false
+	if curved_trajectory_mesh:
+		curved_trajectory_mesh.visible = false
+	if modifier_trajectory_mesh:
+		modifier_trajectory_mesh.visible = false
 	
 	# Store previous valid tile before shot (for water penalty)
 	previous_valid_tile = context.start_tile
@@ -3268,7 +3485,7 @@ func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
 func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> void:
 	"""Animate ball flight with a smooth bounce-and-roll transition at landing.
 	   The ball lands, does a small bounce, and is ready to roll.
-	   Uses curved flight path when swing_curve is non-zero."""
+	   Uses curved flight path when curve_strength or wind_curve is non-zero."""
 	if golf_ball == null:
 		return
 	
@@ -3279,10 +3496,9 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 	var curve_amount: float = 0.0
 	var curve_type: String = "draw"
 	if shot_manager and shot_manager.current_context:
-		curve_amount = shot_manager.current_context.swing_curve
-		# Also add any card-based curve effects
-		curve_amount += shot_manager.current_context.curve_strength
-		curve_amount += shot_manager.current_context.curve_mod
+		# Curve comes from cards (curve_strength) and wind (wind_curve)
+		curve_amount = shot_manager.current_context.curve_strength
+		curve_amount += float(shot_manager.current_context.wind_curve)
 		
 		# Determine curve type based on direction
 		if curve_amount < 0:
@@ -3636,7 +3852,7 @@ func _create_highlight_mesh() -> void:
 
 
 # Get or create an AOE highlight for a specific cell
-# ring: 0 = center (not used), 1 = adjacent, 2 = outer ring
+# ring: 0 = center (not used), 1 = adjacent, 2 = outer ring, 3 = third ring
 func _get_or_create_aoe_highlight(cell: Vector2i, ring: int) -> MeshInstance3D:
 	if aoe_highlights.has(cell):
 		return aoe_highlights[cell]
@@ -3651,8 +3867,13 @@ func _get_or_create_aoe_highlight(cell: Vector2i, ring: int) -> MeshInstance3D:
 	mesh.mesh = cylinder
 	
 	var mat = StandardMaterial3D.new()
-	# Set opacity based on ring distance - must be visible!
-	var alpha = 0.4 if ring == 1 else 0.25  # Ring 1 = 40%, Ring 2 = 25%
+	# Set opacity based on ring distance - more transparent for outer rings
+	var alpha: float
+	match ring:
+		1: alpha = 0.4   # Ring 1 = 40%
+		2: alpha = 0.3   # Ring 2 = 30%
+		3: alpha = 0.2   # Ring 3 = 20%
+		_: alpha = 0.25
 	mat.albedo_color = Color(1.0, 0.85, 0.0, alpha)
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -3730,6 +3951,23 @@ func _create_trajectory_mesh() -> void:
 	
 	add_child(curved_trajectory_mesh)
 	
+	# Create modifier trajectory mesh (shows modified distance from cards)
+	modifier_trajectory_mesh = MeshInstance3D.new()
+	modifier_trajectory_mesh.mesh = ImmediateMesh.new()
+	
+	var mod_mat = StandardMaterial3D.new()
+	mod_mat.albedo_color = Color(0.0, 1.0, 0.0, 1.0)  # Default green, will be set per-draw
+	mod_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mod_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mod_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mod_mat.no_depth_test = true
+	mod_mat.vertex_color_use_as_albedo = true
+	modifier_trajectory_mesh.material_override = mod_mat
+	modifier_trajectory_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	modifier_trajectory_mesh.custom_aabb = AABB(Vector3(-100, -100, -100), Vector3(200, 200, 200))
+	
+	add_child(modifier_trajectory_mesh)
+	
 	# Create trajectory shadow mesh (dark line on ground)
 	trajectory_shadow_mesh = MeshInstance3D.new()
 	trajectory_shadow_mesh.mesh = ImmediateMesh.new()
@@ -3753,26 +3991,65 @@ func _update_trajectory(target_pos: Vector3) -> void:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
 		curved_trajectory_mesh.visible = false
+		modifier_trajectory_mesh.visible = false
 		return
 	
 	var start_pos = golf_ball.position
 	var end_pos = target_pos
 	
-	# Check if there's any pre-applied curve from cards/modifiers
+	# Check if there's any curve from cards or wind
 	var pre_curve: float = 0.0
+	var distance_mod: int = 0
 	if shot_manager and shot_manager.current_context:
-		pre_curve = shot_manager.current_context.curve_strength + shot_manager.current_context.curve_mod
+		pre_curve = shot_manager.current_context.curve_strength + float(shot_manager.current_context.wind_curve)
+		distance_mod = shot_manager.current_context.distance_mod
 	
-	# Draw the aim trajectory
+	# Draw the aim trajectory (base trajectory to aimed tile)
 	if abs(pre_curve) > 0.1:
 		# Show curved trajectory preview if cards add curve
 		var distance = start_pos.distance_to(end_pos)
 		var scaled_curve = pre_curve * distance * 0.15
 		_draw_trajectory_arc_curved(trajectory_mesh, start_pos, end_pos, scaled_curve, Color(1.0, 1.0, 1.0, 0.8))
 	else:
-		# Straight trajectory (curve comes from swing meter later)
+		# Straight trajectory
 		_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, Color(1.0, 1.0, 1.0, 0.8))
 	trajectory_mesh.visible = true
+	
+	# Draw modifier trajectory if distance modifier is active
+	if distance_mod != 0:
+		# Calculate modified end position (extend or shorten the trajectory)
+		var direction = (end_pos - start_pos).normalized()
+		direction.y = 0  # Keep horizontal direction only
+		if direction.length() > 0.001:
+			direction = direction.normalized()
+		else:
+			direction = Vector3.FORWARD
+		
+		# Each tile is roughly TILE_SIZE * 1.5 in world units (hex spacing)
+		var tile_world_size = TILE_SIZE * 1.5
+		var mod_offset = float(distance_mod) * tile_world_size
+		var mod_end_pos = end_pos + direction * mod_offset
+		# Get elevation at modified position using world_to_grid
+		var mod_tile = world_to_grid(mod_end_pos)
+		mod_end_pos.y = get_elevation(mod_tile.x, mod_tile.y)
+		
+		# Choose color based on modifier direction
+		var mod_color: Color
+		if distance_mod > 0:
+			mod_color = Color(0.2, 1.0, 0.2, 0.7)  # Green for + distance
+		else:
+			mod_color = Color(1.0, 0.2, 0.2, 0.7)  # Red for - distance
+		
+		# Draw the modifier arc with curve if applicable
+		if abs(pre_curve) > 0.1:
+			var distance = start_pos.distance_to(mod_end_pos)
+			var scaled_curve = pre_curve * distance * 0.15
+			_draw_trajectory_arc_curved(modifier_trajectory_mesh, start_pos, mod_end_pos, scaled_curve, mod_color)
+		else:
+			_draw_trajectory_arc(modifier_trajectory_mesh, start_pos, mod_end_pos, mod_color)
+		modifier_trajectory_mesh.visible = true
+	else:
+		modifier_trajectory_mesh.visible = false
 	
 	# Curved trajectory mesh not used anymore
 	curved_trajectory_mesh.visible = false
@@ -4128,6 +4405,31 @@ func get_outer_ring_cells(col: int, row: int) -> Array[Vector2i]:
 	return outer
 
 
+# Get ring 3 hex cells for a given cell (3 steps away from center)
+func get_ring_3_cells(col: int, row: int) -> Array[Vector2i]:
+	var ring3: Array[Vector2i] = []
+	var ring1 = get_adjacent_cells(col, row)
+	var ring2 = get_outer_ring_cells(col, row)
+	var seen: Dictionary = {}
+	
+	# Mark center, ring 1, and ring 2 as seen
+	seen[Vector2i(col, row)] = true
+	for cell in ring1:
+		seen[cell] = true
+	for cell in ring2:
+		seen[cell] = true
+	
+	# For each ring 2 cell, get its neighbors and add ones we haven't seen
+	for ring2_cell in ring2:
+		var neighbors = get_adjacent_cells(ring2_cell.x, ring2_cell.y)
+		for neighbor in neighbors:
+			if not seen.has(neighbor):
+				seen[neighbor] = true
+				ring3.append(neighbor)
+	
+	return ring3
+
+
 # Display hole information in the UI Label
 func _log_hole_info() -> void:
 	# Calculate elevation stats
@@ -4181,14 +4483,14 @@ func _log_hole_info() -> void:
 		# print("--- WIND DEBUG ---")
 		# print("Speed: %.1f km/h" % wind_system.speed_kmh)
 		# print("Direction: %s" % wind_system.get_direction_name())
-		# print("Gustiness: %.2f" % wind_system.gustiness)
+		# print("Strength: %d" % wind_system.strength)
 		# print("------------------")
 		
 		# Add wind info to on-screen debug text
-		hole_info_text += "\n\nWind: %s %d km/h (Gust: %.2f)" % [
+		hole_info_text += "\n\nWind: %s %d km/h (%s)" % [
 			wind_system.get_direction_name(), 
 			int(wind_system.speed_kmh),
-			wind_system.gustiness
+			wind_system.get_strength_name()
 		]
 	
 	# Update UI Label

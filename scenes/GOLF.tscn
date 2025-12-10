@@ -456,7 +456,7 @@ visible = false
 script = ExtResource("3_tryan")
 
 [node name="textureFloor" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.86548185, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.0508864, 0)
 material_overlay = SubResource("ShaderMaterial_q0ffo")
 gi_mode = 2
 mesh = SubResource("PlaneMesh_q0ffo")

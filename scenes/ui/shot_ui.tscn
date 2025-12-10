@@ -304,7 +304,6 @@ text = "0 yds"
 horizontal_alignment = 2
 
 [node name="ActionPanel" type="Control" parent="."]
-visible = false
 layout_mode = 1
 anchors_preset = 3
 anchor_left = 1.0
@@ -330,7 +329,7 @@ grow_vertical = 2
 theme = SubResource("Theme_hp8u3")
 theme_override_font_sizes/font_size = 20
 disabled = true
-text = "Confirm Shot"
+text = "SWING"
 
 [node name="Hint" type="Label" parent="ActionPanel"]
 layout_mode = 1
@@ -343,7 +342,7 @@ grow_horizontal = 2
 grow_vertical = 0
 theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
 theme_override_font_sizes/font_size = 12
-text = "Left-click to aim, Right-click to shoot"
+text = "Select tile, swing card, then modifier"
 horizontal_alignment = 1
 
 [node name="BottomPanel" type="Control" parent="."]

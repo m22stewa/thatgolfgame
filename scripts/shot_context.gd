@@ -13,12 +13,14 @@ var start_tile: Vector2i = Vector2i(-1, -1)   # Tile where shot starts
 var aim_tile: Vector2i = Vector2i(-1, -1)     # Tile chosen by player
 var landing_tile: Vector2i = Vector2i(-1, -1) # Final landing tile (resolved from AOE)
 
-# Lie information - affects shot modifiers (additive: 0 = no change, +/- values modify)
-var power_mod: float = 0.0                   # Power modifier (e.g., -2 = 2 tiles less distance)
-var accuracy_mod: float = 0.0                # Accuracy modifier (e.g., +1 = 1 extra AOE ring)
-var spin_mod: float = 0.0                    # Spin effectiveness modifier
-var curve_mod: float = 0.0                   # Curve/shape effectiveness modifier
-var roll_mod: float = 0.0                    # Roll distance modifier (tiles)
+# Shot modifiers (additive: 0 = no change, +/- values modify)
+# All int-based for simplicity and predictability
+var distance_mod: int = 0                    # Distance modifier (e.g., -2 = 2 tiles less distance)
+var accuracy_mod: int = 0                    # Accuracy modifier (e.g., +1 = 1 extra AOE ring)
+var roll_mod: int = 0                        # Roll distance modifier (tiles)
+
+# Wind effect on ball curve (0-3 range, applied during flight)
+var wind_curve: int = 0                      # Tiles of lateral wind push
 
 # AOE (Area of Effect) data
 var aoe_tiles: Array[Vector2i] = []           # All tiles in AOE
@@ -32,20 +34,12 @@ var path_tiles: Array[Vector2i] = []          # Tiles along ball trajectory
 # Physics modifiers
 var max_bounces: int = 0                      # Allowed bounces
 var bounce_count: int = 0                     # Actual bounces during shot
-var roll_distance: float = 0.0                # Roll after landing
-var roll_distance_mult: float = 1.0           # Multiplier for roll distance
-var friction_mult: float = 1.0                # Multiplier for friction
-var elevation_influence: float = 1.0          # How much elevation affects shot
+var roll_distance: int = 0                    # Total roll tiles after landing
+var elevation_influence: float = 1.0          # How much elevation affects roll
 
-# Curve/spin modifiers
-var curve_strength: float = 0.0               # How much ball curves mid-flight
-var curve_delay: float = 0.0                  # Distance before curve activates
+# Curve for shaped shots (from cards)
+var curve_strength: float = 0.0               # How much ball curves mid-flight (from cards)
 var did_curve: bool = false                   # Whether ball curved this shot
-
-# Swing meter results (0.0 to 1.0)
-var swing_power: float = 1.0                  # Power from swing meter (1.0 = full power)
-var swing_accuracy: float = 1.0               # Accuracy from swing meter (1.0 = perfect)
-var swing_curve: float = 0.0                  # Curve from swing meter (-1 to +1, 0 = straight)
 
 # Scoring
 var base_chips: int = 0                       # Base chips from distance/path
@@ -67,11 +61,10 @@ func reset() -> void:
 	start_tile = Vector2i(-1, -1)
 	aim_tile = Vector2i(-1, -1)
 	landing_tile = Vector2i(-1, -1)
-	power_mod = 0.0
-	accuracy_mod = 0.0
-	spin_mod = 0.0
-	curve_mod = 0.0
-	roll_mod = 0.0
+	distance_mod = 0
+	accuracy_mod = 0
+	roll_mod = 0
+	wind_curve = 0
 	aoe_tiles.clear()
 	aoe_radius = 0  # Start at 0 (perfect accuracy)
 	aoe_shape = "circle"
@@ -79,16 +72,10 @@ func reset() -> void:
 	path_tiles.clear()
 	max_bounces = 0
 	bounce_count = 0
-	roll_distance = 0.0
-	roll_distance_mult = 1.0
-	friction_mult = 1.0
+	roll_distance = 0
 	elevation_influence = 1.0
 	curve_strength = 0.0
-	curve_delay = 0.0
 	did_curve = false
-	swing_power = 1.0
-	swing_accuracy = 1.0
-	swing_curve = 0.0
 	base_chips = 0
 	chips = 0
 	mult = 1.0

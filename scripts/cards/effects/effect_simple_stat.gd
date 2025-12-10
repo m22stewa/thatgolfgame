@@ -2,46 +2,43 @@ extends CardEffect
 class_name EffectSimpleStat
 
 ## Generic effect to modify simple stats in ShotContext.
-## Supports: power_mod, roll_mod, aoe_radius
+## Supports: distance_mod, accuracy_mod, roll_mod
 
-@export_enum("power_mod", "roll_mod", "aoe_radius") var target_stat: String = "power_mod"
-@export var value: float = 1.0
+@export_enum("distance_mod", "accuracy_mod", "roll_mod", "curve_strength") var target_stat: String = "distance_mod"
+@export var value: int = 1
 @export var set_mode: bool = false # If true, sets the value instead of adding
 
 func _init() -> void:
 	effect_id = "simple_stat"
 	effect_name = "Stat Modifier"
-	# Phase depends on stat
-	# power_mod -> BeforeAim (0)
-	# aoe_radius -> OnAOE (1)
-	# roll_mod -> OnLanding (2) (or BeforeAim, but context says lie info affects modifiers)
+	# Phase depends on stat - all apply before aim for simplicity
 	apply_phase = 0 
 	trigger_condition = 0
 
 func apply_before_aim(context: ShotContext, _upgrade: int = 0) -> void:
-	if target_stat == "power_mod":
-		if set_mode:
-			context.power_mod = value
-		else:
-			context.power_mod += value
-
-func apply_on_aoe(context: ShotContext, _upgrade: int = 0) -> void:
-	if target_stat == "aoe_radius":
-		if set_mode:
-			context.aoe_radius = int(value)
-		else:
-			context.aoe_radius += int(value)
-			# Ensure minimum 0
-			if context.aoe_radius < 0:
-				context.aoe_radius = 0
-
-func apply_on_landing(context: ShotContext, _upgrade: int = 0) -> void:
-	if target_stat == "roll_mod":
-		if set_mode:
-			context.roll_mod = value
-		else:
-			context.roll_mod += value
+	match target_stat:
+		"distance_mod":
+			if set_mode:
+				context.distance_mod = value
+			else:
+				context.distance_mod += value
+		"accuracy_mod":
+			if set_mode:
+				context.accuracy_mod = value
+			else:
+				context.accuracy_mod += value
+		"roll_mod":
+			if set_mode:
+				context.roll_mod = value
+			else:
+				context.roll_mod += value
+		"curve_strength":
+			if set_mode:
+				context.curve_strength = value
+			else:
+				context.curve_strength += value
 
 func get_description(_upgrade_level: int = 0) -> String:
 	var op = "+" if value >= 0 else ""
-	return "%s %s%s" % [target_stat, op, str(value)]
+	var stat_name = target_stat.replace("_mod", "").capitalize()
+	return "%s %s%d" % [stat_name, op, value]

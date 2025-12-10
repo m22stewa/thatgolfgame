@@ -12,10 +12,8 @@ class_name LieSystem
 ## - GREEN: Putting surface. Not typically hit from (chipping possible).
 
 ## Lie data structure - all values are additive modifiers (+/- from baseline)
-## power_mod: Tiles added/subtracted from max distance
+## distance_mod: Tiles added/subtracted from max distance
 ## accuracy_mod: AOE rings added (positive = less accurate, bigger AOE)
-## spin_mod: Spin effectiveness change
-## curve_mod: Curve/shape effectiveness change  
 ## roll_mod: Roll tiles added/subtracted
 ## chip_bonus: Additive bonus/penalty to chips scored
 ## mult_bonus: Additive bonus/penalty to scoring multiplier
@@ -24,10 +22,8 @@ const LIE_DATA = {
 	"TEE": {
 		"display_name": "Tee Box",
 		"description": "Perfect lie on a tee. Full power and control.",
-		"power_mod": 0,        # No change - baseline
+		"distance_mod": 0,     # No change - baseline
 		"accuracy_mod": 0,     # Normal AOE
-		"spin_mod": 0.0,
-		"curve_mod": 0.0,
 		"roll_mod": 0,
 		"chip_bonus": 5,
 		"mult_bonus": 0.0,
@@ -37,10 +33,8 @@ const LIE_DATA = {
 	"FAIRWAY": {
 		"display_name": "Fairway",
 		"description": "Clean lie on short grass. Excellent contact.",
-		"power_mod": 0,        # Standard distance
+		"distance_mod": 0,     # Standard distance
 		"accuracy_mod": 0,
-		"spin_mod": 0.0,
-		"curve_mod": 0.0,
 		"roll_mod": 0,
 		"chip_bonus": 0,
 		"mult_bonus": 0.1,
@@ -49,11 +43,9 @@ const LIE_DATA = {
 	},
 	"ROUGH": {
 		"display_name": "Rough",
-		"description": "Ball in longer grass. Reduced distance and spin.",
-		"power_mod": -4,       # 4 tiles less distance
+		"description": "Ball in longer grass. Reduced distance.",
+		"distance_mod": -2,    # 2 tiles less distance
 		"accuracy_mod": 1,     # +1 AOE ring (less accurate)
-		"spin_mod": -0.5,
-		"curve_mod": -0.3,
 		"roll_mod": -1,
 		"chip_bonus": -5,
 		"mult_bonus": 0.0,
@@ -63,10 +55,8 @@ const LIE_DATA = {
 	"DEEP_ROUGH": {
 		"display_name": "Deep Rough",
 		"description": "Ball buried in thick grass. Major power and control loss.",
-		"power_mod": -8,       # 8 tiles less distance
+		"distance_mod": -4,    # 4 tiles less distance
 		"accuracy_mod": 2,     # +2 AOE rings (very inaccurate)
-		"spin_mod": -0.8,
-		"curve_mod": -0.7,
 		"roll_mod": -2,
 		"chip_bonus": -15,
 		"mult_bonus": -0.2,
@@ -76,11 +66,9 @@ const LIE_DATA = {
 	"SAND": {
 		"display_name": "Bunker",
 		"description": "Sand trap. Use sand wedge for best results.",
-		"power_mod": -6,       # 6 tiles less distance
-		"accuracy_mod": 1,     # +1 AOE ring
-		"spin_mod": 0.5,       # Can get more spin from sand
-		"curve_mod": -0.6,
-		"roll_mod": -2,
+		"distance_mod": -6,    # 6 tiles less distance
+		"accuracy_mod": 3,     # +3 AOE rings
+		"roll_mod": -3,
 		"chip_bonus": -20,
 		"mult_bonus": 0.0,
 		"preferred_club": "SAND_WEDGE",
@@ -90,11 +78,9 @@ const LIE_DATA = {
 	"GREEN": {
 		"display_name": "Green",
 		"description": "Putting surface. Putter only.",
-		"power_mod": -15,      # Very short - chip only if not putting
-		"accuracy_mod": -1,    # More accurate for chips
-		"spin_mod": 0.0,
-		"curve_mod": 0.0,
-		"roll_mod": 2,         # Ball rolls more on green
+		"distance_mod": 0,
+		"accuracy_mod": 0,
+		"roll_mod": 0,
 		"chip_bonus": 0,
 		"mult_bonus": 0.0,
 		"preferred_club": "PUTTER",
@@ -104,10 +90,8 @@ const LIE_DATA = {
 	"WATER": {
 		"display_name": "Water",
 		"description": "Penalty area. Drop required.",
-		"power_mod": -100,     # Can't hit from water
+		"distance_mod": -100,  # Can't hit from water
 		"accuracy_mod": 0,
-		"spin_mod": 0.0,
-		"curve_mod": 0.0,
 		"roll_mod": 0,
 		"chip_bonus": -50,
 		"mult_bonus": -0.5,
@@ -117,11 +101,9 @@ const LIE_DATA = {
 	"TREE": {
 		"display_name": "Trees",
 		"description": "Obstructed lie. Limited swing options.",
-		"power_mod": -10,
-		"accuracy_mod": 2,     # Very inaccurate
-		"spin_mod": -0.7,
-		"curve_mod": -0.8,
-		"roll_mod": -1,
+		"distance_mod": -6,
+		"accuracy_mod": 3,     # Very inaccurate
+		"roll_mod": -2,
 		"chip_bonus": -25,
 		"mult_bonus": -0.3,
 		"allowed_clubs": ["IRON_7", "IRON_8", "IRON_9", "PITCHING_WEDGE", "SAND_WEDGE"],
@@ -130,10 +112,8 @@ const LIE_DATA = {
 	"FLAG": {
 		"display_name": "Hole",
 		"description": "In the cup!",
-		"power_mod": 0,
+		"distance_mod": 0,
 		"accuracy_mod": 0,
-		"spin_mod": 0.0,
-		"curve_mod": 0.0,
 		"roll_mod": 0,
 		"chip_bonus": 100,
 		"mult_bonus": 1.0,
@@ -193,67 +173,14 @@ func calculate_lie(hex_grid: Node, tile: Vector2i) -> Dictionary:
 	lie_data["surface_type"] = surface_type
 	lie_data["lie_name"] = get_lie_name(surface_type)
 	
-	# Calculate elevation effect (uphill/downhill)
+	# Store elevation for physics (roll affected by elevation)
 	var elevation = hex_grid.get_elevation(tile.x, tile.y)
 	lie_data["elevation"] = elevation
-	
-	# Check for slope effects
-	var slope_info = _calculate_slope_effect(hex_grid, tile)
-	lie_data["slope_direction"] = slope_info.direction
-	lie_data["slope_strength"] = slope_info.strength
-	
-	# Uphill lies reduce power slightly, downhill can add distance
-	if slope_info.strength > 0.1:
-		if slope_info.direction == "uphill":
-			lie_data["power_mod"] -= int(slope_info.strength * 2)  # Lose distance uphill
-			lie_data["description"] += " Uphill stance."
-		elif slope_info.direction == "downhill":
-			lie_data["power_mod"] += int(slope_info.strength)  # Gain distance downhill
-			lie_data["description"] += " Downhill stance."
-		elif slope_info.direction == "sidehill_left" or slope_info.direction == "sidehill_right":
-			lie_data["accuracy_mod"] += 1  # Lose accuracy on sidehill
-			lie_data["description"] += " Sidehill lie."
 	
 	current_lie_info = lie_data
 	lie_calculated.emit(lie_data)
 	
 	return lie_data
-
-
-## Calculate slope at a tile position
-func _calculate_slope_effect(hex_grid: Node, tile: Vector2i) -> Dictionary:
-	var result = {"direction": "flat", "strength": 0.0}
-	
-	if not hex_grid.has_method("get_elevation"):
-		return result
-	
-	var center_elev = hex_grid.get_elevation(tile.x, tile.y)
-	
-	# Check neighbors for slope
-	var north_elev = hex_grid.get_elevation(tile.x, tile.y + 1)
-	var south_elev = hex_grid.get_elevation(tile.x, tile.y - 1)
-	var east_elev = hex_grid.get_elevation(tile.x + 1, tile.y)
-	var west_elev = hex_grid.get_elevation(tile.x - 1, tile.y)
-	
-	# North-South slope (assuming hitting toward positive Y/north)
-	var ns_slope = north_elev - south_elev
-	# East-West slope
-	var ew_slope = east_elev - west_elev
-	
-	if abs(ns_slope) > abs(ew_slope):
-		result.strength = abs(ns_slope)
-		if ns_slope > 0.1:
-			result.direction = "uphill"
-		elif ns_slope < -0.1:
-			result.direction = "downhill"
-	else:
-		result.strength = abs(ew_slope)
-		if ew_slope > 0.1:
-			result.direction = "sidehill_right"
-		elif ew_slope < -0.1:
-			result.direction = "sidehill_left"
-	
-	return result
 
 
 ## Apply lie effects to a ShotContext
@@ -263,16 +190,14 @@ func apply_lie_to_shot(context: ShotContext, lie_info: Dictionary) -> void:
 		return
 	
 	# Set the additive modifier fields on the context
-	context.power_mod += lie_info.get("power_mod", 0)
+	context.distance_mod += lie_info.get("distance_mod", 0)
 	context.accuracy_mod += lie_info.get("accuracy_mod", 0)
-	context.spin_mod += lie_info.get("spin_mod", 0.0)
-	context.curve_mod += lie_info.get("curve_mod", 0.0)
 	context.roll_mod += lie_info.get("roll_mod", 0)
 	
 	# Store lie info in context metadata (for UI and debugging)
 	context.add_metadata("lie_info", lie_info)
 	context.add_metadata("lie_name", lie_info.get("lie_name", "FAIRWAY"))
-	context.add_metadata("power_mod", lie_info.get("power_mod", 0))
+	context.add_metadata("distance_mod", lie_info.get("distance_mod", 0))
 	context.add_metadata("accuracy_mod", lie_info.get("accuracy_mod", 0))
 	context.add_metadata("allowed_clubs", lie_info.get("allowed_clubs", []))
 	context.add_metadata("preferred_club", lie_info.get("preferred_club", ""))
@@ -303,21 +228,13 @@ func get_lie_debug_string(lie_info: Dictionary) -> String:
 	lines.append("")
 	lines.append("[u]Modifiers:[/u]")
 	
-	var power_mod = lie_info.get("power_mod", 0)
-	if power_mod != 0:
-		lines.append("Distance: %s%d tiles" % ["+" if power_mod > 0 else "", power_mod])
+	var distance_mod = lie_info.get("distance_mod", 0)
+	if distance_mod != 0:
+		lines.append("Distance: %s%d tiles" % ["+" if distance_mod > 0 else "", distance_mod])
 	
 	var accuracy_mod = lie_info.get("accuracy_mod", 0)
 	if accuracy_mod != 0:
 		lines.append("Accuracy: %s%d AOE" % ["+" if accuracy_mod > 0 else "", accuracy_mod])
-	
-	var spin_mod = lie_info.get("spin_mod", 0.0)
-	if spin_mod != 0.0:
-		lines.append("Spin: %s%.1f" % ["+" if spin_mod > 0 else "", spin_mod])
-	
-	var curve_mod = lie_info.get("curve_mod", 0.0)
-	if curve_mod != 0.0:
-		lines.append("Curve: %s%.1f" % ["+" if curve_mod > 0 else "", curve_mod])
 	
 	var roll_mod = lie_info.get("roll_mod", 0)
 	if roll_mod != 0:
@@ -331,17 +248,10 @@ func get_lie_debug_string(lie_info: Dictionary) -> String:
 		var bonus = lie_info.get("mult_bonus", 0.0)
 		lines.append("Mult: %s%.1f" % ["+" if bonus > 0 else "", bonus])
 	
-	if lie_info.get("slope_strength", 0.0) > 0.1:
-		lines.append("")
-		lines.append("Slope: %s (%.0f%%)" % [
-			lie_info.get("slope_direction", "flat").capitalize().replace("_", " "),
-			lie_info.get("slope_strength", 0.0) * 100
-		])
-	
 	return "\n".join(lines)
 
 
 ## Get max club distance modified by lie (additive)
 func get_modified_distance(base_distance: int, lie_info: Dictionary) -> int:
-	var power_mod = lie_info.get("power_mod", 0)
-	return maxi(1, base_distance + power_mod)
+	var distance_mod = lie_info.get("distance_mod", 0)
+	return maxi(1, base_distance + distance_mod)

@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=6 format=3 uid="uid://dqg81oku4go6x"]
+
+[ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="1_tjpis"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_01qqc"]
+
+[sub_resource type="Resource" id="Resource_effect"]
+script = ExtResource("1_tjpis")
+value = -3
+set_mode = true
+
+[sub_resource type="Resource" id="Resource_1cs8j"]
+script = ExtResource("1_tjpis")
+target_stat = "accuracy_mod"
+value = 3
+set_mode = true
+metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
+
+[sub_resource type="Resource" id="Resource_qxvaq"]
+script = ExtResource("1_tjpis")
+target_stat = "roll_mod"
+value = -1
+set_mode = true
+metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
+
+[resource]
+script = ExtResource("2_01qqc")
+card_id = "safe_layup"
+card_name = "Safe Layup"
+flavor_text = "Layup"
+rarity = 1
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_1cs8j"), SubResource("Resource_qxvaq")])

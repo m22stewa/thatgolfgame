@@ -68,9 +68,36 @@ layout_mode = 0
 offset_right = 800.0
 offset_bottom = 1080.0
 
+[node name="ClubDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
+layout_mode = 1
+anchors_preset = 2
+anchor_left = 0.0
+anchor_right = 0.0
+offset_left = 735.0
+offset_top = -840.0
+offset_right = 1485.0
+offset_bottom = -196.0
+grow_horizontal = 1
+deck_type = 1
+card_back_texture = ExtResource("7_oi40j")
+card_front_texture = ExtResource("7_oi40j")
+interaction_mode = 1
+
+[node name="WindWidget" parent="." instance=ExtResource("4_wind")]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -1900.0
+offset_top = 14.0
+offset_right = -1770.0
+offset_bottom = 144.0
+grow_horizontal = 0
+
 [node name="ShotUI" parent="." instance=ExtResource("2_shot_ui")]
 layout_mode = 1
 mouse_filter = 2
+bypass_card_selection = false
 
 [node name="LieInfoPanel" type="PanelContainer" parent="."]
 unique_name_in_owner = true
@@ -123,38 +150,12 @@ fit_content = true
 
 [node name="ModifierDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
 layout_mode = 1
-offset_left = -640.0
-offset_top = -510.0
-offset_right = -129.0
-offset_bottom = -29.0
+offset_left = -629.0
+offset_top = -739.0
+offset_right = -168.0
+offset_bottom = -305.0
 card_back_texture = ExtResource("7_oi40j")
 card_front_texture = ExtResource("7_oi40j")
-
-[node name="ClubDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
-layout_mode = 1
-anchors_preset = 2
-anchor_left = 0.0
-anchor_right = 0.0
-offset_left = 874.0
-offset_top = -506.0
-offset_right = 1346.0
-offset_bottom = -34.0
-grow_horizontal = 1
-deck_type = 1
-card_back_texture = ExtResource("7_oi40j")
-card_front_texture = ExtResource("7_oi40j")
-interaction_mode = 1
-
-[node name="WindWidget" parent="." instance=ExtResource("4_wind")]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -1900.0
-offset_top = 14.0
-offset_right = -1770.0
-offset_bottom = 144.0
-grow_horizontal = 0
 
 [node name="LieView" parent="." instance=ExtResource("5_lie_view")]
 layout_mode = 1
@@ -252,10 +253,10 @@ horizontal_alignment = 1
 [node name="SwingMeter" parent="." instance=ExtResource("7_swing_meter")]
 layout_mode = 1
 anchors_preset = -1
-anchor_left = 0.6848958
-anchor_top = 0.43888888
-anchor_right = 0.6848958
-anchor_bottom = 0.43888888
+anchor_left = 1.1390625
+anchor_top = 0.43796295
+anchor_right = 1.1390625
+anchor_bottom = 0.43796295
 offset_left = 0.0
 offset_top = 0.0
 offset_right = 0.0

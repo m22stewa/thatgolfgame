@@ -26,13 +26,18 @@ const ShotNumberScene = preload("res://scenes/ui/shot_number.tscn")
 @onready var target_terrain: Label = %TargetTerrain
 @onready var target_distance: Label = %TargetDistance
 
-@onready var confirm_button: Button = %ConfirmButton
+@onready var swing_button: Button = %ConfirmButton  # Renamed: Swing button to confirm shot
 @onready var score_popup: PanelContainer = $ScorePopup
 
-# Swing meter instance
+# Shot prerequisite tracking
+var tile_selected: bool = false       # Player has locked a target tile
+var swing_card_selected: bool = false # Player picked a card from swing deck
+var modifier_drawn: bool = false      # Player drew from modifier deck (or skipped)
+
+# Legacy swing meter (deprecated but kept for compatibility)
 var swing_meter: SwingMeter = null
 
-# Current shot difficulty (for swing meter)
+# Current shot difficulty (for display)
 var current_club_difficulty: float = 0.5
 var current_lie_difficulty: float = 0.0
 var current_power_cap: float = 1.0
@@ -119,8 +124,11 @@ func _ready() -> void:
 	score_popup.visible = false
 	hole_complete_popup.visible = false
 	
-	# Hide the confirm button - swing meter replaces it
-	confirm_button.visible = false
+	# Setup swing button (starts disabled, enabled when prerequisites met)
+	swing_button.visible = true
+	swing_button.disabled = true
+	swing_button.text = "SWING"
+	swing_button.pressed.connect(_on_swing_button_pressed)
 	
 	# Connect button signals
 	next_button.pressed.connect(_on_next_hole_pressed)
@@ -190,6 +198,77 @@ func _update_chips_display(amount: int) -> void:
 	displayed_chips = amount
 
 
+# --- Swing Button Prerequisites ---
+
+# Set to true to bypass card selection requirements (for testing or simplified mode)
+@export var bypass_card_selection: bool = true
+
+func reset_shot_prerequisites() -> void:
+	"""Reset all prerequisites for a new shot"""
+	tile_selected = false
+	# If bypassing cards, auto-set to true
+	swing_card_selected = bypass_card_selection
+	modifier_drawn = bypass_card_selection
+	_update_swing_button_state()
+
+
+func set_tile_selected(selected: bool) -> void:
+	"""Called when player locks/unlocks a target tile"""
+	print("[ShotUI] set_tile_selected(%s)" % selected)
+	tile_selected = selected
+	_update_swing_button_state()
+
+
+func set_swing_card_selected(selected: bool) -> void:
+	"""Called when player picks a card from the swing deck"""
+	print("[ShotUI] set_swing_card_selected(%s)" % selected)
+	swing_card_selected = selected
+	_update_swing_button_state()
+
+
+func set_modifier_drawn(drawn: bool) -> void:
+	"""Called when player draws from modifier deck (or skips)"""
+	print("[ShotUI] set_modifier_drawn(%s)" % drawn)
+	modifier_drawn = drawn
+	_update_swing_button_state()
+
+
+func _update_swing_button_state() -> void:
+	"""Enable swing button only when all prerequisites are met"""
+	var all_ready = tile_selected and swing_card_selected and modifier_drawn
+	
+	# Debug output
+	print("[ShotUI] Prerequisites: tile=%s, swing_card=%s, modifier=%s -> all_ready=%s" % [tile_selected, swing_card_selected, modifier_drawn, all_ready])
+	
+	if swing_button:
+		swing_button.disabled = not all_ready
+		print("[ShotUI] Button disabled = %s" % swing_button.disabled)
+	else:
+		push_error("[ShotUI] swing_button is null!")
+	
+	# Update button tooltip based on missing prerequisites
+	if all_ready:
+		if swing_button:
+			swing_button.tooltip_text = "Click to take your shot!"
+	else:
+		var missing: Array[String] = []
+		if not tile_selected:
+			missing.append("Select landing tile")
+		if not swing_card_selected:
+			missing.append("Pick swing card")
+		if not modifier_drawn:
+			missing.append("Draw modifier")
+		if swing_button:
+			swing_button.tooltip_text = "Need: " + ", ".join(missing)
+
+
+func _on_swing_button_pressed() -> void:
+	"""Called when player clicks the Swing button"""
+	if not swing_button.disabled:
+		# Trigger shot confirmation (same as old swing meter completion)
+		_on_swing_completed(1.0, 0.0, 0.0)
+
+
 func set_hole_info(hole: int, par: int, yardage: int) -> void:
 	"""Update hole information display"""
 	current_hole = hole
@@ -247,30 +326,13 @@ func update_current_terrain(terrain_type: int) -> void:
 
 
 func update_target_info(terrain_type: int, distance: int) -> void:
-	"""Update target terrain and distance"""
+	"""Update target terrain and distance, and track tile selection"""
 	target_terrain.text = terrain_names.get(terrain_type, "---")
 	target_distance.text = "%d yds" % distance
 	
-	# Check if club is selected
-	var club_selected = true
-	if hole_controller and hole_controller.has_method("is_club_selected"):
-		club_selected = hole_controller.is_club_selected()
-	
-	# Show swing meter when target is valid and club is selected
-	if terrain_type >= 0 and swing_meter and club_selected:
-		if not swing_meter.visible:
-			# Configure swing meter for current club/lie
-			swing_meter.configure_for_shot(current_club_difficulty, current_lie_difficulty, current_power_cap)
-			swing_meter.show_meter(1.0)
-			
-			# Force layout update to ensure track width is correct
-			swing_meter.reset_size()
-			swing_meter.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-			# Set fixed offset from bottom (don't accumulate)
-			swing_meter.anchor_top = 1.0
-			swing_meter.anchor_bottom = 1.0
-			swing_meter.offset_top = -150
-			swing_meter.offset_bottom = -50
+	# Track tile selection state
+	var valid_target = terrain_type >= 0
+	set_tile_selected(valid_target)
 
 
 func update_club_display() -> void:
@@ -278,58 +340,31 @@ func update_club_display() -> void:
 	var club = clubs[selected_club]
 	club_name.text = club[0]
 	club_range.text = "%d-%d yds" % [club[1], club[2]]
-	_update_club_difficulty()
 
 
 func update_lie_info(lie_info: Dictionary) -> void:
-	"""Calculate difficulty for swing meter based on lie"""
+	"""Update UI with lie information"""
 	
-	# Store lie info for recalculating when club changes
+	# Store lie info for reference
 	current_lie_info = lie_info
 	
-	# Get lie info for difficulty calculations
+	# Get lie info
 	var lie_name = lie_info.get("lie_name", "FAIRWAY")
 	var accuracy_mod = lie_info.get("accuracy_mod", 0)
-	var power_mod = lie_info.get("power_mod", 0)
+	var distance_mod = lie_info.get("distance_mod", 0)
 	
-	# Calculate lie difficulty (0.0 = easy, 1.0 = hard)
+	# Calculate lie difficulty for display (0.0 = easy, 1.0 = hard)
 	# Based on accuracy_mod: 0 = easy, 2+ = hard
 	current_lie_difficulty = clamp(accuracy_mod / 2.0, 0.0, 1.0)
 	
 	# Check if current club is appropriate for this lie
-	# Hitting driver off fairway is harder, off rough is very hard
 	var allowed_clubs = lie_info.get("allowed_clubs", [])
 	var club_name = _get_current_club_name()
 	var club_is_appropriate = allowed_clubs.is_empty() or club_name in allowed_clubs
 	
-	# If club is not appropriate for the lie, increase difficulty significantly
+	# If club is not appropriate for the lie, increase difficulty display
 	if not club_is_appropriate:
 		current_lie_difficulty = min(current_lie_difficulty + 0.5, 1.0)
-	
-	# Calculate power cap from power_mod AND club appropriateness
-	# power_mod of -15 or worse = can't hit at full power
-	if power_mod <= -15:
-		current_power_cap = 0.3  # Very limited power (chip only)
-	elif power_mod <= -8:
-		current_power_cap = 0.6  # Moderate power limit
-	elif power_mod <= -4:
-		current_power_cap = 0.8  # Slight power limit
-	else:
-		current_power_cap = 1.0  # Full power
-	
-	# Further limit power if club doesn't suit the lie
-	# E.g., driver off rough = only 70% max power
-	if not club_is_appropriate:
-		current_power_cap = min(current_power_cap, 0.7)
-	
-	# Special case: Long clubs (Driver, Woods) off fairway (not tee) should be harder
-	# BUT woods should still get full power, just slightly harder swing
-	if club_name == "DRIVER" and lie_name == "FAIRWAY":
-		current_lie_difficulty = max(current_lie_difficulty, 0.4)  # At least medium difficulty
-		current_power_cap = min(current_power_cap, 0.9)  # Slight power limit
-	elif (club_name == "WOOD_3" or club_name == "WOOD_5") and lie_name == "FAIRWAY":
-		current_lie_difficulty = max(current_lie_difficulty, 0.3)  # Moderate difficulty
-		# Woods get full power off fairway - they're designed for this
 
 
 func _get_current_club_name() -> String:
@@ -407,7 +442,7 @@ func _update_club_difficulty() -> void:
 		# Re-run lie calculations with current club
 		var lie_name = current_lie_info.get("lie_name", "FAIRWAY")
 		var accuracy_mod = current_lie_info.get("accuracy_mod", 0)
-		var power_mod = current_lie_info.get("power_mod", 0)
+		var distance_mod = current_lie_info.get("distance_mod", 0)
 		var allowed_clubs = current_lie_info.get("allowed_clubs", [])
 		var club_name = _get_current_club_name()
 		var club_is_appropriate = allowed_clubs.is_empty() or club_name in allowed_clubs
@@ -418,28 +453,6 @@ func _update_club_difficulty() -> void:
 		# If club is not appropriate for the lie, increase difficulty
 		if not club_is_appropriate:
 			current_lie_difficulty = min(current_lie_difficulty + 0.5, 1.0)
-		
-		# Calculate power cap
-		if power_mod <= -15:
-			current_power_cap = 0.3
-		elif power_mod <= -8:
-			current_power_cap = 0.6
-		elif power_mod <= -4:
-			current_power_cap = 0.8
-		else:
-			current_power_cap = 1.0
-		
-		# Further limit power if club doesn't suit the lie
-		if not club_is_appropriate:
-			current_power_cap = min(current_power_cap, 0.7)
-		
-		# Special case: Long clubs (Driver, Woods) off fairway (not tee)
-		if club_name == "DRIVER" and lie_name == "FAIRWAY":
-			current_lie_difficulty = max(current_lie_difficulty, 0.4)
-			current_power_cap = min(current_power_cap, 0.9)
-		elif (club_name == "WOOD_3" or club_name == "WOOD_5") and lie_name == "FAIRWAY":
-			current_lie_difficulty = max(current_lie_difficulty, 0.3)
-			# Woods get full power off fairway - they're designed for this
 
 
 func next_club() -> void:
@@ -560,6 +573,9 @@ func hide_hole_complete() -> void:
 
 func _on_shot_started(context: ShotContext) -> void:
 	"""Called when a new shot begins"""
+	# Reset prerequisites for the new shot
+	reset_shot_prerequisites()
+	
 	# Use run_state stroke count if available, otherwise fall back to context
 	var stroke_count = run_state.strokes_this_hole if run_state else context.shot_index
 	update_shot_info(stroke_count, 0)
@@ -568,10 +584,6 @@ func _on_shot_started(context: ShotContext) -> void:
 	if hole_controller and context.start_tile.x >= 0:
 		var terrain = hole_controller.get_cell(context.start_tile.x, context.start_tile.y)
 		update_current_terrain(terrain)
-	
-	# Don't hide swing meter here - if user pre-aimed, we want it visible!
-	# if swing_meter:
-	# 	swing_meter.hide_meter()
 
 
 func _on_aoe_computed(context: ShotContext) -> void:
@@ -584,12 +596,14 @@ func _on_aoe_computed(context: ShotContext) -> void:
 
 func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot finishes"""
-	# Logic moved to hex_grid.gd to coordinate with ball animation
-	pass
+	# Reset prerequisites for the next shot
+	reset_shot_prerequisites()
 
 
 func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> void:
-	"""Called when player completes the 3-click swing"""
+	"""Called when player completes the swing.
+	With new system, swing button just confirms shot - accuracy is determined by stats.
+	Power/accuracy/curve_mod params kept for backwards compatibility but not used."""
 	
 	if not shot_manager:
 		push_error("ShotUI: No shot_manager reference! Cannot confirm shot.")
@@ -612,11 +626,8 @@ func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> voi
 					var adjusted = hole_controller.get_shape_adjusted_landing(hole_controller.locked_cell)
 					shot_manager.set_aim_target(adjusted)
 	
-	# Store swing meter results directly in context
-	var ctx = shot_manager.current_context
-	ctx.swing_power = power
-	ctx.swing_accuracy = 1.0 - abs(accuracy)  # accuracy is offset from zone, convert to 0-1
-	ctx.swing_curve = curve_mod
+	# Stats are already set in context from club/lie/wind/cards
+	# No need to set swing_power/accuracy/curve - those are deprecated
 	
 	# Now confirm the shot
 	shot_manager.confirm_shot()

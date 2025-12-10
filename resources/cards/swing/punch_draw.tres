@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=6 format=3 uid="uid://cpdjeirbp3okg"]
+
+[ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="1_ec7mn"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_g0k06"]
+
+[sub_resource type="Resource" id="Resource_effect"]
+script = ExtResource("1_ec7mn")
+value = -1
+set_mode = true
+
+[sub_resource type="Resource" id="Resource_1cs8j"]
+script = ExtResource("1_ec7mn")
+target_stat = "accuracy_mod"
+set_mode = true
+metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
+
+[sub_resource type="Resource" id="Resource_dhdy5"]
+script = ExtResource("1_ec7mn")
+target_stat = "curve_strength"
+value = -1
+set_mode = true
+metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
+
+[resource]
+script = ExtResource("2_g0k06")
+card_id = "punch_draw"
+card_name = "Punch Draw"
+flavor_text = "Draw"
+rarity = 1
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_1cs8j"), SubResource("Resource_dhdy5")])

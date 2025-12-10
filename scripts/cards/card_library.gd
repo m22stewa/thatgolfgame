@@ -130,7 +130,7 @@ func _register_golf_cards() -> void:
 		slightly_short.tags = ["distance"]
 		
 		var ss_effect = EffectSimpleStat.new()
-		ss_effect.target_stat = "power_mod"
+		ss_effect.target_stat = "distance_mod"
 		ss_effect.value = -1
 		slightly_short.effects.append(ss_effect)
 		_register(slightly_short)
@@ -144,7 +144,7 @@ func _register_golf_cards() -> void:
 		way_short.tags = ["distance"]
 		
 		var ws_effect = EffectSimpleStat.new()
-		ws_effect.target_stat = "power_mod"
+		ws_effect.target_stat = "distance_mod"
 		ws_effect.value = -2
 		way_short.effects.append(ws_effect)
 		_register(way_short)
@@ -158,7 +158,7 @@ func _register_golf_cards() -> void:
 		solid_contact.tags = ["distance"]
 		
 		var sc_effect = EffectSimpleStat.new()
-		sc_effect.target_stat = "power_mod"
+		sc_effect.target_stat = "distance_mod"
 		sc_effect.value = 1
 		solid_contact.effects.append(sc_effect)
 		_register(solid_contact)
@@ -172,7 +172,7 @@ func _register_golf_cards() -> void:
 		crushed_it.tags = ["distance"]
 		
 		var ci_effect = EffectSimpleStat.new()
-		ci_effect.target_stat = "power_mod"
+		ci_effect.target_stat = "distance_mod"
 		ci_effect.value = 2
 		crushed_it.effects.append(ci_effect)
 		_register(crushed_it)
@@ -181,12 +181,12 @@ func _register_golf_cards() -> void:
 	if not _cards.has("shank"):
 		var shank = CardData.create("shank", "Shank", CardData.Rarity.UNCOMMON)
 		shank.card_type = CardData.CardType.SHOT
-		shank.description = "AOE radius +1 ring."
+		shank.description = "Accuracy +1 ring (less accurate)."
 		shank.flavor_text = "Less accurate shot, larger landing zone."
 		shank.tags = ["accuracy"]
 		
 		var shank_effect = EffectSimpleStat.new()
-		shank_effect.target_stat = "aoe_radius"
+		shank_effect.target_stat = "accuracy_mod"
 		shank_effect.value = 1
 		shank.effects.append(shank_effect)
 		_register(shank)
@@ -195,7 +195,7 @@ func _register_golf_cards() -> void:
 	if not _cards.has("wild_push"):
 		var wild_push = CardData.create("wild_push", "Wild Push", CardData.Rarity.UNCOMMON)
 		wild_push.card_type = CardData.CardType.SHOT
-		wild_push.description = "AOE radius +1 ring; add small curve toward miss side."
+		wild_push.description = "Accuracy +1 ring; adds curve toward miss side."
 		wild_push.flavor_text = "Feels like a directional hook/slice miss."
 		wild_push.tags = ["accuracy", "curve"]
 		
@@ -206,7 +206,7 @@ func _register_golf_cards() -> void:
 		
 		var wp_curve = EffectCurveShot.new()
 		wp_curve.curve_direction = 2 # Random
-		wp_curve.curve_strength = 0.2
+		wp_curve.curve_tiles = 1
 		wild_push.effects.append(wp_curve)
 		_register(wild_push)
 	
@@ -356,7 +356,7 @@ func _register_uncommon_cards() -> void:
 	
 	var hs_effect = EffectCurveShot.new()
 	hs_effect.curve_direction = 0  # Left
-	hs_effect.curve_strength = 0.4
+	hs_effect.curve_tiles = 2
 	hs_effect.bonus_on_curve_land = 15
 	hook_shot.effects.append(hs_effect)
 	_register(hook_shot)
@@ -369,7 +369,7 @@ func _register_uncommon_cards() -> void:
 	
 	var ss_effect = EffectCurveShot.new()
 	ss_effect.curve_direction = 1  # Right
-	ss_effect.curve_strength = 0.4
+	ss_effect.curve_tiles = 2
 	ss_effect.bonus_on_curve_land = 15
 	slice_shot.effects.append(ss_effect)
 	_register(slice_shot)
@@ -502,7 +502,7 @@ func _register_legendary_cards() -> void:
 	
 	var chaos_curve = EffectCurveShot.new()
 	chaos_curve.curve_direction = 2  # Random
-	chaos_curve.curve_strength = 0.6
+	chaos_curve.curve_tiles = 3
 	chaos_curve.bonus_on_curve_land = 40
 	chaos.effects.append(chaos_curve)
 	

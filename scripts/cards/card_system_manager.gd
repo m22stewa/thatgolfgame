@@ -6,24 +6,27 @@ class_name CardSystemManager
 
 # References to external systems (set via setup or found automatically)
 var deck_manager: DeckManager = null
-var club_deck_manager: DeckManager = null
+var club_deck_manager: DeckManager = null  # "Swing Deck" in the new flow
 var modifier_manager: ModifierManager = null
 var shot_manager: ShotManager = null
 var card_library: CardLibrary = null
+var shot_ui: ShotUI = null  # For updating swing button prerequisites
 
 @export_group("Deck Configuration")
 @export var starter_deck_definition: DeckDefinition
-@export var club_deck_definition: DeckDefinition
+@export var club_deck_definition: DeckDefinition  # This is the "Swing Deck"
 
 # UI reference
 var deck_view: DeckView3D = null
 var club_deck_view: DeckView3D = null
-var deck_widget: Control = null
-var club_deck_widget: Control = null
+var deck_widget: Control = null  # Modifier deck widget
+var club_deck_widget: Control = null  # Swing deck widget
 
 # Signals for external systems
 signal card_system_ready()
 signal deck_changed()
+signal swing_card_selected(card: CardInstance)  # When player picks from swing deck
+signal modifier_card_drawn(card: CardInstance)  # When player draws from modifier deck
 
 # Active card modifiers (cards that are currently affecting the shot)
 var active_card_modifiers: Array[CardModifier] = []
@@ -47,6 +50,10 @@ func _auto_setup() -> void:
 	# Find ShotManager if not already set
 	if shot_manager == null:
 		shot_manager = _find_node_by_class("ShotManager")
+	
+	# Find ShotUI if not already set
+	if shot_ui == null:
+		shot_ui = _find_node_by_class("ShotUI")
 	
 	# Connect to shot lifecycle if ShotManager found
 	if shot_manager:
@@ -86,33 +93,46 @@ func _auto_setup() -> void:
 
 
 # --- Turn Selection Flow ---
+# New flow: Tile -> Swing Deck -> Modifier Deck -> Swing Button
+# Tile selection is handled by hex_grid and auto-selects club
+# This manager handles swing deck and modifier deck selection
 
-signal turn_selection_complete(club_card: CardInstance, modifier_card: CardInstance)
+signal turn_selection_complete(swing_card: CardInstance, modifier_card: CardInstance)
 
-var selected_club_card: CardInstance = null
+var selected_club_card: CardInstance = null  # Now "swing card" (kept name for compatibility)
 var selected_modifier_card: CardInstance = null
 var current_selection_ui: CardSelectionUI = null
 var _current_modifier_candidates: Array[CardInstance] = []
 
 func start_turn_selection() -> void:
-	"""Begin the turn sequence: Club -> Modifier -> Shot"""
+	"""Begin the swing deck selection. Called when user clicks swing deck."""
 	selected_club_card = null
 	selected_modifier_card = null
 	_current_modifier_candidates.clear()
 	club_selection_locked = false
 	
-	_start_club_selection()
+	_start_swing_deck_selection()
 
 
-func _start_club_selection() -> void:
-	# Get available club cards
+func _start_swing_deck_selection() -> void:
+	"""Show swing deck cards for selection"""
+	# Get available swing cards
 	var cards = club_deck_manager._draw_pile
+	
+	if cards.is_empty():
+		# No cards available - auto-complete this step
+		if shot_ui:
+			shot_ui.set_swing_card_selected(true)
+		return
 	
 	# Show UI
 	_show_selection_ui(cards, _on_club_selected, club_deck_widget)
 
 
 func _on_club_selected(card: CardInstance) -> void:
+	"""Player selected a card from the swing deck.
+	   In the new flow, this is a shot modifier, not a club selector.
+	   Club is auto-selected based on target tile distance."""
 	if selected_club_card != null:
 		return # Already selected
 		
@@ -126,8 +146,23 @@ func _on_club_selected(card: CardInstance) -> void:
 	# Move card to active pile
 	club_deck_manager.draw_specific_card(card)
 	
-	# Apply club immediately
-	_apply_club_selection(card)
+	# Apply card as modifier (not club selection)
+	# Only apply club selection if card has target_club AND user hasn't locked a tile
+	if card.data.target_club and not card.data.target_club.is_empty():
+		# Legacy club card - apply it (this may override auto-selected club)
+		_apply_club_selection(card)
+	else:
+		# Shot modifier card - apply its effects
+		activate_card_modifier(card)
+	
+	# Notify UI that swing card is selected
+	print("[CardSystem] Swing card selected: %s" % card.data.card_name)
+	swing_card_selected.emit(card)
+	if shot_ui:
+		print("[CardSystem] Calling shot_ui.set_swing_card_selected(true)")
+		shot_ui.set_swing_card_selected(true)
+	else:
+		push_warning("[CardSystem] shot_ui is null, cannot set swing_card_selected!")
 	
 	# Proceed to modifier selection
 	# Don't auto-start modifier selection. Wait for user to click modifier deck.
@@ -135,19 +170,25 @@ func _on_club_selected(card: CardInstance) -> void:
 
 
 func _start_modifier_selection() -> void:
-	# Guard: Don't start if already selecting or if club not selected yet
+	print("[CardSystem] _start_modifier_selection called")
+	
+	# Guard: Don't start if already selecting
 	if current_selection_ui != null:
+		print("[CardSystem] Already showing selection UI, skipping")
 		return
-	if selected_club_card == null:
-		# Optional: Shake deck or show warning?
-		return
+	
+	# In new flow, modifier selection can happen at any time after tile is selected
+	# No need to require swing card first
 
 	# Draw hand for modifiers (e.g. 3 cards)
 	var hand_size = 3
 	_current_modifier_candidates = deck_manager.draw_candidates(hand_size)
 	
+	print("[CardSystem] Drew %d modifier candidates" % _current_modifier_candidates.size())
+	
 	if _current_modifier_candidates.is_empty():
 		# No cards? Skip to end
+		print("[CardSystem] No modifier candidates, auto-completing")
 		_on_modifier_selected(null)
 		return
 		
@@ -175,6 +216,15 @@ func _on_modifier_selected(card: CardInstance) -> void:
 	# Discard the rest
 	deck_manager.discard_candidates(_current_modifier_candidates)
 	_current_modifier_candidates.clear()
+	
+	# Notify UI that modifier is drawn
+	print("[CardSystem] Modifier card drawn: %s" % (card.data.card_name if card else "(none)"))
+	modifier_card_drawn.emit(card)
+	if shot_ui:
+		print("[CardSystem] Calling shot_ui.set_modifier_drawn(true)")
+		shot_ui.set_modifier_drawn(true)
+	else:
+		push_warning("[CardSystem] shot_ui is null, cannot set modifier_drawn!")
 	
 	# Signal completion
 	turn_selection_complete.emit(selected_club_card, selected_modifier_card)
@@ -239,7 +289,15 @@ func _find_node_by_class(class_name_str: String) -> Node:
 
 
 func _recursive_find(node: Node, class_name_str: String) -> Node:
-	if node.get_class() == class_name_str or node.name == class_name_str:
+	# Check built-in class name
+	if node.get_class() == class_name_str:
+		return node
+	# Check node name
+	if node.name == class_name_str:
+		return node
+	# Check script class name (for custom classes like ShotUI, ShotManager, etc.)
+	var script = node.get_script()
+	if script and script.get_global_name() == class_name_str:
 		return node
 	
 	for child in node.get_children():
@@ -337,11 +395,15 @@ func _setup_deck_ui() -> void:
 			
 			# Connect modifier deck click to modifier selection
 			if deck_view:
+				print("[CardSystem] Connecting modifier deck_view to _start_modifier_selection")
 				if deck_view.request_club_selection.is_connected(start_turn_selection):
 					deck_view.request_club_selection.disconnect(start_turn_selection)
 				
 				if not deck_view.request_club_selection.is_connected(_start_modifier_selection):
 					deck_view.request_club_selection.connect(_start_modifier_selection)
+					print("[CardSystem] Modifier deck connected successfully")
+			else:
+				push_warning("[CardSystem] deck_view is null, cannot connect modifier deck!")
 
 
 # --- Public API ---
@@ -391,7 +453,7 @@ func initialize_starter_deck() -> void:
 
 
 func activate_card_modifier(card_instance: CardInstance) -> void:
-	"""Apply a card's effects to the modifier system"""
+	"""Apply a card's effects to the modifier system and update visuals"""
 	if not card_instance or not modifier_manager:
 		return
 		
@@ -400,12 +462,42 @@ func activate_card_modifier(card_instance: CardInstance) -> void:
 		_apply_club_selection(card_instance)
 		return
 	
+	print("[CardSystem] Activating card modifier: %s" % card_instance.data.card_name)
+	
 	# Create modifier wrapper for the card
 	var card_modifier = CardModifier.new(card_instance)
 	
-	# Add to modifier manager
+	# Add to modifier manager - this applies effects to shot_context
 	modifier_manager.add_modifier(card_modifier)
 	active_card_modifiers.append(card_modifier)
+	
+	# Apply the modifier's effects to shot context immediately
+	if shot_manager and shot_manager.current_context:
+		print("[CardSystem] Applying modifier to shot context")
+		if card_modifier.has_method("apply_before_aim"):
+			card_modifier.apply_before_aim(shot_manager.current_context)
+		print("[CardSystem] Shot context after modifier - accuracy_mod: %d, distance_mod: %d, roll_mod: %d" % [
+			shot_manager.current_context.accuracy_mod,
+			shot_manager.current_context.distance_mod,
+			shot_manager.current_context.roll_mod
+		])
+	
+	# Refresh AOE display if hex_grid is available (in case accuracy changed)
+	print("[CardSystem] Refreshing AOE display")
+	_refresh_aoe_display()
+
+
+func _refresh_aoe_display() -> void:
+	"""Refresh the AOE display and trajectory on hex_grid after modifiers change"""
+	var hex_grid = null
+	if shot_manager and shot_manager.hole_controller:
+		hex_grid = shot_manager.hole_controller
+	
+	if hex_grid:
+		if hex_grid.has_method("refresh_aoe_display"):
+			hex_grid.refresh_aoe_display()
+		if hex_grid.has_method("_refresh_trajectory"):
+			hex_grid._refresh_trajectory()
 
 
 func get_deck_manager() -> DeckManager:
@@ -420,14 +512,17 @@ func get_card_library() -> CardLibrary:
 
 func _on_shot_started(context: ShotContext) -> void:
 	"""Called when a new shot begins"""
-	# Clear active card modifiers from previous shot
-	_clear_active_modifiers()
+	# Re-apply all active card modifiers to the fresh context
+	# (context was reset, but we still have the card modifiers from pre-shot selection)
+	print("[CardSystem] Shot started - re-applying %d active card modifiers" % active_card_modifiers.size())
+	for card_mod in active_card_modifiers:
+		if card_mod.has_method("apply_before_aim"):
+			card_mod.apply_before_aim(context)
+			print("[CardSystem] Re-applied modifier: %s" % (card_mod.card.data.card_name if card_mod.card else "unknown"))
 	
-	# Clear active cards in deck manager (move to discard)
-	if deck_manager:
-		deck_manager.clear_active_cards()
-	if club_deck_manager:
-		club_deck_manager.clear_active_cards()
+	print("[CardSystem] Context after re-applying modifiers - accuracy_mod: %d, distance_mod: %d, roll_mod: %d, curve: %.1f" % [
+		context.accuracy_mod, context.distance_mod, context.roll_mod, context.curve_strength
+	])
 
 
 func _on_shot_completed(context: ShotContext) -> void:
@@ -435,8 +530,29 @@ func _on_shot_completed(context: ShotContext) -> void:
 	# Clear active modifiers
 	_clear_active_modifiers()
 	
+	# Reset the context modifier values so they don't persist to next shot preview
+	if shot_manager and shot_manager.current_context:
+		shot_manager.current_context.distance_mod = 0
+		shot_manager.current_context.accuracy_mod = 0
+		shot_manager.current_context.roll_mod = 0
+		shot_manager.current_context.curve_strength = 0.0
+		shot_manager.current_context.wind_curve = 0
+	
+	# Clear active cards in deck manager (move to discard)
+	if deck_manager:
+		deck_manager.clear_active_cards()
+	if club_deck_manager:
+		club_deck_manager.clear_active_cards()
+	
 	# Unlock club selection for next shot
 	club_selection_locked = false
+	
+	# Refresh AOE and trajectory display to reset visuals
+	_refresh_aoe_display()
+	if shot_manager and shot_manager.hole_controller:
+		var hex_grid = shot_manager.hole_controller
+		if hex_grid.has_method("_refresh_trajectory"):
+			hex_grid._refresh_trajectory()
 
 
 func _clear_active_modifiers() -> void:
@@ -451,5 +567,14 @@ func _clear_active_modifiers() -> void:
 # --- Event Handlers ---
 
 func _on_card_activated(card: CardInstance) -> void:
-	"""Handle card activated from deck manager"""
+	"""Handle card activated from deck manager (direct draw, not selection UI)"""
+	print("[CardSystem] _on_card_activated: %s" % card.data.card_name)
 	activate_card_modifier(card)
+	
+	# Also notify shot_ui that a modifier was drawn (if this is from modifier deck)
+	# Check if card came from modifier deck (not swing deck)
+	if deck_manager and card in deck_manager._active_cards:
+		print("[CardSystem] Card is from modifier deck, setting modifier_drawn=true")
+		modifier_card_drawn.emit(card)
+		if shot_ui:
+			shot_ui.set_modifier_drawn(true)

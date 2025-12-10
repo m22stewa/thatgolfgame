@@ -294,10 +294,13 @@ func _check_click(screen_pos: Vector2) -> void:
 
 
 func _on_deck_clicked() -> void:
+	print("[DeckView3D] Deck clicked! interaction_mode=%s, deck_manager=%s" % [interaction_mode, deck_manager != null])
 	if deck_manager:
 		if interaction_mode == InteractionMode.DRAW_TOP:
+			print("[DeckView3D] DRAW_TOP mode - drawing card")
 			deck_manager.draw_card()
 		elif interaction_mode == InteractionMode.SELECT_FROM_UI:
+			print("[DeckView3D] SELECT_FROM_UI mode - emitting request_club_selection")
 			request_club_selection.emit()
 
 
