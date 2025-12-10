@@ -6,8 +6,9 @@
 3. [Scoring System](#3-scoring-system)
 4. [Card System Modifiers](#4-card-system-modifiers)
 5. [System Interactions](#5-system-interactions)
-6. [Key Data Structures](#6-key-data-structures)
-7. [Notes & TODO](#7-notes--todo)
+6. [Swing Meter System](#6-swing-meter-system)
+7. [Key Data Structures](#7-key-data-structures)
+8. [Notes & TODO](#8-notes--todo)
 
 ---
 
@@ -303,7 +304,122 @@ signal swing_cancelled()
 
 ---
 
-## 6. Key Data Structures
+## 6. Swing Meter System
+
+The SwingMeter is a classic 3-click golf swing interface that determines shot power and accuracy.
+
+### Location
+- **Scene**: `scenes/ui/SwingMeter.tscn`
+- **Script**: `scripts/swing_meter.gd`
+- **Instance**: Added to `main_ui.tscn` at bottom-center of screen for easy editing
+
+### Layout Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Track (ColorRect - 400x40 px)                        │
+│ ┌──────────┬──────────────┬─────────────────────────────────────────┐  │
+│ │ NEGATIVE │ ACCURACY     │          POWER ZONE (0% to 100%)        │  │
+│ │ (hook)   │   ZONE       │                                         │  │
+│ │ 0%-10%   │  10%-20%     │               20% - 100%                │  │
+│ │          │ (zero point) │                                         │  │
+│ └──────────┴──────────────┴─────────────────────────────────────────┘  │
+│             ↑                                                           │
+│         zero_point (0.15)                                               │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3-Click Flow
+
+1. **Click 1**: Start swing - Marker begins at zero point (0% power), moves right
+2. **Click 2**: Set power - Lock power based on position in power zone (0-100%)
+3. **Click 3**: Set accuracy - Stop marker in accuracy zone for perfect shot
+
+### Zones
+
+| Zone | Position | Purpose |
+|------|----------|---------|
+| **Negative Zone** | 0% - 10% | Hook territory (left of zero point) |
+| **Accuracy Zone** | 10% - 20% | Perfect accuracy zone (centered at zero_point=15%) |
+| **Power Zone** | 20% - 100% | Power selection (higher = more power) |
+
+### Configurable Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `swing_speed` | float | 300.0 | Pixels/second for power phase |
+| `return_speed` | float | 350.0 | Pixels/second for accuracy phase |
+| `zero_point` | float | 0.15 | Position of "0" point (15% from left) |
+| `accuracy_zone_width` | float | 0.10 | Width of accuracy zone (10% of bar) |
+| `max_power` | float | 1.0 | Power cap (can be limited by lie/cards) |
+
+### Difficulty Scaling
+
+The `configure_for_shot()` method adjusts difficulty based on club and lie:
+
+```gdscript
+func configure_for_shot(club_difficulty: float, lie_difficulty: float, power_cap: float):
+    # Combined difficulty (club=60%, lie=40%)
+    var combined = club_difficulty * 0.6 + lie_difficulty * 0.4
+    
+    # Accuracy zone: 15% (easy) down to 5% (hard)
+    accuracy_zone_width = lerp(0.15, 0.05, combined)
+    
+    # Speed: 280-380 pixels/sec based on difficulty
+    swing_speed = lerp(280.0, 380.0, combined)
+```
+
+### Output Signals
+
+| Signal | Parameters | Description |
+|--------|------------|-------------|
+| `swing_completed` | power, accuracy, curve_mod | Swing finished successfully |
+| `swing_cancelled` | none | Swing was cancelled |
+
+### Output Values
+
+| Value | Range | Description |
+|-------|-------|-------------|
+| `power` | 0.0 - 1.0 | Power percentage (capped by max_power) |
+| `accuracy` | float | Distance from accuracy zone center (0 = perfect) |
+| `curve_mod` | -6.0 to +6.0 | Shot curve in tiles (negative = hook, positive = slice) |
+
+### Curve Calculation
+
+```gdscript
+# If marker stops in accuracy zone: curve_mod = 0 (straight)
+# If marker stops left of zone (negative zone): hook/draw
+# If marker stops right of zone (still in power area): fade/slice
+# Max curve at extremes = ±6 tiles
+```
+
+### Visual Elements
+
+| Node | Type | Purpose |
+|------|------|---------|
+| `Track` | ColorRect | Main gray track background |
+| `NegativeZone` | ColorRect | Dark gray hook zone |
+| `AccuracyZone` | ColorRect | Green target zone |
+| `PowerFill` | ColorRect | Green fill showing power selection |
+| `AccuracyFill` | ColorRect | Light green fill during accuracy phase |
+| `Marker` | ColorRect | Black moving indicator |
+| `PowerMarker` | ColorRect | Black line showing locked power position |
+| `StateLabel` | Label | "Click to Swing!", "Set Power!", etc. |
+| `PowerLabel` | Label | Current power percentage |
+| `AccuracyLabel` | Label | "PERFECT!", "Draw", "HOOK", "Fade", "SLICE" |
+
+### Styling in Editor
+
+The SwingMeter is now placed in `main_ui.tscn` as a direct child, positioned at bottom-center. You can:
+
+1. Open `main_ui.tscn` in Godot Editor
+2. Select the `SwingMeter` node
+3. Adjust position, size, anchors in the Inspector
+4. Open `SwingMeter.tscn` to edit internal elements (track colors, zone sizes, labels)
+
+---
+
+## 7. Key Data Structures
 
 ### ShotContext
 The central data object that flows through all shot systems.
@@ -351,7 +467,7 @@ var tags: Dictionary = {}          # Special effects ("gold", "warp", etc.)
 
 ---
 
-## 7. Notes & TODO
+## 8. Notes & TODO
 
 ### Ball Flight Curve System
 The ball now flies in a natural curved path when hook/slice/draw/fade is applied:

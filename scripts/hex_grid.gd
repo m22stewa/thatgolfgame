@@ -219,14 +219,15 @@ var grid_width: int = 10
 
 const TILE_SIZE := 1.0
 
-# Tile mesh height offset - tiles are hex prisms with Y from -0.5 to +0.5
-# This offset places objects on top of the tile surface
-const TILE_SURFACE_OFFSET := 0.5
-
 # Tile vertical stretch - extends tile mesh downward to prevent gaps
 # between tiles at different elevations
 const TILE_Y_STRETCH := 2.5  # Multiplier for Y scale to fill gaps
 const TILE_Y_OFFSET := -0.5  # Offset to push stretched mesh downward
+
+# Tile surface offset - accounts for stretched mesh geometry
+# Original mesh top is at +0.5, after 2.5x Y stretch → +1.25, then TILE_Y_OFFSET (-0.5) → +0.75
+# This places objects correctly ON TOP of the visible tile surface
+const TILE_SURFACE_OFFSET := 0.75  # Actual tile surface relative to elevation
 
 # Ball radius offset - the ball mesh scaled at 0.3 has approximate radius 0.15
 # Add this to surface position so ball sits ON TOP of tile, not inside it
@@ -1070,7 +1071,7 @@ func _show_range_preview(max_distance: int) -> void:
 					var highlight = _create_range_highlight()
 					var x_pos = col * width * 1.5
 					var z_pos = row * hex_height + (col % 2) * (hex_height / 2.0)
-					var y_pos = get_elevation(col, row) + 0.6
+					var y_pos = get_elevation(col, row) + TILE_SURFACE_OFFSET
 					highlight.position = Vector3(x_pos, y_pos, z_pos)
 					highlight.rotation.y = PI / 6.0
 					highlight.visible = true
@@ -1304,7 +1305,7 @@ func _update_dim_overlays() -> void:
 				var overlay = _create_dim_overlay()
 				var x_pos = col * width * 1.5
 				var z_pos = row * hex_height + (col % 2) * (hex_height / 2.0)
-				var y_pos = get_elevation(col, row) + 0.3  # Higher to be visible above tiles
+				var y_pos = get_elevation(col, row) + TILE_SURFACE_OFFSET
 				overlay.position = Vector3(x_pos, y_pos, z_pos)
 				overlay.rotation.y = PI / 6.0
 				overlay.visible = true
@@ -1454,11 +1455,11 @@ func _try_lock_target(cell: Vector2i) -> void:
 	locked_target_pos = Vector3(x_pos, y_pos, z_pos)
 	
 	# Position highlights on locked cell
-	highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	highlight_mesh.position = Vector3(x_pos, y_pos + TILE_SURFACE_OFFSET, z_pos)
 	highlight_mesh.rotation.y = PI / 6.0
 	highlight_mesh.visible = true
 	
-	target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	target_highlight_mesh.position = Vector3(x_pos, y_pos + TILE_SURFACE_OFFSET, z_pos)
 	target_highlight_mesh.rotation.y = PI / 6.0
 	target_highlight_mesh.visible = true
 	
@@ -1510,7 +1511,7 @@ func _update_aoe_for_cell(cell: Vector2i) -> void:
 				var highlight = _get_or_create_aoe_highlight(neighbor, 1)
 				var n_x = neighbor.x * width * 1.5
 				var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-				var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
+				var n_y = get_elevation(neighbor.x, neighbor.y) + TILE_SURFACE_OFFSET
 				highlight.position = Vector3(n_x, n_y, n_z)
 				highlight.rotation.y = PI / 6.0
 				highlight.visible = true
@@ -1525,7 +1526,7 @@ func _update_aoe_for_cell(cell: Vector2i) -> void:
 					var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
 					var o_x = outer_cell.x * width * 1.5
 					var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-					var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+					var o_y = get_elevation(outer_cell.x, outer_cell.y) + TILE_SURFACE_OFFSET
 					highlight.position = Vector3(o_x, o_y, o_z)
 					highlight.rotation.y = PI / 6.0
 					highlight.visible = true
@@ -1551,12 +1552,12 @@ func set_aim_cell(cell: Vector2i) -> bool:
 	locked_target_pos = Vector3(x_pos, y_pos, z_pos)
 	
 	# Position highlight mesh on the locked cell
-	highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	highlight_mesh.position = Vector3(x_pos, y_pos + TILE_SURFACE_OFFSET, z_pos)
 	highlight_mesh.rotation.y = PI / 6.0
 	highlight_mesh.visible = true
 	
 	# Show white target highlight on the locked cell (original aim point)
-	target_highlight_mesh.position = Vector3(x_pos, y_pos + 0.5, z_pos)
+	target_highlight_mesh.position = Vector3(x_pos, y_pos + TILE_SURFACE_OFFSET, z_pos)
 	target_highlight_mesh.rotation.y = PI / 6.0
 	target_highlight_mesh.visible = true
 	
@@ -1602,6 +1603,7 @@ func set_hover_cell(cell: Vector2i) -> void:
 	if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
 		hovered_cell = Vector2i(-1, -1)
 		highlight_mesh.visible = false
+		target_highlight_mesh.visible = false
 		_hide_all_aoe_highlights()
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
@@ -1612,6 +1614,7 @@ func set_hover_cell(cell: Vector2i) -> void:
 	if surface == -1 or surface == SurfaceType.WATER:
 		hovered_cell = Vector2i(-1, -1)
 		highlight_mesh.visible = false
+		target_highlight_mesh.visible = false
 		_hide_all_aoe_highlights()
 		return
 	
@@ -1619,6 +1622,7 @@ func set_hover_cell(cell: Vector2i) -> void:
 	if not is_forward_from_ball(cell):
 		hovered_cell = Vector2i(-1, -1)
 		highlight_mesh.visible = false
+		target_highlight_mesh.visible = false
 		_hide_all_aoe_highlights()
 		return
 	
@@ -1639,19 +1643,31 @@ func set_hover_cell(cell: Vector2i) -> void:
 	var hex_height = TILE_SIZE * sqrt(3.0)
 	var x_pos = cell.x * width * 1.5
 	var z_pos = cell.y * hex_height + (cell.x % 2) * (hex_height / 2.0)
-	var y_pos = get_elevation(cell.x, cell.y) + 0.5
+	var y_pos = get_elevation(cell.x, cell.y) + TILE_SURFACE_OFFSET
 	
 	highlight_mesh.position = Vector3(x_pos, y_pos, z_pos)
 	highlight_mesh.rotation.y = PI / 6.0
 	highlight_mesh.visible = true
 	
-	# Change highlight color based on clicka
+	# Change highlight color based on clickability
 	var mat = highlight_mesh.material_override as StandardMaterial3D
 	if mat:
 		if is_clickable:
 			mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Gold = clickable
 		else:
 			mat.albedo_color = Color(1.0, 0.2, 0.2, 0.6)  # Red = not clickable
+	
+	# Always show target marker and distance when hovering any valid tile
+	target_highlight_mesh.position = Vector3(x_pos, y_pos, z_pos)
+	target_highlight_mesh.rotation.y = PI / 6.0
+	target_highlight_mesh.visible = true
+	
+	# Always show distance label on hover
+	if golf_ball:
+		var ball_tile = world_to_grid(golf_ball.position)
+		var distance = _calculate_distance_yards(ball_tile, cell)
+		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
+			target_highlight_mesh.set_distance(distance)
 	
 	# Only show AOE and trajectory if valid target (in range)
 	if is_clickable:
@@ -1676,7 +1692,7 @@ func set_hover_cell(cell: Vector2i) -> void:
 						var highlight = _get_or_create_aoe_highlight(neighbor, 1)
 						var n_x = neighbor.x * width * 1.5
 						var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-						var n_y = get_elevation(neighbor.x, neighbor.y) + 0.5
+						var n_y = get_elevation(neighbor.x, neighbor.y) + TILE_SURFACE_OFFSET
 						highlight.position = Vector3(n_x, n_y, n_z)
 						highlight.rotation.y = PI / 6.0
 						highlight.visible = true
@@ -1691,7 +1707,7 @@ func set_hover_cell(cell: Vector2i) -> void:
 						var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
 						var o_x = outer_cell.x * width * 1.5
 						var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-						var o_y = get_elevation(outer_cell.x, outer_cell.y) + 0.5
+						var o_y = get_elevation(outer_cell.x, outer_cell.y) + TILE_SURFACE_OFFSET
 						highlight.position = Vector3(o_x, o_y, o_z)
 						highlight.rotation.y = PI / 6.0
 						highlight.visible = true
@@ -2472,17 +2488,20 @@ func _on_shot_completed(context: ShotContext) -> void:
 	if shot_manager:
 		shot_manager.start_animation()
 	
-	# Track if ball hit water
+	# Track if ball hit water or went out of bounds
 	var hit_water = false
+	var hit_oob = false
 	
 	# Animate ball flight to landing position, then bounces
 	if golf_ball and context.landing_tile.x >= 0:
 		var ball_tile = world_to_grid(golf_ball.position)
 		
-		# Check if landing tile is water
+		# Check if landing tile is water or out of bounds
 		var landing_surface = get_cell(context.landing_tile.x, context.landing_tile.y)
 		if landing_surface == SurfaceType.WATER:
 			hit_water = true
+		elif landing_surface == -1:
+			hit_oob = true
 		
 		# Get base bounce count from club (drivers bounce more, wedges less)
 		var num_bounces = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).roll
@@ -2491,16 +2510,22 @@ func _on_shot_completed(context: ShotContext) -> void:
 		var carry_tile = _get_carry_position(ball_tile, context.landing_tile, num_bounces)
 		var carry_pos = get_tile_surface_position(carry_tile)
 		
-		# Animate ball flight to carry position
-		await _animate_ball_flight_with_bounce(golf_ball.position, carry_pos)
-		
-		# Check if carry tile is water
+		# Check if carry tile is out of bounds BEFORE animating flight
 		var carry_surface = get_cell(carry_tile.x, carry_tile.y)
-		if carry_surface == SurfaceType.WATER:
+		if carry_surface == -1:
+			hit_oob = true
+			# Animate ball to OOB position, then handle penalty
+			await _animate_ball_flight_with_bounce(golf_ball.position, carry_pos)
+			await _handle_out_of_bounds()
+		elif carry_surface == SurfaceType.WATER:
 			hit_water = true
-			# Ball splashes in water at carry position
+			# Animate ball flight then splash
+			await _animate_ball_flight_with_bounce(golf_ball.position, carry_pos)
 			await _handle_water_hazard()
 		else:
+			# Animate ball flight to carry position
+			await _animate_ball_flight_with_bounce(golf_ball.position, carry_pos)
+			
 			# Calculate roll direction from ball's starting position through carry position
 			# This maintains the shot's forward direction, not toward the pin
 			var roll_direction = _get_roll_direction(ball_tile, carry_tile)
@@ -2508,11 +2533,19 @@ func _on_shot_completed(context: ShotContext) -> void:
 			# Now apply bounces from carry position in the shot's direction
 			var final_tile = await _apply_bounce_rollout(carry_tile, roll_direction, num_bounces)
 			
-			# Check if final tile is water
-			var final_surface = get_cell(final_tile.x, final_tile.y)
-			if final_surface == SurfaceType.WATER:
-				hit_water = true
-				await _handle_water_hazard()
+			# Check if final tile is OOB (special indicator) or water
+			if final_tile == Vector2i(-999, -999):
+				# Ball rolled out of bounds
+				hit_oob = true
+				await _handle_out_of_bounds()
+			else:
+				var final_surface = get_cell(final_tile.x, final_tile.y)
+				if final_surface == SurfaceType.WATER:
+					hit_water = true
+					await _handle_water_hazard()
+				elif final_surface == -1:
+					hit_oob = true
+					await _handle_out_of_bounds()
 		
 		# Stop ball spin after all bouncing is complete
 		if golf_ball:
@@ -2599,6 +2632,37 @@ func _handle_water_hazard() -> void:
 		tween.tween_property(water_effect, "color:a", 0.0, 0.7)
 		await tween.finished
 		water_effect.visible = false  # Hide when done
+
+
+func _handle_out_of_bounds() -> void:
+	"""Handle ball going out of bounds - ball falls for 0.3s, then reset to shot start + penalty stroke"""
+	
+	# Make the ball fall for 0.3 seconds
+	if golf_ball:
+		var start_pos = golf_ball.position
+		var fall_tween = create_tween()
+		# Fall 10 units down over 0.3 seconds with acceleration (gravity feel)
+		fall_tween.tween_property(golf_ball, "position:y", start_pos.y - 10.0, 0.3).set_ease(Tween.EASE_IN)
+		await fall_tween.finished
+		
+		# Optional: brief pause for dramatic effect
+		await get_tree().create_timer(0.1).timeout
+		
+		# Move ball back to the shot's starting position (previous_valid_tile)
+		if previous_valid_tile.x >= 0:
+			var return_pos = get_tile_surface_position(previous_valid_tile)
+			golf_ball.position = return_pos
+	
+	# Add penalty stroke (stroke-and-distance penalty per golf rules)
+	if run_state:
+		run_state.record_stroke(0)  # Penalty stroke with 0 score bonus
+		# Update UI with new stroke count
+		if shot_ui:
+			var dist_to_flag = 0
+			if golf_ball and flag_position.x >= 0:
+				var ball_tile = world_to_grid(golf_ball.position)
+				dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
+			shot_ui.update_shot_info(run_state.strokes_this_hole, dist_to_flag)
 
 
 var hole_complete_triggered: bool = false  # Prevent multiple triggers
@@ -2836,16 +2900,25 @@ func _apply_bounce_rollout(carry_tile: Vector2i, roll_direction: Vector2i, num_b
 		current_direction = _get_elevation_influenced_direction(current_tile, base_direction)
 		var next_tile = current_tile + current_direction
 		
-		# Check bounds
+		# Check bounds - ball goes OOB
 		if next_tile.x < 0 or next_tile.x >= grid_width or next_tile.y < 0 or next_tile.y >= grid_height:
-			break
+			# Ball rolls off the grid - animate into the void, then OOB will be handled by caller
+			var oob_pos = get_tile_world_position(next_tile)  # Get world pos even for OOB tile
+			await _animate_ball_bounce_to_tile(golf_ball.position, oob_pos, bounces_done + 1, num_bounces)
+			return Vector2i(-999, -999)  # Special OOB indicator
 		
 		# Check for hazards that stop the ball
 		var next_surface = get_cell(next_tile.x, next_tile.y)
 		if next_surface == -1:
-			break
+			# Ball rolls into empty cell (OOB) - animate into it then return special indicator
+			var oob_pos = get_tile_world_position(next_tile)
+			await _animate_ball_bounce_to_tile(golf_ball.position, oob_pos, bounces_done + 1, num_bounces)
+			return Vector2i(-999, -999)  # Special OOB indicator
 		if next_surface == SurfaceType.WATER:
-			break
+			# Animate into water then return water tile for caller to handle
+			var water_pos = get_tile_surface_position(next_tile)
+			await _animate_ball_bounce_to_tile(golf_ball.position, water_pos, bounces_done + 1, num_bounces)
+			return next_tile  # Return water tile, caller checks surface
 		if next_surface == SurfaceType.SAND:
 			break
 		if next_surface == SurfaceType.TREE:
@@ -3355,9 +3428,9 @@ func _update_ball_shadow() -> void:
 		golf_ball.hide_shadow()
 		return
 	
-	# Get the ground height below the ball
+	# Get the ground height below the ball (tile surface)
 	var ball_grid_pos = world_to_grid(golf_ball.global_position)
-	var ground_y = get_elevation(ball_grid_pos.x, ball_grid_pos.y)
+	var ground_y = get_elevation(ball_grid_pos.x, ball_grid_pos.y) + TILE_SURFACE_OFFSET
 	
 	# Calculate height above ground
 	var height = golf_ball.global_position.y - ground_y
@@ -3558,7 +3631,6 @@ func _create_highlight_mesh() -> void:
 		
 	target_highlight_mesh.visible = false
 	add_child(target_highlight_mesh)
-	add_child(target_highlight_mesh)
 	
 	# AOE highlights are now created dynamically via _get_or_create_aoe_highlight()
 
@@ -3579,8 +3651,8 @@ func _get_or_create_aoe_highlight(cell: Vector2i, ring: int) -> MeshInstance3D:
 	mesh.mesh = cylinder
 	
 	var mat = StandardMaterial3D.new()
-	# Set opacity based on ring distance
-	var alpha = 0.05 if ring == 1 else 0.025  # Ring 1 = 0.05, Ring 2 = 0.025
+	# Set opacity based on ring distance - must be visible!
+	var alpha = 0.4 if ring == 1 else 0.25  # Ring 1 = 40%, Ring 2 = 25%
 	mat.albedo_color = Color(1.0, 0.85, 0.0, alpha)
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -4781,50 +4853,112 @@ func _trim_organic_edges() -> void:
 	_cleanup_floating_water()
 
 
-# Remove water cells that are isolated single tiles (not part of a water body)
-# Large connected water bodies are kept - only truly isolated water is removed
+# Remove water cells that are isolated or form invalid patterns
+# - Single isolated water tiles
+# - Water tiles adjacent only to empty cells
+# - Small floating water clusters not connected to land
 func _cleanup_floating_water() -> void:
-	var water_to_remove: Array = []
+	# First pass: Remove water adjacent to empty cells (creates "empty lines")
+	# Run this multiple times to erode from edges
+	for _pass in range(3):
+		var water_to_remove: Array = []
+		
+		for col in range(grid_width):
+			for row in range(grid_height):
+				if get_cell(col, row) != SurfaceType.WATER:
+					continue
+				
+				# Count neighbor types
+				var water_neighbors = 0
+				var land_neighbors = 0
+				var empty_neighbors = 0
+				
+				for dc in range(-1, 2):
+					for dr in range(-1, 2):
+						if dc == 0 and dr == 0:
+							continue
+						var nc = col + dc
+						var nr = row + dr
+						if nc >= 0 and nc < grid_width and nr >= 0 and nr < grid_height:
+							var neighbor_surf = get_cell(nc, nr)
+							if neighbor_surf == SurfaceType.WATER:
+								water_neighbors += 1
+							elif neighbor_surf == -1:
+								empty_neighbors += 1
+							else:
+								land_neighbors += 1
+						else:
+							empty_neighbors += 1  # Out of bounds = empty
+				
+				# Remove water if:
+				# 1. No land neighbors AND has empty neighbors (floating near void)
+				# 2. Completely isolated (no water or land neighbors)
+				# 3. Only 1-2 water neighbors and no land (small cluster in void)
+				if land_neighbors == 0 and empty_neighbors > 0:
+					water_to_remove.append(Vector2i(col, row))
+				elif water_neighbors == 0 and land_neighbors == 0:
+					water_to_remove.append(Vector2i(col, row))
+				elif water_neighbors <= 2 and land_neighbors == 0 and empty_neighbors > 3:
+					water_to_remove.append(Vector2i(col, row))
+		
+		# Remove floating water cells
+		for cell in water_to_remove:
+			set_cell(cell.x, cell.y, -1)
+	
+	# Second pass: Use flood fill to find water bodies and remove those not touching land
+	var visited: Dictionary = {}
+	var playable_types = [SurfaceType.FAIRWAY, SurfaceType.GREEN, SurfaceType.TEE, 
+						  SurfaceType.ROUGH, SurfaceType.SAND, SurfaceType.DEEP_ROUGH, SurfaceType.TREE]
 	
 	for col in range(grid_width):
 		for row in range(grid_height):
 			if get_cell(col, row) != SurfaceType.WATER:
 				continue
-			
-			# Water at grid edges is always kept
-			var is_edge_water = col <= 1 or col >= grid_width - 2 or row <= 1 or row >= grid_height - 2
-			if is_edge_water:
+			if visited.has(Vector2i(col, row)):
 				continue
 			
-			# Count water neighbors and land neighbors
-			var water_neighbors = 0
-			var land_neighbors = 0
-			for dc in range(-1, 2):
-				for dr in range(-1, 2):
-					if dc == 0 and dr == 0:
-						continue
-					var nc = col + dc
-					var nr = row + dr
-					if nc >= 0 and nc < grid_width and nr >= 0 and nr < grid_height:
-						var neighbor_surf = get_cell(nc, nr)
-						if neighbor_surf == SurfaceType.WATER:
-							water_neighbors += 1
-						elif neighbor_surf != -1:  # Land (not empty, not water)
-							land_neighbors += 1
+			# Flood fill to find connected water body
+			var water_body: Array[Vector2i] = []
+			var touches_land = false
+			var queue: Array[Vector2i] = [Vector2i(col, row)]
 			
-			# Only remove water if it has NO water neighbors AND no land neighbors
-			# (truly isolated single tile) OR if it only has 1-2 water neighbors
-			# and no land (small floating cluster)
-			if water_neighbors == 0 and land_neighbors == 0:
-				water_to_remove.append(Vector2i(col, row))
-			elif water_neighbors <= 2 and land_neighbors == 0:
-				# Small cluster not connected to land - mark for potential removal
-				# But only if it's really small (will be caught in subsequent passes)
-				water_to_remove.append(Vector2i(col, row))
-	
-	# Remove floating water cells
-	for cell in water_to_remove:
-		set_cell(cell.x, cell.y, -1)
+			while queue.size() > 0:
+				var current = queue.pop_front()
+				if visited.has(current):
+					continue
+				visited[current] = true
+				
+				var cx = current.x
+				var cy = current.y
+				
+				if cx < 0 or cx >= grid_width or cy < 0 or cy >= grid_height:
+					continue
+				
+				var surf = get_cell(cx, cy)
+				if surf != SurfaceType.WATER:
+					continue
+				
+				water_body.append(current)
+				
+				# Check neighbors
+				for dc in range(-1, 2):
+					for dr in range(-1, 2):
+						if dc == 0 and dr == 0:
+							continue
+						var nc = cx + dc
+						var nr = cy + dr
+						if nc >= 0 and nc < grid_width and nr >= 0 and nr < grid_height:
+							var neighbor_surf = get_cell(nc, nr)
+							if neighbor_surf in playable_types:
+								touches_land = true
+							var neighbor_pos = Vector2i(nc, nr)
+							if neighbor_surf == SurfaceType.WATER and not visited.has(neighbor_pos):
+								queue.append(neighbor_pos)
+			
+			# Remove water body if it doesn't touch any land
+			if not touches_land:
+				for tile in water_body:
+					set_cell(tile.x, tile.y, -1)
 
 
 # Generate elevation map after all surface types are determined
@@ -4841,6 +4975,9 @@ func _generate_elevation() -> void:
 	
 	# Smooth transitions between dramatically different elevations
 	_smooth_elevation_transitions()
+	
+	# Ensure tee box is never lower than its neighbors
+	_raise_tee_above_neighbors()
 
 
 # Smooth elevation to avoid jarring transitions between areas
@@ -4883,6 +5020,35 @@ func _smooth_elevation_transitions() -> void:
 	for col in range(grid_width):
 		for row in range(grid_height):
 			elevation[col][row] = smoothed[col][row]
+
+
+# Ensure tee box tiles are never lower than their neighbors
+func _raise_tee_above_neighbors() -> void:
+	# Find all tee tiles and raise them if needed
+	for col in range(grid_width):
+		for row in range(grid_height):
+			var surf = get_cell(col, row)
+			if surf != SurfaceType.TEE:
+				continue
+			
+			# Get the current tee elevation
+			var tee_elev = get_elevation(col, row)
+			
+			# Find the maximum neighbor elevation
+			var max_neighbor_elev = tee_elev
+			for dc in range(-1, 2):
+				for dr in range(-1, 2):
+					if dc == 0 and dr == 0:
+						continue
+					var nc = col + dc
+					var nr = row + dr
+					if nc >= 0 and nc < grid_width and nr >= 0 and nr < grid_height:
+						var neighbor_elev = get_elevation(nc, nr)
+						max_neighbor_elev = max(max_neighbor_elev, neighbor_elev)
+			
+			# If tee is lower than any neighbor, raise it slightly above the highest neighbor
+			if tee_elev < max_neighbor_elev:
+				set_elevation(col, row, max_neighbor_elev + 0.15)
 
 
 # --- Mesh generation ----------------------------------------------------
@@ -4955,7 +5121,7 @@ func _generate_grid() -> void:
 		var flag_elev = get_elevation(flag_cell.x, flag_cell.y)
 		var flag_pos = Vector3(
 			flag_cell.x * width * 1.5,
-			flag_elev + 0.5,  # Flag sits on top of green elevation
+			flag_elev + TILE_SURFACE_OFFSET,  # Flag sits on top of green tile
 			flag_cell.y * height + (flag_cell.x % 2) * (height / 2.0)
 		)
 		flag_instance.position = flag_pos
@@ -4969,7 +5135,7 @@ func _generate_grid() -> void:
 				var teebox_instance = TEEBOX_MODEL.instantiate()
 				var tee_x = col * width * 1.5
 				var tee_z = row * height + (col % 2) * (height / 2.0)
-				var tee_y = get_elevation(col, row)
+				var tee_y = get_elevation(col, row) + TILE_SURFACE_OFFSET
 				teebox_instance.position = Vector3(tee_x, tee_y, tee_z)
 				teebox_instance.add_to_group("teebox")
 				add_child(teebox_instance)
@@ -4978,7 +5144,8 @@ func _generate_grid() -> void:
 				if golf_ball == null:
 					golf_ball = GOLFBALL.instantiate()
 					golf_ball.scale = Vector3(0.3, 0.3, 0.3)  # 50% size
-					tee_position = Vector3(tee_x, tee_y + 0.7, tee_z)  # On top of teebox model
+					# Position ball on top of tile surface plus ball radius
+					tee_position = Vector3(tee_x, tee_y + TILE_SURFACE_OFFSET + BALL_RADIUS_OFFSET, tee_z)
 					golf_ball.position = tee_position
 					golf_ball.add_to_group("golfball")
 					add_child(golf_ball)
@@ -4994,7 +5161,7 @@ func _generate_grid() -> void:
 				
 				var tree_x = col * width * 1.5
 				var tree_z = row * height + (col % 2) * (height / 2.0)
-				var tree_y = get_elevation(col, row)  # Use terrain elevation
+				var tree_y = get_elevation(col, row) + TILE_SURFACE_OFFSET  # Position on tile surface
 				
 				# Add random position offset for natural variation
 				tree_x += (randf() - 0.5) * 0.4

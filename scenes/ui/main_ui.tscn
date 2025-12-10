@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://cdby66rujphi3"]
+[gd_scene load_steps=17 format=3 uid="uid://cdby66rujphi3"]
 
 [ext_resource type="Script" uid="uid://bryby6cgtarmo" path="res://scripts/ui/main_ui.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="2_shot_ui"]
@@ -9,6 +9,7 @@
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_theme"]
 [ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="6_hole_viewer"]
 [ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="7_oi40j"]
+[ext_resource type="PackedScene" uid="uid://d0p11qbqfw7jg" path="res://scenes/ui/SwingMeter.tscn" id="7_swing_meter"]
 [ext_resource type="Texture2D" uid="uid://c3hpaioup7fto" path="res://textures/click.png" id="12_ampf0"]
 [ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/left-click.png" id="13_chv3i"]
 [ext_resource type="Texture2D" uid="uid://meco8curw6dv" path="res://textures/right-click.png" id="14_h2n7m"]
@@ -160,10 +161,10 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -1762.0
-offset_top = 5.0
-offset_right = -1622.0
-offset_bottom = 175.0
+offset_left = -1904.0
+offset_top = 152.0
+offset_right = -1764.0
+offset_bottom = 322.0
 grow_horizontal = 0
 
 [node name="HoleInfoLabel" type="Label" parent="."]
@@ -247,3 +248,18 @@ offset_bottom = 1056.0
 theme_override_colors/font_color = Color(0, 0, 0, 1)
 text = "Zoom"
 horizontal_alignment = 1
+
+[node name="SwingMeter" parent="." instance=ExtResource("7_swing_meter")]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.6848958
+anchor_top = 0.43888888
+anchor_right = 0.6848958
+anchor_bottom = 0.43888888
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 2
+grow_vertical = 2
+metadata/_edit_use_anchors_ = true

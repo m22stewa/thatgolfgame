@@ -29,13 +29,22 @@ var current_zoom: float = 40.0
 var target_zoom: float = 40.0
 var camera_yaw: float = 0.0  # Rotation around Y axis (0 = looking north/up the hole)
 var target_yaw: float = 0.0
+var target_pitch: float = 55.0  # Target camera angle (pitch)
 var is_panning: bool = false
 var is_rotating: bool = false
+var is_pitching: bool = false  # True when adjusting pitch with middle mouse
 var pan_start_mouse: Vector2 = Vector2.ZERO
 var pan_start_position: Vector3 = Vector3.ZERO
 var pan_grab_world_pos: Vector3 = Vector3.ZERO  # World position where pan grab started
 var rotation_start_mouse: Vector2 = Vector2.ZERO
 var rotation_start_yaw: float = 0.0
+var pitch_start_mouse: Vector2 = Vector2.ZERO
+var pitch_start_angle: float = 55.0
+
+# Pitch limits
+const MIN_PITCH: float = 25.0  # Minimum camera angle (more angled/3D view)
+const MAX_PITCH: float = 65.0  # Maximum camera angle (near top-down)
+const PITCH_SPEED: float = 0.3  # Degrees per pixel of mouse movement
 
 # Ball tracking
 var ball_node: Node3D = null
@@ -432,13 +441,17 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 		_handle_putting_mouse_button(event)
 		return
 	
-	# Middle mouse = rotate
+	# Middle mouse = adjust pitch (vertical) and yaw (horizontal)
 	if event.button_index == MOUSE_BUTTON_MIDDLE:
 		if event.pressed:
+			is_pitching = true
 			is_rotating = true
+			pitch_start_mouse = event.position
+			pitch_start_angle = camera_angle
 			rotation_start_mouse = event.position
 			rotation_start_yaw = target_yaw
 		else:
+			is_pitching = false
 			is_rotating = false
 	
 	# Right mouse = pan
@@ -495,7 +508,23 @@ func _handle_putting_mouse_button(event: InputEventMouseButton) -> void:
 
 
 func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
-	if is_rotating:
+	# Middle mouse controls both pitch and yaw simultaneously
+	if is_pitching and is_rotating:
+		# Vertical movement = pitch (camera angle)
+		var delta_y = event.position.y - pitch_start_mouse.y
+		camera_angle = clamp(pitch_start_angle + delta_y * PITCH_SPEED, MIN_PITCH, MAX_PITCH)
+		target_pitch = camera_angle
+		
+		# Horizontal movement = yaw (rotation)
+		var delta_x = event.position.x - rotation_start_mouse.x
+		target_yaw = rotation_start_yaw + delta_x * rotation_speed
+		camera_yaw = target_yaw
+		
+		_update_camera_transform()
+		# Stop tracking ball when manually adjusting camera
+		is_tracking_ball = false
+	
+	elif is_rotating:
 		# Calculate rotation delta
 		var delta_x = event.position.x - rotation_start_mouse.x
 		target_yaw = rotation_start_yaw + delta_x * rotation_speed

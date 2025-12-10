@@ -56,7 +56,7 @@ environment = SubResource("Environment_lieview")
 
 [node name="Camera3D" type="Camera3D" parent="SubViewport"]
 unique_name_in_owner = true
-transform = Transform3D(1, 0, 0, 0, 0.8191518, 0.57357687, 0, -0.57357687, 0.8191518, 0, 2.9711425, 3.628589)
+transform = Transform3D(1, 0, 0, 0, 0.8191518, 0.57357687, 0, -0.57357687, 0.8191518, 0, 4.5277424, 5.671626)
 current = true
 fov = 40.0
 

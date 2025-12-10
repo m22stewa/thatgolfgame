@@ -1,4 +1,4 @@
-[gd_scene load_steps=57 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=55 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
@@ -41,9 +41,14 @@ sky = SubResource("Sky_keddd")
 tonemap_mode = 2
 sdfgi_enabled = true
 sdfgi_use_occlusion = true
+glow_enabled = true
+glow_normalized = true
+glow_intensity = 6.49
 fog_mode = 1
 fog_light_color = Color(0.025474409, 0.18949398, 0.1443255, 1)
-fog_density = 1.0
+fog_density = 0.8889
+fog_aerial_perspective = 0.249
+fog_sky_affect = 0.555
 volumetric_fog_density = 0.013
 volumetric_fog_length = 28.6
 volumetric_fog_sky_affect = 0.18
@@ -243,15 +248,6 @@ shader_parameter/uv1_offset = Vector2(0, 0)
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_q0ffo"]
 size = Vector2(400, 400)
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_fkwjp"]
-transparency = 1
-cull_mode = 2
-albedo_color = Color(0, 0, 0, 0)
-
-[sub_resource type="VoxelGIData" id="VoxelGIData_06m3i"]
-propagation = 0.29
-interior = true
 
 [node name="GOLF" type="Node3D"]
 
@@ -464,10 +460,3 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.86548185, 0)
 material_overlay = SubResource("ShaderMaterial_q0ffo")
 gi_mode = 2
 mesh = SubResource("PlaneMesh_q0ffo")
-
-[node name="shadowcatcher" type="MeshInstance3D" parent="."]
-material_override = SubResource("StandardMaterial3D_fkwjp")
-mesh = SubResource("PlaneMesh_q0ffo")
-
-[node name="VoxelGI" type="VoxelGI" parent="."]
-data = SubResource("VoxelGIData_06m3i")

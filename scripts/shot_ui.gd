@@ -130,19 +130,31 @@ func _ready() -> void:
 	if persistent_score_label:
 		persistent_score_label.text = "0"
 	
-	# Create swing meter (positioned where confirm button was)
-	_create_swing_meter()
+	# Find or create swing meter (may be added via scene in main_ui)
+	_setup_swing_meter()
 	
 	# Initial UI state
 	update_club_display()
 
 
-func _create_swing_meter() -> void:
-	"""Create and add the swing meter UI"""
-	swing_meter = SwingMeterScene.instantiate()
-	swing_meter.swing_completed.connect(_on_swing_completed)
-	swing_meter.swing_cancelled.connect(_on_swing_cancelled)
-	add_child(swing_meter)
+func _setup_swing_meter() -> void:
+	"""Find existing swing meter from parent (main_ui) or create one if not found"""
+	# First, look for SwingMeter as a sibling (added via main_ui.tscn)
+	var parent = get_parent()
+	if parent:
+		swing_meter = parent.get_node_or_null("SwingMeter") as SwingMeter
+	
+	# If not found as sibling, create one dynamically
+	if not swing_meter:
+		swing_meter = SwingMeterScene.instantiate()
+		add_child(swing_meter)
+	
+	# Connect signals
+	if swing_meter:
+		if not swing_meter.swing_completed.is_connected(_on_swing_completed):
+			swing_meter.swing_completed.connect(_on_swing_completed)
+		if not swing_meter.swing_cancelled.is_connected(_on_swing_cancelled):
+			swing_meter.swing_cancelled.connect(_on_swing_cancelled)
 
 
 func setup(p_shot_manager: ShotManager, p_hole_controller: Node3D) -> void:
