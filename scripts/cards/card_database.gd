@@ -107,10 +107,6 @@ func _parse_card(json: Dictionary) -> CardData:
 	card.max_upgrade_level = json.get("max_upgrade_level", 3)
 	card.max_uses = json.get("max_uses", -1)
 	
-	# Tags (array of strings)
-	var tags_array = json.get("tags", [])
-	card.tags = PackedStringArray(tags_array)
-	
 	# Parse effects
 	var effects_json = json.get("effects", [])
 	card.effects = _parse_effects(effects_json)

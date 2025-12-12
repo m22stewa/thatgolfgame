@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://d3k4l5m6n7o8"]
 
-[ext_resource type="Script" path="res://scripts/ui/card_selection_ui.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://dx5gxixvp65lf" path="res://scripts/ui/card_selection_ui.gd" id="1_script"]
 
 [node name="CardSelectionUI" type="Control"]
 z_index = 100
@@ -32,5 +32,5 @@ offset_right = 100.0
 offset_bottom = 100.0
 grow_horizontal = 2
 theme_override_font_sizes/font_size = 32
-text = "Select a Club"
+text = "Select a Swing Card"
 horizontal_alignment = 1

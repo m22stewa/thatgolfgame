@@ -13,7 +13,6 @@
 			"can_upgrade": true,
 			"max_upgrade_level": 3,
 			"max_uses": -1,
-			"tags": ["neutral", "basic"],
 			"effects": []
 		},
 		{
@@ -24,7 +23,6 @@
 			"rarity": "UNCOMMON",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["power", "distance"],
 			"effects": [
 				{"type": "distance_mod", "value": 20}
 			]
@@ -37,7 +35,6 @@
 			"rarity": "UNCOMMON",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["power", "draw", "curve"],
 			"effects": [
 				{"type": "distance_mod", "value": 15},
 				{"type": "curve", "value": -0.2}
@@ -51,7 +48,6 @@
 			"rarity": "UNCOMMON",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["accuracy", "fade", "curve"],
 			"effects": [
 				{"type": "accuracy_mod", "value": 10},
 				{"type": "curve", "value": 0.1}
@@ -65,7 +61,6 @@
 			"rarity": "COMMON",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["accuracy", "control"],
 			"effects": [
 				{"type": "accuracy_mod", "value": 15},
 				{"type": "distance_mod", "value": -10}
@@ -79,7 +74,6 @@
 			"rarity": "COMMON",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["safe", "control", "accuracy"],
 			"effects": [
 				{"type": "distance_mod", "value": -30},
 				{"type": "accuracy_mod", "value": 25}
@@ -93,7 +87,6 @@
 			"rarity": "RARE",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["power", "risky"],
 			"effects": [
 				{"type": "distance_mod", "value": 30},
 				{"type": "accuracy_mod", "value": -15}
@@ -107,7 +100,6 @@
 			"rarity": "COMMON",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["low", "roll"],
 			"effects": [
 				{"type": "distance_mod", "value": -20},
 				{"type": "roll_mod", "value": 3}
@@ -121,7 +113,6 @@
 			"rarity": "RARE",
 			"card_type": "SHOT",
 			"play_cost": 0,
-			"tags": ["fade", "curve", "soft"],
 			"effects": [
 				{"type": "curve", "value": 0.2},
 				{"type": "roll_mod", "value": -2}
@@ -138,7 +129,6 @@
 			"card_type": "PASSIVE",
 			"play_cost": 0,
 			"max_uses": 3,
-			"tags": ["wind", "power"],
 			"effects": [
 				{"type": "terrain_bonus", "terrain": "tailwind", "chips": 10}
 			]
@@ -152,7 +142,6 @@
 			"card_type": "PASSIVE",
 			"play_cost": 0,
 			"max_uses": -1,
-			"tags": ["fairway", "accuracy"],
 			"effects": [
 				{"type": "terrain_bonus", "terrain": "FAIRWAY", "chips": 15}
 			]
@@ -166,7 +155,6 @@
 			"card_type": "PASSIVE",
 			"play_cost": 0,
 			"max_uses": -1,
-			"tags": ["green", "putting"],
 			"effects": [
 				{"type": "terrain_bonus", "terrain": "GREEN", "chips": 25}
 			]
@@ -180,7 +168,6 @@
 			"card_type": "PASSIVE",
 			"play_cost": 0,
 			"max_uses": -1,
-			"tags": ["distance", "scoring"],
 			"effects": [
 				{"type": "distance_bonus", "mode": 0, "chips_per_unit": 1.0}
 			]
@@ -194,7 +181,6 @@
 			"card_type": "PASSIVE",
 			"play_cost": 0,
 			"max_uses": -1,
-			"tags": ["bounce", "control"],
 			"effects": [
 				{"type": "bounce_bonus", "value": 2}
 			]
@@ -208,7 +194,6 @@
 			"card_type": "PASSIVE",
 			"play_cost": 0,
 			"max_uses": -1,
-			"tags": ["roll", "control"],
 			"effects": [
 				{"type": "roll_modifier", "value": 2}
 			]
@@ -222,7 +207,6 @@
 			"card_type": "PASSIVE",
 			"play_cost": 0,
 			"max_uses": 5,
-			"tags": ["scoring", "mult"],
 			"effects": [
 				{"type": "mult_bonus", "value": 0.5}
 			]
@@ -237,7 +221,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "driver",
-			"tags": ["club", "power"],
 			"effects": []
 		},
 		{
@@ -248,7 +231,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "wood_3",
-			"tags": ["club", "distance"],
 			"effects": []
 		},
 		{
@@ -259,7 +241,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "iron_5",
-			"tags": ["club", "balanced"],
 			"effects": []
 		},
 		{
@@ -270,7 +251,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "iron_7",
-			"tags": ["club", "balanced"],
 			"effects": []
 		},
 		{
@@ -281,7 +261,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "iron_9",
-			"tags": ["club", "accuracy"],
 			"effects": []
 		},
 		{
@@ -292,7 +271,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "pitching_wedge",
-			"tags": ["club", "wedge"],
 			"effects": []
 		},
 		{
@@ -303,7 +281,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "sand_wedge",
-			"tags": ["club", "wedge", "sand"],
 			"effects": []
 		},
 		{
@@ -314,7 +291,6 @@
 			"rarity": "COMMON",
 			"card_type": "CLUB",
 			"target_club": "putter",
-			"tags": ["club", "putting"],
 			"effects": []
 		}
 	]

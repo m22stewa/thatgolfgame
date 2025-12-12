@@ -104,7 +104,6 @@ func _register_golf_cards() -> void:
 		clean_strike.card_type = CardData.CardType.SHOT
 		clean_strike.description = "No change to distance, accuracy, roll, or score."
 		clean_strike.flavor_text = "Represents a normal, expected shot."
-		clean_strike.tags = ["neutral"]
 		_register(clean_strike)
 	
 	# === CONTROLLED AIM (2) ===
@@ -113,7 +112,6 @@ func _register_golf_cards() -> void:
 		controlled_aim.card_type = CardData.CardType.SHOT
 		controlled_aim.description = "AOE radius -1 ring (minimum 0)."
 		controlled_aim.flavor_text = "Small precision boost, no distance change."
-		controlled_aim.tags = ["accuracy"]
 		
 		var ca_effect = EffectSimpleStat.new()
 		ca_effect.target_stat = "aoe_radius"
@@ -127,7 +125,6 @@ func _register_golf_cards() -> void:
 		slightly_short.card_type = CardData.CardType.SHOT
 		slightly_short.description = "Distance -1 tile."
 		slightly_short.flavor_text = "Common small distance miss."
-		slightly_short.tags = ["distance"]
 		
 		var ss_effect = EffectSimpleStat.new()
 		ss_effect.target_stat = "distance_mod"
@@ -141,7 +138,6 @@ func _register_golf_cards() -> void:
 		way_short.card_type = CardData.CardType.SHOT
 		way_short.description = "Distance -2 tiles."
 		way_short.flavor_text = "Larger mishit, but not catastrophic."
-		way_short.tags = ["distance"]
 		
 		var ws_effect = EffectSimpleStat.new()
 		ws_effect.target_stat = "distance_mod"
@@ -155,7 +151,6 @@ func _register_golf_cards() -> void:
 		solid_contact.card_type = CardData.CardType.SHOT
 		solid_contact.description = "Distance +1 tile."
 		solid_contact.flavor_text = "Minor distance bonus for well-struck shots."
-		solid_contact.tags = ["distance"]
 		
 		var sc_effect = EffectSimpleStat.new()
 		sc_effect.target_stat = "distance_mod"
@@ -169,7 +164,6 @@ func _register_golf_cards() -> void:
 		crushed_it.card_type = CardData.CardType.SHOT
 		crushed_it.description = "Distance +2 tiles."
 		crushed_it.flavor_text = "Big distance boost, exciting on drives."
-		crushed_it.tags = ["distance"]
 		
 		var ci_effect = EffectSimpleStat.new()
 		ci_effect.target_stat = "distance_mod"
@@ -183,7 +177,6 @@ func _register_golf_cards() -> void:
 		shank.card_type = CardData.CardType.SHOT
 		shank.description = "Accuracy +1 ring (less accurate)."
 		shank.flavor_text = "Less accurate shot, larger landing zone."
-		shank.tags = ["accuracy"]
 		
 		var shank_effect = EffectSimpleStat.new()
 		shank_effect.target_stat = "accuracy_mod"
@@ -197,7 +190,6 @@ func _register_golf_cards() -> void:
 		wild_push.card_type = CardData.CardType.SHOT
 		wild_push.description = "Accuracy +1 ring; adds curve toward miss side."
 		wild_push.flavor_text = "Feels like a directional hook/slice miss."
-		wild_push.tags = ["accuracy", "curve"]
 		
 		var wp_aoe = EffectSimpleStat.new()
 		wp_aoe.target_stat = "aoe_radius"
@@ -216,7 +208,6 @@ func _register_golf_cards() -> void:
 		laser_line.card_type = CardData.CardType.SHOT
 		laser_line.description = "Set AOE radius to 0."
 		laser_line.flavor_text = "Very accurate \"sniper\" shot."
-		laser_line.tags = ["accuracy"]
 		
 		var ll_effect = EffectSimpleStat.new()
 		ll_effect.target_stat = "aoe_radius"
@@ -231,7 +222,6 @@ func _register_golf_cards() -> void:
 		heavy_spin.card_type = CardData.CardType.SHOT
 		heavy_spin.description = "Roll -1 tile (minimum 0)."
 		heavy_spin.flavor_text = "Helps shots stop faster, good for approaches."
-		heavy_spin.tags = ["roll", "spin"]
 		
 		var hs_effect = EffectSimpleStat.new()
 		hs_effect.target_stat = "roll_mod"
@@ -244,7 +234,6 @@ func _register_golf_cards() -> void:
 	hot_bounce.card_type = CardData.CardType.SHOT
 	hot_bounce.description = "Roll +1 tile."
 	hot_bounce.flavor_text = "Extra rollout after landing."
-	hot_bounce.tags = ["roll"]
 	
 	var hb_effect = EffectSimpleStat.new()
 	hb_effect.target_stat = "roll_mod"
@@ -257,7 +246,6 @@ func _register_golf_cards() -> void:
 	lucky_bounce.card_type = CardData.CardType.SHOT
 	lucky_bounce.description = "Roll +1 tile; draw another modifier card (rolling)."
 	lucky_bounce.flavor_text = "Can stack with other modifiers for wild outcomes."
-	lucky_bounce.tags = ["roll", "special"]
 	
 	var lb_effect = EffectSimpleStat.new()
 	lb_effect.target_stat = "roll_mod"
@@ -271,7 +259,6 @@ func _register_golf_cards() -> void:
 	clutch_finish.card_type = CardData.CardType.SHOT
 	clutch_finish.description = "+1 score multiplier."
 	clutch_finish.flavor_text = "Only if ball ends on green or in hole this shot."
-	clutch_finish.tags = ["scoring"]
 	
 	var cf_effect = EffectMultBonus.new()
 	cf_effect.bonus_mult = 1.0
@@ -287,7 +274,6 @@ func _register_common_cards() -> void:
 	var long_driver = CardData.create("long_driver", "Long Driver", CardData.Rarity.COMMON)
 	long_driver.card_type = CardData.CardType.SHOT
 	long_driver.description = "Rewards long distance shots."
-	long_driver.tags = ["drive", "distance"]
 	
 	var ld_effect = EffectDistanceBonus.new()
 	ld_effect.distance_mode = 1  # LongShot
@@ -301,7 +287,6 @@ func _register_common_cards() -> void:
 	var dist_tracker = CardData.create("distance_tracker", "Distance Tracker", CardData.Rarity.COMMON)
 	dist_tracker.card_type = CardData.CardType.PASSIVE
 	dist_tracker.description = "Earn chips for every cell traveled."
-	dist_tracker.tags = ["distance", "passive"]
 	
 	var dt_effect = EffectDistanceBonus.new()
 	dt_effect.distance_mode = 0  # PerCell
@@ -313,7 +298,6 @@ func _register_common_cards() -> void:
 	var sand_wedge = CardData.create("sand_wedge", "Sand Wedge", CardData.Rarity.COMMON)
 	sand_wedge.card_type = CardData.CardType.SHOT
 	sand_wedge.description = "Bonus when escaping from bunkers."
-	sand_wedge.tags = ["bunker", "sand"]
 	
 	var sw_effect = EffectTerrainBonus.new()
 	sw_effect.target_terrain = "Bunker"
@@ -327,7 +311,6 @@ func _register_common_cards() -> void:
 	var wide_angle = CardData.create("wide_angle", "Wide Angle", CardData.Rarity.COMMON)
 	wide_angle.card_type = CardData.CardType.SHOT
 	wide_angle.description = "Expands the landing zone."
-	wide_angle.tags = ["aoe", "utility"]
 	
 	var wa_effect = EffectAOEExpand.new()
 	wa_effect.radius_bonus = 1
@@ -340,7 +323,6 @@ func _register_uncommon_cards() -> void:
 	var trick_shot = CardData.create("trick_shot", "Trick Shot", CardData.Rarity.UNCOMMON)
 	trick_shot.card_type = CardData.CardType.SHOT
 	trick_shot.description = "Earn bonuses for each bounce."
-	trick_shot.tags = ["bounce", "trick"]
 	
 	var ts_effect = EffectBounceBonus.new()
 	ts_effect.chips_per_bounce = 10
@@ -352,7 +334,6 @@ func _register_uncommon_cards() -> void:
 	var hook_shot = CardData.create("hook_shot", "Hook Shot", CardData.Rarity.UNCOMMON)
 	hook_shot.card_type = CardData.CardType.SHOT
 	hook_shot.description = "Ball curves left after initial flight."
-	hook_shot.tags = ["curve", "hook"]
 	
 	var hs_effect = EffectCurveShot.new()
 	hs_effect.curve_direction = 0  # Left
@@ -365,7 +346,6 @@ func _register_uncommon_cards() -> void:
 	var slice_shot = CardData.create("slice_shot", "Slice Shot", CardData.Rarity.UNCOMMON)
 	slice_shot.card_type = CardData.CardType.SHOT
 	slice_shot.description = "Ball curves right after initial flight."
-	slice_shot.tags = ["curve", "slice"]
 	
 	var ss_effect = EffectCurveShot.new()
 	ss_effect.curve_direction = 1  # Right
@@ -378,7 +358,6 @@ func _register_uncommon_cards() -> void:
 	var roll_master = CardData.create("roll_master", "Roll Master", CardData.Rarity.UNCOMMON)
 	roll_master.card_type = CardData.CardType.PASSIVE
 	roll_master.description = "Ball rolls further after landing."
-	roll_master.tags = ["roll", "passive"]
 	
 	var rm_effect = EffectRollModifier.new()
 	rm_effect.roll_distance_modifier = 1.75
@@ -391,7 +370,6 @@ func _register_uncommon_cards() -> void:
 	var green_reader = CardData.create("green_reader", "Green Reader", CardData.Rarity.UNCOMMON)
 	green_reader.card_type = CardData.CardType.PASSIVE
 	green_reader.description = "Big bonus when landing on the green."
-	green_reader.tags = ["green", "putting"]
 	
 	var gr_effect = EffectTerrainBonus.new()
 	gr_effect.target_terrain = "Green"
@@ -404,7 +382,6 @@ func _register_uncommon_cards() -> void:
 	var combo_builder = CardData.create("combo_builder", "Combo Builder", CardData.Rarity.UNCOMMON)
 	combo_builder.card_type = CardData.CardType.SHOT
 	combo_builder.description = "+5 Chips and +0.2 Mult. Simple but effective."
-	combo_builder.tags = ["combo", "balanced"]
 	
 	var cb_chips = EffectChipsBonus.new()
 	cb_chips.bonus_chips = 5
@@ -422,7 +399,6 @@ func _register_rare_cards() -> void:
 	eagle_eye.card_type = CardData.CardType.PASSIVE
 	eagle_eye.description = "Massive bonus for precision short shots."
 	eagle_eye.flavor_text = "\"See the line, be the ball.\""
-	eagle_eye.tags = ["precision", "putting"]
 	
 	var ee_effect = EffectDistanceBonus.new()
 	ee_effect.distance_mode = 2  # ShortShot
@@ -437,7 +413,6 @@ func _register_rare_cards() -> void:
 	bank_shot.card_type = CardData.CardType.SHOT
 	bank_shot.description = "Huge rewards for bounce shots."
 	bank_shot.flavor_text = "\"Geometry is my co-pilot.\""
-	bank_shot.tags = ["bounce", "trick"]
 	
 	var bs_bounce = EffectBounceBonus.new()
 	bs_bounce.chips_per_bounce = 20
@@ -451,7 +426,6 @@ func _register_rare_cards() -> void:
 	pressure.card_type = CardData.CardType.JOKER
 	pressure.description = "+3 Mult. Jokers are always active!"
 	pressure.flavor_text = "\"I live for the clutch.\""
-	pressure.tags = ["joker", "mult"]
 	
 	var pp_mult = EffectMultBonus.new()
 	pp_mult.bonus_mult = 3.0
@@ -462,7 +436,6 @@ func _register_rare_cards() -> void:
 	var wide_berth = CardData.create("wide_berth", "Wide Berth", CardData.Rarity.RARE)
 	wide_berth.card_type = CardData.CardType.PASSIVE
 	wide_berth.description = "Greatly expands landing zone."
-	wide_berth.tags = ["aoe", "utility"]
 	
 	var wb_aoe = EffectAOEExpand.new()
 	wb_aoe.radius_bonus = 2
@@ -476,7 +449,6 @@ func _register_legendary_cards() -> void:
 	ace.card_type = CardData.CardType.SHOT
 	ace.description = "Incredible scoring potential on perfect shots."
 	ace.flavor_text = "\"One shot. One legend.\""
-	ace.tags = ["legendary", "precision"]
 	
 	# Multiple synergistic effects
 	var ace_short = EffectDistanceBonus.new()
@@ -498,7 +470,6 @@ func _register_legendary_cards() -> void:
 	chaos.card_type = CardData.CardType.SHOT
 	chaos.description = "Random curve, huge AOE, big rewards."
 	chaos.flavor_text = "\"Let chaos reign.\""
-	chaos.tags = ["legendary", "chaos", "curve"]
 	
 	var chaos_curve = EffectCurveShot.new()
 	chaos_curve.curve_direction = 2  # Random
@@ -520,7 +491,6 @@ func _register_legendary_cards() -> void:
 	mulligan.card_type = CardData.CardType.JOKER
 	mulligan.description = "+50 Chips, +2 Mult on every shot."
 	mulligan.flavor_text = "\"Everyone deserves a second chance.\""
-	mulligan.tags = ["legendary", "joker"]
 	
 	var mull_chips = EffectChipsBonus.new()
 	mull_chips.bonus_chips = 50
@@ -538,7 +508,6 @@ func _register_consumables() -> void:
 	lucky_ball.card_type = CardData.CardType.CONSUMABLE
 	lucky_ball.description = "One-time +3 Mult boost."
 	lucky_ball.max_uses = 1
-	lucky_ball.tags = ["consumable", "mult"]
 	
 	var lb_mult = EffectMultBonus.new()
 	lb_mult.bonus_mult = 3.0
@@ -550,7 +519,6 @@ func _register_consumables() -> void:
 	chip_shot.card_type = CardData.CardType.CONSUMABLE
 	chip_shot.description = "One-time +40 Chips."
 	chip_shot.max_uses = 1
-	chip_shot.tags = ["consumable", "chips"]
 	
 	var cs_chips = EffectChipsBonus.new()
 	cs_chips.bonus_chips = 40

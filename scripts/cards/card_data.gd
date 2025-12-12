@@ -37,9 +37,6 @@ enum CardType { SHOT, PASSIVE, CONSUMABLE, JOKER, CLUB }
 @export var max_upgrade_level: int = 3
 @export var max_uses: int = -1                 # -1 = unlimited uses
 
-# Tags for filtering and synergies
-@export var tags: PackedStringArray = []       # e.g. ["power", "accuracy", "wind"]
-
 
 # --- Factory Methods ---
 
@@ -70,10 +67,6 @@ func get_type_name() -> String:
 		CardType.CONSUMABLE: return "Consumable"
 		CardType.JOKER: return "Joker"
 		_: return "Unknown"
-
-
-func has_tag(tag: String) -> bool:
-	return tag in tags
 
 
 func get_rarity_color() -> Color:
@@ -109,5 +102,5 @@ func duplicate_card() -> CardData:
 	copy.can_upgrade = can_upgrade
 	copy.max_upgrade_level = max_upgrade_level
 	copy.max_uses = max_uses
-	copy.tags = tags.duplicate()
+	
 	return copy

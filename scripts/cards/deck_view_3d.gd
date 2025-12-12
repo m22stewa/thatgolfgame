@@ -416,7 +416,7 @@ func _show_inspection(card: Card3D) -> void:
 	
 	# Calculate center position between the two decks (X=0) at same Y as card
 	# Keep Y at card's original Y for consistent visual
-	var center_pos = Vector3(0, card.global_position.y + 0.5, card.global_position.z - 1.0)
+	var center_pos = Vector3(0, card.global_position.y + 1.0, card.global_position.z - 1.0)
 	
 	# Straighten the card - flat rotation facing up (no tilt)
 	var straight_rotation = Vector3(-1.05, 0, 0)

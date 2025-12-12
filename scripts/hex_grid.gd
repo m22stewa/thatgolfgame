@@ -4388,18 +4388,37 @@ func _update_tile_highlight() -> void:
 	var ray_origin = camera.project_ray_origin(mouse_pos)
 	var ray_dir = camera.project_ray_normal(mouse_pos)
 	
-	# Raycast against a horizontal plane at y=0 (approximate ground level)
-	var plane = Plane(Vector3.UP, 0)
-	var intersection = plane.intersects_ray(ray_origin, ray_dir)
+	# Iterative raycast to handle tile elevation:
+	# 1. First, raycast to y=0 plane to get approximate cell
+	# 2. Get that cell's elevation and raycast again at that height
+	# 3. Repeat once more for better accuracy on steep terrain
+	var current_elevation = 0.0
+	var cell = Vector2i(-1, -1)
 	
-	if intersection:
+	for _i in range(3):  # 3 iterations for convergence
+		var plane = Plane(Vector3.UP, current_elevation)
+		var intersection = plane.intersects_ray(ray_origin, ray_dir)
+		
+		if not intersection:
+			# No valid hover - clear everything
+			set_hover_cell(Vector2i(-1, -1))
+			return
+		
 		# Convert world position to grid coordinates
-		var cell = world_to_grid(intersection)
-		# Use set_hover_cell to handle all validation and highlighting
-		set_hover_cell(cell)
-	else:
-		# No valid hover - clear everything
-		set_hover_cell(Vector2i(-1, -1))
+		cell = world_to_grid(intersection)
+		
+		# Check bounds before getting elevation
+		if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+			break
+		
+		# Get this cell's elevation and refine
+		var new_elevation = get_elevation(cell.x, cell.y)
+		if abs(new_elevation - current_elevation) < 0.01:
+			break  # Converged
+		current_elevation = new_elevation
+	
+	# Use set_hover_cell to handle all validation and highlighting
+	set_hover_cell(cell)
 
 
 # Convert world position to grid cell coordinates
@@ -4638,7 +4657,7 @@ func _generate_course_features() -> void:
 	set_cell(tee_col, tee_row, SurfaceType.TEE)
 
 	# Place green near bottom third
-	var green_radius = 2 + randi() % 2 # 2 or 3
+	var green_radius = 3 + randi() % 2 # 3 or 4
 	var min_col = 1 + green_radius
 	var max_col = grid_width - 2 - green_radius
 	var min_row = grid_height - int(grid_height / 6) + 1

@@ -10,7 +10,6 @@ class_name Card3D
 @onready var desc_label: Label3D = $MeshInstance3D/DescLabel
 @onready var icon_sprite: Sprite3D = $MeshInstance3D/IconSprite
 @onready var flavor_label: Label3D = $MeshInstance3D/FlavorLabel
-@onready var tags_label: Label3D = $MeshInstance3D/TagsLabel
 @onready var rarity_bar: MeshInstance3D = $MeshInstance3D/RarityBar
 
 # Modifier icons container (created dynamically)
@@ -63,13 +62,13 @@ func _ready() -> void:
 	
 	# Cache modifier icon textures
 	if not _icon_distance:
-		_icon_distance = load("res://textures/distance.png")
+		_icon_distance = load("res://textures/icons/distance.png")
 	if not _icon_accuracy:
-		_icon_accuracy = load("res://textures/accuracy.png")
+		_icon_accuracy = load("res://textures/icons/accuracy.png")
 	if not _icon_roll:
-		_icon_roll = load("res://textures/roll.png")
+		_icon_roll = load("res://textures/icons/roll.png")
 	if not _icon_curve:
-		_icon_curve = load("res://textures/curve.png")
+		_icon_curve = load("res://textures/icons/curve.png")
 	
 	# Setup collision shape if not present (for clicks)
 	if not has_node("CollisionShape3D"):
@@ -123,13 +122,6 @@ func _update_visuals() -> void:
 	if flavor_label:
 		flavor_label.text = card_instance.data.flavor_text
 		flavor_label.visible = not card_instance.data.flavor_text.is_empty()
-		
-	if tags_label:
-		var tags_text = ""
-		for tag in card_instance.data.tags:
-			tags_text += "#" + tag + " "
-		tags_label.text = tags_text.strip_edges()
-		tags_label.visible = not tags_text.is_empty()
 		
 	if icon_sprite and card_instance.data.icon:
 		icon_sprite.texture = card_instance.data.icon
