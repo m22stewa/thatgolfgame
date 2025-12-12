@@ -1,17 +1,22 @@
 [gd_resource type="Resource" script_class="CardData" load_steps=6 format=3 uid="uid://d2asdu10f3r3t"]
 
 [ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="1_qxgvq"]
-[ext_resource type="Texture2D" uid="uid://dl8blqyigiua3" path="res://assets/kenney_board-game-icons/PNG/Double (128px)/award.png" id="2_d006w"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_xsv1b"]
 
 [sub_resource type="Resource" id="Resource_effect"]
 script = ExtResource("1_qxgvq")
-value = 20
+value = 4
 
 [sub_resource type="Resource" id="Resource_fkfv6"]
 script = ExtResource("1_qxgvq")
 target_stat = "accuracy_mod"
-value = -5
+value = -3
+metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
+
+[sub_resource type="Resource" id="Resource_3rqjw"]
+script = ExtResource("1_qxgvq")
+target_stat = "roll_mod"
+value = 2
 metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
 
 [resource]
@@ -19,7 +24,6 @@ script = ExtResource("2_xsv1b")
 card_id = "god_mode"
 card_name = "God Mode"
 description = "Yah"
-flavor_text = "You know it"
-rarity = 3
-icon = ExtResource("2_d006w")
-effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_fkfv6")])
+flavor_text = "Y"
+rarity = 1
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_fkfv6"), SubResource("Resource_3rqjw")])

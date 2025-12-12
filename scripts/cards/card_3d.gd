@@ -57,9 +57,9 @@ var back_texture_override: Texture2D
 func _ready() -> void:
 	# Cache default textures once
 	if not _default_front_texture:
-		_default_front_texture = load("res://textures/card-front.png")
+		_default_front_texture = load("res://textures/cards/card-front.png")
 	if not _default_back_texture:
-		_default_back_texture = load("res://textures/card-back.png")
+		_default_back_texture = load("res://textures/cards/card-back.png")
 	
 	# Cache modifier icon textures
 	if not _icon_distance:
@@ -189,9 +189,22 @@ func _update_modifier_icons() -> void:
 		var mod = modifiers[i]
 		var x_pos = start_x + i * spacing
 		
-		# Create icon sprite
+		# Create icon sprite with size limit (50x50 max)
 		var icon_sprite3d = Sprite3D.new()
-		icon_sprite3d.texture = mod["icon"]
+		var tex = mod["icon"]
+		if tex:
+			# Create a placeholder ViewportTexture with size limit
+			var img = tex.get_image()
+			if img:
+				# Cap image size to 50x50
+				if img.get_width() > 50 or img.get_height() > 50:
+					img.resize(50, 50, Image.INTERPOLATE_LANCZOS)
+				var img_tex = ImageTexture.create_from_image(img)
+				icon_sprite3d.texture = img_tex
+			else:
+				icon_sprite3d.texture = tex
+			# Enable filtering for better quality at different scales
+			icon_sprite3d.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		icon_sprite3d.pixel_size = 0.004
 		icon_sprite3d.position = Vector3(x_pos, y_pos, z_pos)
 		icon_sprite3d.render_priority = 10
@@ -242,11 +255,13 @@ func _setup_rounded_mesh() -> void:
 		front_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		front_mat.uv1_scale = Vector3(1, 1, 1)
 		front_mat.uv1_offset = Vector3(0, 0, 0)
-		# Use cached texture
+		# Use cached texture with proper filtering for quality
 		if back_texture_override:
 			front_mat.albedo_texture = back_texture_override
 		else:
 			front_mat.albedo_texture = _default_back_texture
+		# Enable texture filtering for smoother appearance
+		front_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		mesh_instance.set_surface_override_material(0, front_mat)
 	
 	if back_mat:
@@ -257,11 +272,13 @@ func _setup_rounded_mesh() -> void:
 		back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		back_mat.uv1_scale = Vector3(1, 1, 1)
 		back_mat.uv1_offset = Vector3(0, 0, 0)
-		# Use cached texture
+		# Use cached texture with proper filtering for quality
 		if front_texture_override:
 			back_mat.albedo_texture = front_texture_override
 		else:
 			back_mat.albedo_texture = _default_front_texture
+		# Enable texture filtering for smoother appearance
+		back_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		mesh_instance.set_surface_override_material(1, back_mat)
 	
 	# Edge material - darker for better contrast against white card faces

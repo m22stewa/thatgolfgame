@@ -17,6 +17,10 @@ boot_splash/bg_color=Color(0.063571535, 0.16677818, 0.09656479, 1)
 boot_splash/image="uid://0m3ktjyite15"
 config/icon="res://icon.svg"
 
+[autoload]
+
+CursorManager="*res://scripts/ui/cursor_manager.gd"
+
 [display]
 
 window/size/viewport_width=1920

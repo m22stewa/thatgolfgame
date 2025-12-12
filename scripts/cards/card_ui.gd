@@ -330,12 +330,18 @@ func _on_mouse_entered() -> void:
 	if not is_dragging:
 		set_hovered(true)
 		card_hovered.emit(self, true)
+		# Set hand point cursor for UI cards
+		if has_node("/root/CursorManager"):
+			get_node("/root/CursorManager").set_hand_point()
 
 
 func _on_mouse_exited() -> void:
 	if not is_dragging and not is_selected and not is_inspecting:
 		set_hovered(false)
 	card_hovered.emit(self, false)
+	# Reset cursor
+	if has_node("/root/CursorManager"):
+		get_node("/root/CursorManager").set_default()
 
 
 func _on_gui_input(event: InputEvent) -> void:

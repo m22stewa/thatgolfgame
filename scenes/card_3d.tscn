@@ -1,8 +1,8 @@
 [gd_scene load_steps=13 format=3 uid="uid://cubpvmp3dd1sd"]
 
 [ext_resource type="Script" uid="uid://djci7xdtp02ij" path="res://scripts/cards/card_3d.gd" id="1_script"]
-[ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="2_front"]
-[ext_resource type="Texture2D" uid="uid://bto2fkglva4rq" path="res://textures/card-back.png" id="3_back"]
+[ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/cards/card-front.png" id="2_front"]
+[ext_resource type="Texture2D" uid="uid://bto2fkglva4rq" path="res://textures/cards/card-back.png" id="3_back"]
 [ext_resource type="FontFile" uid="uid://csixfh5trj68q" path="res://theme/Unbounded-VariableFont_wght.ttf" id="4_e30tg"]
 [ext_resource type="Texture2D" uid="uid://bwnxxq6rb2f5i" path="res://textures/golfball.png" id="5_p0d7p"]
 

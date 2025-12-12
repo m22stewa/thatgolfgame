@@ -4,6 +4,7 @@ class_name MainUI
 @onready var shot_ui: Control = $ShotUI
 @onready var modifier_deck_widget: DeckWidget = $ModifierDeckWidget
 @onready var club_deck_widget: DeckWidget = $ClubDeckWidget
+@onready var combined_deck_widget: DeckWidget = $DeckWidget  # New combined view widget
 @onready var wind_widget: Control = $WindWidget
 @onready var lie_view: Control = $LieView
 @onready var hole_info_label: Label = $HoleInfoLabel
@@ -24,10 +25,14 @@ func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	
 	# Connect card inspection signals from deck widgets
-	if modifier_deck_widget:
+	if modifier_deck_widget and modifier_deck_widget.visible:
 		modifier_deck_widget.card_inspection_requested.connect(_on_card_inspection_requested)
-	if club_deck_widget:
+	if club_deck_widget and club_deck_widget.visible:
 		club_deck_widget.card_inspection_requested.connect(_on_card_inspection_requested)
+	
+	# Connect combined deck widget if present
+	if combined_deck_widget and combined_deck_widget.visible:
+		combined_deck_widget.card_inspection_requested.connect(_on_card_inspection_requested)
 	
 	# Create card inspection overlay (hidden initially)
 	_create_card_inspection_ui()

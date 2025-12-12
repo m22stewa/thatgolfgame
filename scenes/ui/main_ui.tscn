@@ -1,26 +1,32 @@
-[gd_scene load_steps=19 format=3 uid="uid://cdby66rujphi3"]
+[gd_scene load_steps=18 format=3 uid="uid://cdby66rujphi3"]
 
 [ext_resource type="Script" uid="uid://bryby6cgtarmo" path="res://scripts/ui/main_ui.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="2_shot_ui"]
 [ext_resource type="PackedScene" uid="uid://c8j2k3l4m5n6" path="res://scenes/ui/deck_widget.tscn" id="3_deck_widget"]
 [ext_resource type="Shader" uid="uid://cwotan7qgy7bh" path="res://scenes/tilt.gdshader" id="4_oi40j"]
 [ext_resource type="PackedScene" uid="uid://dsma18qptjtff" path="res://scenes/WindWidget.tscn" id="4_wind"]
+[ext_resource type="Texture2D" uid="uid://c6i3k5g4ohv8x" path="res://assets/kenney_fantasy-ui-borders/PNG/Default/Border/panel-border-005.png" id="5_8s2gp"]
 [ext_resource type="PackedScene" uid="uid://blt23k5ne8pqf" path="res://scenes/ui/LieView.tscn" id="5_lie_view"]
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_theme"]
-[ext_resource type="Texture2D" uid="uid://bvc1xmvib2oun" path="res://textures/card-back-green.png" id="6_chv3i"]
 [ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="6_hole_viewer"]
-[ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="7_oi40j"]
 [ext_resource type="PackedScene" uid="uid://d0p11qbqfw7jg" path="res://scenes/ui/SwingMeter.tscn" id="7_swing_meter"]
-[ext_resource type="Texture2D" uid="uid://3awyxs3ovibd" path="res://textures/card-back-blue.png" id="10_h2n7m"]
-[ext_resource type="Texture2D" uid="uid://c3hpaioup7fto" path="res://textures/click.png" id="12_ampf0"]
-[ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/left-click.png" id="13_chv3i"]
-[ext_resource type="Texture2D" uid="uid://meco8curw6dv" path="res://textures/right-click.png" id="14_h2n7m"]
-[ext_resource type="Texture2D" uid="uid://qi0wkwo6234h" path="res://textures/scroll.png" id="15_xfu30"]
+[ext_resource type="Texture2D" uid="uid://c3hpaioup7fto" path="res://textures/icons/click.png" id="12_ampf0"]
+[ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/icons/left-click.png" id="13_chv3i"]
+[ext_resource type="Texture2D" uid="uid://meco8curw6dv" path="res://textures/icons/right-click.png" id="14_h2n7m"]
+[ext_resource type="Texture2D" uid="uid://qi0wkwo6234h" path="res://textures/icons/scroll.png" id="15_xfu30"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_aa6wj"]
 shader = ExtResource("4_oi40j")
 shader_parameter/limit = 0.2410000114475
 shader_parameter/blur = 2.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_ampf0"]
+texture = ExtResource("5_8s2gp")
+texture_margin_left = 15.0
+texture_margin_top = 15.0
+texture_margin_right = 15.0
+texture_margin_bottom = 15.0
+draw_center = false
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_lieinfo"]
 content_margin_left = 12.0
@@ -69,6 +75,12 @@ material = SubResource("ShaderMaterial_aa6wj")
 layout_mode = 0
 offset_right = 800.0
 offset_bottom = 1080.0
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 0
+offset_right = 801.0
+offset_bottom = 1081.0
+theme_override_styles/panel = SubResource("StyleBoxTexture_ampf0")
 
 [node name="icons" type="Control" parent="."]
 layout_mode = 1
@@ -138,29 +150,10 @@ theme_override_colors/font_color = Color(0, 0, 0, 1)
 text = "Zoom"
 horizontal_alignment = 1
 
-[node name="ClubDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
+[node name="DeckWidget" parent="." instance=ExtResource("3_deck_widget")]
 layout_mode = 1
-anchors_preset = 2
-anchor_left = 0.0
-anchor_right = 0.0
-offset_left = 780.0
-offset_top = -666.0
-offset_right = 1320.3727
-offset_bottom = -202.0
-grow_horizontal = 1
-deck_type = 1
-card_back_texture = ExtResource("6_chv3i")
-card_front_texture = ExtResource("7_oi40j")
-interaction_mode = 1
-
-[node name="ModifierDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
-layout_mode = 1
-offset_left = -736.0
-offset_top = -659.0
-offset_right = -253.75574
-offset_bottom = -205.0
-card_back_texture = ExtResource("10_h2n7m")
-card_front_texture = ExtResource("7_oi40j")
+offset_left = -1118.0
+offset_top = -667.0
 
 [node name="ShotUI" parent="." instance=ExtResource("2_shot_ui")]
 layout_mode = 1
@@ -175,7 +168,7 @@ offset_right = 117.0
 offset_bottom = 166.0
 
 [node name="LieView" parent="." instance=ExtResource("5_lie_view")]
-anchors_preset = 0
+layout_mode = 0
 offset_left = 17.0
 offset_top = 194.0
 offset_right = 117.0

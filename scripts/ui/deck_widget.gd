@@ -2,157 +2,153 @@
 extends SubViewportContainer
 class_name DeckWidget
 
-## DeckWidget - A self-contained UI widget that displays a 3D deck.
-## Wraps the SubViewport and DeckView3D complexity.
+## DeckWidget - A self-contained UI widget that displays 3D decks.
+## Supports both single DeckView3D and CombinedDeckView modes.
 
-enum DeckType { MODIFIERS, CLUBS }
-
-@export_group("Deck Configuration")
-@export var deck_type: DeckType = DeckType.MODIFIERS
-@export var card_back_texture: Texture2D
-@export var card_front_texture: Texture2D
-
-@export var lock_aspect_ratio: bool = true:
-	set(value):
-		lock_aspect_ratio = value
-		if lock_aspect_ratio and deck_size.y > 0:
-			_aspect_ratio = deck_size.x / deck_size.y
-
-var _aspect_ratio: float = 4.0 / 2.02
-
-@export var deck_size: Vector3 = Vector3(4.0, 2.02, 0.5):
-	set(value):
-		if lock_aspect_ratio and deck_size != Vector3.ZERO:
-			var x_diff = abs(value.x - deck_size.x)
-			var y_diff = abs(value.y - deck_size.y)
-			
-			if x_diff > 0.001 and y_diff < 0.001:
-				value.y = value.x / _aspect_ratio
-			elif y_diff > 0.001 and x_diff < 0.001:
-				value.x = value.y * _aspect_ratio
-		
-		deck_size = value
-		_apply_config()
-
-@export var interaction_mode: DeckView3D.InteractionMode = DeckView3D.InteractionMode.DRAW_TOP
-
-# Internal references
-var deck_view: DeckView3D = null
+# Internal references - supports both modes
+var deck_view: DeckView3D = null  # Single deck mode
+var combined_deck_view: CombinedDeckView = null  # Combined mode
 var sub_viewport: SubViewport = null
 
-# Saved state for restoring after inspection
-var _saved_anchors: Dictionary = {}
-var _saved_offsets: Dictionary = {}
-var _saved_viewport_size: Vector2i = Vector2i.ZERO
-var _is_expanded: bool = false
-
-# Signals forwarded from DeckView3D
+# Signals forwarded from DeckView3D or CombinedDeckView
 signal card_inspection_requested(card_instance: CardInstance)
+signal swing_request_club_selection()
+signal modifier_request_club_selection()
 
 func _ready() -> void:
-	# Find the internal DeckView3D and SubViewport
+	# Find the internal views and SubViewport
 	sub_viewport = get_node_or_null("SubViewport")
-	deck_view = get_node_or_null("SubViewport/DeckView3D")
-	if deck_view:
-		_apply_config()
-		# Forward inspection signal (kept for compatibility)
-		if not deck_view.card_inspection_requested.is_connected(_on_card_inspection_requested):
-			deck_view.card_inspection_requested.connect(_on_card_inspection_requested)
-		# Connect to expansion/contraction signals
-		if deck_view.has_signal("inspection_started") and not deck_view.inspection_started.is_connected(_on_inspection_started):
-			deck_view.inspection_started.connect(_on_inspection_started)
-		if deck_view.has_signal("inspection_closed") and not deck_view.inspection_closed.is_connected(_on_inspection_closed):
-			deck_view.inspection_closed.connect(_on_inspection_closed)
+	
+	# Check for CombinedDeckView (primary mode)
+	combined_deck_view = get_node_or_null("SubViewport/CombinedDeckView")
+	if combined_deck_view:
+		_setup_combined_mode()
+	else:
+		# Fall back to single DeckView3D (legacy mode)
+		deck_view = get_node_or_null("SubViewport/DeckView3D")
+		if deck_view:
+			_setup_single_mode()
+	
+	# Connect to resize signal to keep SubViewport in sync
+	resized.connect(_on_resized)
+	# Initial sync
+	_on_resized()
+
+
+func _on_resized() -> void:
+	"""Keep SubViewport size in sync with container for proper raycast coordinates"""
+	if sub_viewport and size.x > 0 and size.y > 0:
+		sub_viewport.size = Vector2i(int(size.x), int(size.y))
+
+
+func _setup_combined_mode() -> void:
+	"""Setup for combined deck view mode (both swing + modifier decks in one view)"""
+	if not combined_deck_view:
+		return
+	
+	# Forward signals from swing deck
+	if not combined_deck_view.swing_request_club_selection.is_connected(_on_swing_request_club_selection):
+		combined_deck_view.swing_request_club_selection.connect(_on_swing_request_club_selection)
+	if not combined_deck_view.swing_card_inspection_requested.is_connected(_on_card_inspection_requested):
+		combined_deck_view.swing_card_inspection_requested.connect(_on_card_inspection_requested)
+	
+	# Forward signals from modifier deck
+	if not combined_deck_view.modifier_request_club_selection.is_connected(_on_modifier_request_club_selection):
+		combined_deck_view.modifier_request_club_selection.connect(_on_modifier_request_club_selection)
+	if not combined_deck_view.modifier_card_inspection_requested.is_connected(_on_card_inspection_requested):
+		combined_deck_view.modifier_card_inspection_requested.connect(_on_card_inspection_requested)
+
+
+func _setup_single_mode() -> void:
+	"""Setup for single deck view mode (legacy)"""
+	if not deck_view:
+		return
+	
+	# Forward inspection signal (kept for compatibility)
+	if not deck_view.card_inspection_requested.is_connected(_on_card_inspection_requested):
+		deck_view.card_inspection_requested.connect(_on_card_inspection_requested)
 
 
 func _on_card_inspection_requested(card_instance: CardInstance) -> void:
 	card_inspection_requested.emit(card_instance)
 
 
-func _on_inspection_started() -> void:
-	"""Expand the SubViewportContainer to full screen for card inspection"""
-	if _is_expanded:
+func _on_swing_request_club_selection() -> void:
+	swing_request_club_selection.emit()
+
+
+func _on_modifier_request_club_selection() -> void:
+	modifier_request_club_selection.emit()
+
+
+func _gui_input(event: InputEvent) -> void:
+	"""Handle mouse input and forward to deck views"""
+	# Handle hover for cursor changes
+	if event is InputEventMouseMotion:
+		var local_pos = event.position
+		if combined_deck_view:
+			combined_deck_view.handle_hover_from_container(local_pos)
+		elif deck_view:
+			deck_view._check_hover(local_pos)
 		return
 	
-	# Save current state
-	_saved_anchors = {
-		"left": anchor_left,
-		"top": anchor_top,
-		"right": anchor_right,
-		"bottom": anchor_bottom
-	}
-	_saved_offsets = {
-		"left": offset_left,
-		"top": offset_top,
-		"right": offset_right,
-		"bottom": offset_bottom
-	}
-	if sub_viewport:
-		_saved_viewport_size = sub_viewport.size
-	
-	# Expand to full screen
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	offset_left = 0
-	offset_top = 0
-	offset_right = 0
-	offset_bottom = 0
-	
-	# Also expand the SubViewport to match screen size
-	if sub_viewport:
-		var screen_size = get_viewport_rect().size
-		sub_viewport.size = Vector2i(int(screen_size.x), int(screen_size.y))
-	
-	# Bring to front
-	z_index = 100
-	
-	_is_expanded = true
-
-
-func _on_inspection_closed() -> void:
-	"""Restore the SubViewportContainer to original size"""
-	if not _is_expanded:
+	if not event is InputEventMouseButton:
+		return
+	if not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	
-	# Restore anchors
-	anchor_left = _saved_anchors.get("left", 1.0)
-	anchor_top = _saved_anchors.get("top", 1.0)
-	anchor_right = _saved_anchors.get("right", 1.0)
-	anchor_bottom = _saved_anchors.get("bottom", 1.0)
+	# Position is already in local coordinates which match SubViewport (we sync sizes)
+	var local_pos = event.position
 	
-	# Restore offsets
-	offset_left = _saved_offsets.get("left", -1169.0)
-	offset_top = _saved_offsets.get("top", -600.0)
-	offset_right = _saved_offsets.get("right", -369.0)
-	offset_bottom = _saved_offsets.get("bottom", 0.0)
+	print("[DeckWidget] Container size=%s, SubViewport size=%s" % [size, Vector2(sub_viewport.size) if sub_viewport else Vector2.ZERO])
+	print("[DeckWidget] Click at %s" % local_pos)
 	
-	# Restore SubViewport size
-	if sub_viewport and _saved_viewport_size != Vector2i.ZERO:
-		sub_viewport.size = _saved_viewport_size
-	
-	# Restore z-index
-	z_index = 0
-	
-	_is_expanded = false
+	# Forward to combined or single deck view
+	if combined_deck_view:
+		combined_deck_view.handle_click_from_container(local_pos)
+	elif deck_view:
+		deck_view._check_click(local_pos)
 
 
-func _apply_config() -> void:
-	if not deck_view: return
-	
-	if card_back_texture:
-		deck_view.card_back_texture = card_back_texture
-	if card_front_texture:
-		deck_view.card_front_texture = card_front_texture
-	
-	deck_view.deck_size = deck_size
-	deck_view.interaction_mode = interaction_mode
-	
-	# Trigger mesh rebuild if needed
-	if deck_view.is_inside_tree():
-		deck_view._setup_deck_mesh()
+# Legacy inspection expansion code removed - card now animates within existing viewport
+
 
 func setup(manager: DeckManager) -> void:
+	"""Legacy single-deck setup"""
 	if deck_view:
 		deck_view.setup(manager)
 
+
+func setup_combined(swing_manager: DeckManager, modifier_manager: DeckManager) -> void:
+	"""Combined deck setup - sets up both swing and modifier decks"""
+	if combined_deck_view:
+		combined_deck_view.setup(swing_manager, modifier_manager)
+
+
 func get_deck_view() -> DeckView3D:
+	"""Get the single deck view (legacy mode)"""
 	return deck_view
+
+
+func get_combined_deck_view() -> CombinedDeckView:
+	"""Get the combined deck view (new mode)"""
+	return combined_deck_view
+
+
+func get_swing_deck_view() -> DeckView3D:
+	"""Get the swing deck from combined view"""
+	if combined_deck_view:
+		return combined_deck_view.swing_deck
+	return null
+
+
+func get_modifier_deck_view() -> DeckView3D:
+	"""Get the modifier deck from combined view"""
+	if combined_deck_view:
+		return combined_deck_view.modifier_deck
+	return null
+
+
+func is_combined_mode() -> bool:
+	"""Returns true if using combined deck view"""
+	return combined_deck_view != null

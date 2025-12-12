@@ -110,9 +110,9 @@ func calculate_wind_curve(shot_direction: Vector2) -> int:
 
 func get_display_text() -> String:
 	"""Get formatted text for UI display"""
-	if not enabled or strength == 0:
+	if not enabled or speed_kmh < 5:
 		return "Calm"
-	return "%s %s" % [get_direction_name(), get_strength_name()]
+	return "%s\n%dkm/h" % [get_direction_name(), int(speed_kmh)]
 
 
 func get_arrow_rotation() -> float:

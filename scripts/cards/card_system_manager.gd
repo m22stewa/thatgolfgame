@@ -126,7 +126,7 @@ func _start_swing_deck_selection() -> void:
 		return
 	
 	# Show UI
-	_show_selection_ui(cards, _on_club_selected, club_deck_widget)
+	_show_selection_ui(cards, _on_club_selected, club_deck_widget, club_deck_view)
 
 
 func _on_club_selected(card: CardInstance) -> void:
@@ -193,7 +193,7 @@ func _start_modifier_selection() -> void:
 		return
 		
 	# Show UI
-	_show_selection_ui(_current_modifier_candidates, _on_modifier_selected, deck_widget)
+	_show_selection_ui(_current_modifier_candidates, _on_modifier_selected, deck_widget, deck_view)
 
 
 func _on_modifier_selected(card: CardInstance) -> void:
@@ -230,7 +230,7 @@ func _on_modifier_selected(card: CardInstance) -> void:
 	turn_selection_complete.emit(selected_club_card, selected_modifier_card)
 
 
-func _show_selection_ui(cards: Array[CardInstance], callback: Callable, source_widget: Control = null) -> void:
+func _show_selection_ui(cards: Array[CardInstance], callback: Callable, source_widget: Control = null, source_deck_view: DeckView3D = null) -> void:
 	var selection_ui_scene = load("res://scenes/ui/card_selection_ui.tscn")
 	if not selection_ui_scene:
 		push_error("CardSelectionUI scene not found!")
@@ -245,8 +245,10 @@ func _show_selection_ui(cards: Array[CardInstance], callback: Callable, source_w
 	
 	if source_widget:
 		deck_pos = source_widget.global_position + (source_widget.size / 2.0)
-		if source_widget is DeckWidget:
-			front_texture = source_widget.card_front_texture
+	
+	# Get texture from deck view (more reliable than widget)
+	if source_deck_view:
+		front_texture = source_deck_view.card_front_texture
 	
 	# Add to UI layer
 	var control = get_tree().current_scene.get_node_or_null("Control")
@@ -309,101 +311,92 @@ func _recursive_find(node: Node, class_name_str: String) -> Node:
 
 
 func _setup_deck_ui() -> void:
-	"""Find or create the DeckView3D component via overlay"""
-	var widgets = []
+	"""Find and setup deck widgets - supports both combined and legacy modes"""
 	
 	# Try to find MainUI first
 	var main_ui = get_tree().current_scene.find_child("MainUI", true, false)
-	if main_ui and main_ui.get("modifier_deck_widget"):
-		if main_ui.modifier_deck_widget:
-			widgets.append(main_ui.modifier_deck_widget)
-		if main_ui.club_deck_widget:
-			widgets.append(main_ui.club_deck_widget)
+	if not main_ui:
+		push_warning("[CardSystem] MainUI not found")
+		return
 	
-	# Fallback to searching Control
-	if widgets.is_empty():
-		var control = get_tree().current_scene.get_node_or_null("Control")
-		if control:
-			# Explicitly remove old HandUI/DeckUI if they exist
-			var old_hand = control.get_node_or_null("HandUI")
-			if old_hand: old_hand.queue_free()
-			var old_deck = control.get_node_or_null("DeckUI")
-			if old_deck: old_deck.queue_free()
-			
-			# Find all DeckWidgets in Control
-			for child in control.get_children():
-				if child is DeckWidget:
-					widgets.append(child)
-				elif child.name == "DeckOverlay" or child.name == "ClubDeckOverlay":
-					# Fallback for old overlays or manually named nodes
-					widgets.append(child)
+	# Look for any visible DeckWidget that uses combined mode
+	for child in main_ui.get_children():
+		if child is DeckWidget and child.visible and child.is_combined_mode():
+			_setup_combined_deck_mode(child)
+			return
 	
-	for widget in widgets:
-		var is_club_deck = false
-		
-		# Determine type
-		if widget is DeckWidget:
-			if widget.deck_type == DeckWidget.DeckType.CLUBS:
-				is_club_deck = true
-		elif widget.name == "ClubDeckOverlay":
-			is_club_deck = true
-			
-		# Setup
-		if is_club_deck:
-			# Club Deck
-			club_deck_widget = widget
-			
-			# Ensure correct textures for Club Deck
-			if widget is DeckWidget:
-				if not widget.card_front_texture or widget.card_front_texture.resource_path.contains("card-front.png"):
-					widget.card_front_texture = load("res://textures/card-front-clubs.png")
-				if not widget.card_back_texture or widget.card_back_texture.resource_path.contains("card-back.png"):
-					widget.card_back_texture = load("res://textures/card-back-clubs.png")
-			
-			if widget.has_method("get_deck_view"):
-				club_deck_view = widget.get_deck_view()
-				widget.setup(club_deck_manager)
-			else:
-				club_deck_view = widget.get_node_or_null("SubViewport/DeckView3D")
-				if club_deck_view:
-					club_deck_view.setup(club_deck_manager)
-					club_deck_view.interaction_mode = DeckView3D.InteractionMode.SELECT_FROM_UI
-			
-			if club_deck_view and not club_deck_view.request_club_selection.is_connected(start_turn_selection):
-				club_deck_view.request_club_selection.connect(start_turn_selection)
-				
-		else:
-			# Modifier Deck (Default)
-			deck_widget = widget
-			
-			# Ensure correct textures for Modifier Deck
-			if widget is DeckWidget:
-				if not widget.card_front_texture:
-					widget.card_front_texture = load("res://textures/card-front.png")
-				if not widget.card_back_texture:
-					widget.card_back_texture = load("res://textures/card-back.png")
-			
-			if widget.has_method("get_deck_view"):
-				deck_view = widget.get_deck_view()
-				widget.setup(deck_manager)
-			else:
-				deck_view = widget.get_node_or_null("SubViewport/DeckView3D")
-				if deck_view:
-					deck_view.setup(deck_manager)
-					# Use SELECT_FROM_UI mode to trigger custom logic instead of auto-draw
-					deck_view.interaction_mode = DeckView3D.InteractionMode.SELECT_FROM_UI
-			
-			# Connect modifier deck click to modifier selection
-			if deck_view:
-				print("[CardSystem] Connecting modifier deck_view to _start_modifier_selection")
-				if deck_view.request_club_selection.is_connected(start_turn_selection):
-					deck_view.request_club_selection.disconnect(start_turn_selection)
-				
-				if not deck_view.request_club_selection.is_connected(_start_modifier_selection):
-					deck_view.request_club_selection.connect(_start_modifier_selection)
-					print("[CardSystem] Modifier deck connected successfully")
-			else:
-				push_warning("[CardSystem] deck_view is null, cannot connect modifier deck!")
+	# Fall back to separate deck widgets (legacy mode)
+	if main_ui.get("modifier_deck_widget") and main_ui.modifier_deck_widget and main_ui.modifier_deck_widget.visible:
+		_setup_legacy_modifier_deck(main_ui.modifier_deck_widget)
+	
+	if main_ui.get("club_deck_widget") and main_ui.club_deck_widget and main_ui.club_deck_widget.visible:
+		_setup_legacy_club_deck(main_ui.club_deck_widget)
+
+
+func _setup_combined_deck_mode(widget: DeckWidget) -> void:
+	"""Setup combined deck mode where both swing and modifier decks are in one widget"""
+	print("[CardSystem] Setting up combined deck mode")
+	
+	# Store the widget reference
+	deck_widget = widget
+	club_deck_widget = widget  # Both point to same widget in combined mode
+	
+	# Get the individual deck views from the combined view
+	club_deck_view = widget.get_swing_deck_view()
+	deck_view = widget.get_modifier_deck_view()
+	
+	# Setup both deck managers
+	widget.setup_combined(club_deck_manager, deck_manager)
+	
+	# Connect swing deck signals
+	if not widget.swing_request_club_selection.is_connected(start_turn_selection):
+		widget.swing_request_club_selection.connect(start_turn_selection)
+		print("[CardSystem] Swing deck connected to start_turn_selection")
+	
+	# Connect modifier deck signals
+	if not widget.modifier_request_club_selection.is_connected(_start_modifier_selection):
+		widget.modifier_request_club_selection.connect(_start_modifier_selection)
+		print("[CardSystem] Modifier deck connected to _start_modifier_selection")
+	
+	print("[CardSystem] Combined deck mode setup complete")
+
+
+func _setup_legacy_modifier_deck(widget: DeckWidget) -> void:
+	"""Setup legacy separate modifier deck widget"""
+	deck_widget = widget
+	
+	if widget.has_method("get_deck_view"):
+		deck_view = widget.get_deck_view()
+		widget.setup(deck_manager)
+	else:
+		deck_view = widget.get_node_or_null("SubViewport/DeckView3D")
+		if deck_view:
+			deck_view.setup(deck_manager)
+			deck_view.interaction_mode = DeckView3D.InteractionMode.SELECT_FROM_UI
+	
+	# Connect modifier deck click to modifier selection
+	if deck_view:
+		if deck_view.request_club_selection.is_connected(start_turn_selection):
+			deck_view.request_club_selection.disconnect(start_turn_selection)
+		if not deck_view.request_club_selection.is_connected(_start_modifier_selection):
+			deck_view.request_club_selection.connect(_start_modifier_selection)
+
+
+func _setup_legacy_club_deck(widget: DeckWidget) -> void:
+	"""Setup legacy separate club/swing deck widget"""
+	club_deck_widget = widget
+	
+	if widget.has_method("get_deck_view"):
+		club_deck_view = widget.get_deck_view()
+		widget.setup(club_deck_manager)
+	else:
+		club_deck_view = widget.get_node_or_null("SubViewport/DeckView3D")
+		if club_deck_view:
+			club_deck_view.setup(club_deck_manager)
+			club_deck_view.interaction_mode = DeckView3D.InteractionMode.SELECT_FROM_UI
+	
+	if club_deck_view and not club_deck_view.request_club_selection.is_connected(start_turn_selection):
+		club_deck_view.request_club_selection.connect(start_turn_selection)
 
 
 # --- Public API ---

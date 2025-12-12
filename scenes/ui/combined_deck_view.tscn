@@ -1,0 +1,27 @@
+[gd_scene load_steps=6 format=3 uid="uid://bb421gq0p4eys"]
+
+[ext_resource type="Script" uid="uid://b1fiecwhxyaaw" path="res://scripts/cards/combined_deck_view.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://bx4eqix8eau1c" path="res://scenes/ui/deck_view_3d.tscn" id="2_deck_scene"]
+[ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/cards/card-front.png" id="3_64usb"]
+[ext_resource type="Texture2D" uid="uid://bvc1xmvib2oun" path="res://textures/cards/card-back-green.png" id="3_green_back"]
+[ext_resource type="Texture2D" uid="uid://3awyxs3ovibd" path="res://textures/cards/card-back-blue.png" id="4_blue_back"]
+
+[node name="CombinedDeckView" type="Node3D"]
+script = ExtResource("1_script")
+swing_card_back_texture = ExtResource("4_blue_back")
+swing_card_front_texture = ExtResource("3_64usb")
+modifier_card_back_texture = ExtResource("3_green_back")
+modifier_card_front_texture = ExtResource("3_64usb")
+modifier_interaction_mode = 0
+
+[node name="SwingDeck" parent="." instance=ExtResource("2_deck_scene")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2, 0, 0)
+card_back_texture = ExtResource("4_blue_back")
+
+[node name="ModifierDeck" parent="." instance=ExtResource("2_deck_scene")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.2, 0, 0)
+card_back_texture = ExtResource("3_green_back")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.41877067, 0.9080921, 0, -0.9080921, 0.41877067, 0, 5.7350655, 2.534512)
+fov = 60.0

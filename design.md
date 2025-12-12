@@ -73,12 +73,15 @@ Copilot should help **refactor** and **extend** the project into small, single�
 - `card_ui.tscn` / `card_ui.gd` - Individual card visual with hover/select states
 - `hand_ui.tscn` / `hand_ui.gd` - Hand display with fan layout
 - `card_selection_ui.tscn` - Grid-based card selection overlay
-- `deck_widget.tscn` - 3D deck container for HUD
+- `deck_widget.tscn` - 3D deck container for HUD (standalone SubViewportContainer)
 - `deck_view_3d.tscn` - Interactive 3D deck with draw animation
+- `combined_deck_view.tscn` - Parent Node3D managing both SwingDeck and ModifierDeck
 - `SwingMeter.tscn` - 3-click timing mechanic for power/accuracy/curve
 - `shot_ui.tscn` - Main shot interface (hole info, club info, terrain, shot counter)
 - `target_marker.tscn` - Visual indicator for aim target
 - `hole_viewer.tscn` - Camera controller for viewing the hole
+- `WindWidget.tscn` - Wind direction/speed display with title and dynamic text
+- `LieView.tscn` - Current lie terrain display with title and dynamic text
 
 **Gameplay Loop (Current State):**
 1. ✅ Ball placed on tee at hole start
@@ -96,10 +99,11 @@ Copilot should help **refactor** and **extend** the project into small, single�
 
 ### 🔄 Partially Implemented
 
-1. **Wind System** - WindSystem exists and generates wind per hole, but:
+1. **Wind System** - WindSystem exists and generates wind per hole:
    - `effect_wind.gd` WindModifier created but not auto-added to ModifierManager
    - Wind effects on trajectory not fully applied during shot execution
-   - UI widget exists but may not display dynamically
+   - ✅ UI widget displays dynamically with format "W 26km/h" (direction + speed)
+   - ✅ Widget has title label at top, dynamic text at bottom
 
 2. **Scoring Display** - Chips/mult calculated but:
    - No running total display

@@ -1,0 +1,321 @@
+{
+	"swing_cards": [
+		{
+			"card_id": "standard_swing",
+			"card_name": "Standard Swing",
+			"description": "No modifiers. A clean, reliable shot.",
+			"flavor_text": "Nothing fancy, just golf.",
+			"rarity": "COMMON",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"requires_target": false,
+			"requires_shot_in_progress": true,
+			"can_upgrade": true,
+			"max_upgrade_level": 3,
+			"max_uses": -1,
+			"tags": ["neutral", "basic"],
+			"effects": []
+		},
+		{
+			"card_id": "power_drive",
+			"card_name": "Power Drive",
+			"description": "+20 distance. Grip it and rip it!",
+			"flavor_text": "Grip it and rip it!",
+			"rarity": "UNCOMMON",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["power", "distance"],
+			"effects": [
+				{"type": "distance_mod", "value": 20}
+			]
+		},
+		{
+			"card_id": "power_draw",
+			"card_name": "Power Draw",
+			"description": "+15 distance with a 2-tile draw curve.",
+			"flavor_text": "Shape it around the trees!",
+			"rarity": "UNCOMMON",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["power", "draw", "curve"],
+			"effects": [
+				{"type": "distance_mod", "value": 15},
+				{"type": "curve", "value": -0.2}
+			]
+		},
+		{
+			"card_id": "controlled_fade",
+			"card_name": "Controlled Fade",
+			"description": "+10 accuracy with a gentle 1-tile fade.",
+			"flavor_text": "The thinking man's shot.",
+			"rarity": "UNCOMMON",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["accuracy", "fade", "curve"],
+			"effects": [
+				{"type": "accuracy_mod", "value": 10},
+				{"type": "curve", "value": 0.1}
+			]
+		},
+		{
+			"card_id": "precision_swing",
+			"card_name": "Precision Swing",
+			"description": "+15 accuracy, -10 distance. Control over power.",
+			"flavor_text": "Slow and steady wins the hole.",
+			"rarity": "COMMON",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["accuracy", "control"],
+			"effects": [
+				{"type": "accuracy_mod", "value": 15},
+				{"type": "distance_mod", "value": -10}
+			]
+		},
+		{
+			"card_id": "safe_layup",
+			"card_name": "Safe Layup",
+			"description": "-30 distance, +25 accuracy. Play it safe.",
+			"flavor_text": "Sometimes discretion is the better part of valor.",
+			"rarity": "COMMON",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["safe", "control", "accuracy"],
+			"effects": [
+				{"type": "distance_mod", "value": -30},
+				{"type": "accuracy_mod", "value": 25}
+			]
+		},
+		{
+			"card_id": "aggressive_swing",
+			"card_name": "Aggressive Swing",
+			"description": "+30 distance, -15 accuracy. High risk, high reward.",
+			"flavor_text": "Fortune favors the bold!",
+			"rarity": "RARE",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["power", "risky"],
+			"effects": [
+				{"type": "distance_mod", "value": 30},
+				{"type": "accuracy_mod", "value": -15}
+			]
+		},
+		{
+			"card_id": "punch_shot",
+			"card_name": "Punch Shot",
+			"description": "-20 distance, +3 roll tiles. Keep it low.",
+			"flavor_text": "Under the branches and running.",
+			"rarity": "COMMON",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["low", "roll"],
+			"effects": [
+				{"type": "distance_mod", "value": -20},
+				{"type": "roll_mod", "value": 3}
+			]
+		},
+		{
+			"card_id": "high_soft_fade",
+			"card_name": "High Soft Fade",
+			"description": "2-tile fade with -2 roll. Lands soft.",
+			"flavor_text": "Floats like a butterfly, lands like a feather.",
+			"rarity": "RARE",
+			"card_type": "SHOT",
+			"play_cost": 0,
+			"tags": ["fade", "curve", "soft"],
+			"effects": [
+				{"type": "curve", "value": 0.2},
+				{"type": "roll_mod", "value": -2}
+			]
+		}
+	],
+	"modifier_cards": [
+		{
+			"card_id": "tailwind_boost",
+			"card_name": "Tailwind Boost",
+			"description": "+10 distance when wind is behind you.",
+			"flavor_text": "Let the wind do the work.",
+			"rarity": "UNCOMMON",
+			"card_type": "PASSIVE",
+			"play_cost": 0,
+			"max_uses": 3,
+			"tags": ["wind", "power"],
+			"effects": [
+				{"type": "terrain_bonus", "terrain": "tailwind", "chips": 10}
+			]
+		},
+		{
+			"card_id": "fairway_finder",
+			"card_name": "Fairway Finder",
+			"description": "+15 chips when landing on fairway.",
+			"flavor_text": "Hit 'em straight!",
+			"rarity": "COMMON",
+			"card_type": "PASSIVE",
+			"play_cost": 0,
+			"max_uses": -1,
+			"tags": ["fairway", "accuracy"],
+			"effects": [
+				{"type": "terrain_bonus", "terrain": "FAIRWAY", "chips": 15}
+			]
+		},
+		{
+			"card_id": "green_machine",
+			"card_name": "Green Machine",
+			"description": "+25 chips when landing on the green.",
+			"flavor_text": "Pin high, every time.",
+			"rarity": "UNCOMMON",
+			"card_type": "PASSIVE",
+			"play_cost": 0,
+			"max_uses": -1,
+			"tags": ["green", "putting"],
+			"effects": [
+				{"type": "terrain_bonus", "terrain": "GREEN", "chips": 25}
+			]
+		},
+		{
+			"card_id": "long_ball",
+			"card_name": "Long Ball",
+			"description": "+1 chip per tile of distance.",
+			"flavor_text": "Distance = chips!",
+			"rarity": "RARE",
+			"card_type": "PASSIVE",
+			"play_cost": 0,
+			"max_uses": -1,
+			"tags": ["distance", "scoring"],
+			"effects": [
+				{"type": "distance_bonus", "mode": 0, "chips_per_unit": 1.0}
+			]
+		},
+		{
+			"card_id": "bounce_master",
+			"card_name": "Bounce Master",
+			"description": "+2 extra bounces on all shots.",
+			"flavor_text": "Boing, boing, boing!",
+			"rarity": "RARE",
+			"card_type": "PASSIVE",
+			"play_cost": 0,
+			"max_uses": -1,
+			"tags": ["bounce", "control"],
+			"effects": [
+				{"type": "bounce_bonus", "value": 2}
+			]
+		},
+		{
+			"card_id": "roll_control",
+			"card_name": "Roll Control",
+			"description": "+2 roll tiles after landing.",
+			"flavor_text": "Let it run!",
+			"rarity": "COMMON",
+			"card_type": "PASSIVE",
+			"play_cost": 0,
+			"max_uses": -1,
+			"tags": ["roll", "control"],
+			"effects": [
+				{"type": "roll_modifier", "value": 2}
+			]
+		},
+		{
+			"card_id": "score_multiplier",
+			"card_name": "Score Multiplier",
+			"description": "+0.5x mult to all shots.",
+			"flavor_text": "Everything counts for more!",
+			"rarity": "LEGENDARY",
+			"card_type": "PASSIVE",
+			"play_cost": 0,
+			"max_uses": 5,
+			"tags": ["scoring", "mult"],
+			"effects": [
+				{"type": "mult_bonus", "value": 0.5}
+			]
+		}
+	],
+	"club_cards": [
+		{
+			"card_id": "driver",
+			"card_name": "Driver",
+			"description": "Maximum distance off the tee.",
+			"flavor_text": "The big stick.",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "driver",
+			"tags": ["club", "power"],
+			"effects": []
+		},
+		{
+			"card_id": "wood_3",
+			"card_name": "3 Wood",
+			"description": "Long distance with more control than driver.",
+			"flavor_text": "The fairway finder.",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "wood_3",
+			"tags": ["club", "distance"],
+			"effects": []
+		},
+		{
+			"card_id": "iron_5",
+			"card_name": "5 Iron",
+			"description": "Long iron for approaches.",
+			"flavor_text": "The approach specialist.",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "iron_5",
+			"tags": ["club", "balanced"],
+			"effects": []
+		},
+		{
+			"card_id": "iron_7",
+			"card_name": "7 Iron",
+			"description": "Versatile mid-range club.",
+			"flavor_text": "The workhorse.",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "iron_7",
+			"tags": ["club", "balanced"],
+			"effects": []
+		},
+		{
+			"card_id": "iron_9",
+			"card_name": "9 Iron",
+			"description": "Short iron for precision.",
+			"flavor_text": "Stick it close.",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "iron_9",
+			"tags": ["club", "accuracy"],
+			"effects": []
+		},
+		{
+			"card_id": "pitching_wedge",
+			"card_name": "Pitching Wedge",
+			"description": "High loft for short approaches.",
+			"flavor_text": "Up and down.",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "pitching_wedge",
+			"tags": ["club", "wedge"],
+			"effects": []
+		},
+		{
+			"card_id": "sand_wedge",
+			"card_name": "Sand Wedge",
+			"description": "Escape the bunkers.",
+			"flavor_text": "Splash!",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "sand_wedge",
+			"tags": ["club", "wedge", "sand"],
+			"effects": []
+		},
+		{
+			"card_id": "putter",
+			"card_name": "Putter",
+			"description": "For the green. Roll it in!",
+			"flavor_text": "Drive for show, putt for dough.",
+			"rarity": "COMMON",
+			"card_type": "CLUB",
+			"target_club": "putter",
+			"tags": ["club", "putting"],
+			"effects": []
+		}
+	]
+}
