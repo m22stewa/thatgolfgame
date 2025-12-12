@@ -26,7 +26,7 @@ const ShotNumberScene = preload("res://scenes/ui/shot_number.tscn")
 @onready var target_terrain: Label = %TargetTerrain
 @onready var target_distance: Label = %TargetDistance
 
-@onready var swing_button: Button = %ConfirmButton  # Renamed: Swing button to confirm shot
+@onready var spin_meter: SpinMeter = %SpinMeter  # Spin meter to confirm shot and set spin
 @onready var score_popup: PanelContainer = $ScorePopup
 
 # Shot prerequisite tracking
@@ -124,11 +124,11 @@ func _ready() -> void:
 	score_popup.visible = false
 	hole_complete_popup.visible = false
 	
-	# Setup swing button (starts disabled, enabled when prerequisites met)
-	swing_button.visible = true
-	swing_button.disabled = true
-	swing_button.text = "SWING"
-	swing_button.pressed.connect(_on_swing_button_pressed)
+	# Setup spin meter (starts disabled, enabled when prerequisites met)
+	if spin_meter:
+		spin_meter.visible = true
+		spin_meter.set_disabled(true)
+		spin_meter.spin_confirmed.connect(_on_spin_confirmed)
 	
 	# Connect button signals
 	next_button.pressed.connect(_on_next_hole_pressed)
@@ -234,39 +234,25 @@ func set_modifier_drawn(drawn: bool) -> void:
 
 
 func _update_swing_button_state() -> void:
-	"""Enable swing button only when all prerequisites are met"""
+	"""Enable spin meter only when all prerequisites are met"""
 	var all_ready = tile_selected and swing_card_selected and modifier_drawn
 	
 	# Debug output
 	print("[ShotUI] Prerequisites: tile=%s, swing_card=%s, modifier=%s -> all_ready=%s" % [tile_selected, swing_card_selected, modifier_drawn, all_ready])
 	
-	if swing_button:
-		swing_button.disabled = not all_ready
-		print("[ShotUI] Button disabled = %s" % swing_button.disabled)
+	if spin_meter:
+		spin_meter.set_disabled(not all_ready)
+		print("[ShotUI] SpinMeter disabled = %s" % (not all_ready))
 	else:
-		push_error("[ShotUI] swing_button is null!")
+		push_error("[ShotUI] spin_meter is null!")
+
+
+func _on_spin_confirmed(spin_value: int) -> void:
+	"""Called when player releases the spin meter"""
+	print("[ShotUI] Spin confirmed with value: %d" % spin_value)
 	
-	# Update button tooltip based on missing prerequisites
-	if all_ready:
-		if swing_button:
-			swing_button.tooltip_text = "Click to take your shot!"
-	else:
-		var missing: Array[String] = []
-		if not tile_selected:
-			missing.append("Select landing tile")
-		if not swing_card_selected:
-			missing.append("Pick swing card")
-		if not modifier_drawn:
-			missing.append("Draw modifier")
-		if swing_button:
-			swing_button.tooltip_text = "Need: " + ", ".join(missing)
-
-
-func _on_swing_button_pressed() -> void:
-	"""Called when player clicks the Swing button"""
-	if not swing_button.disabled:
-		# Trigger shot confirmation (same as old swing meter completion)
-		_on_swing_completed(1.0, 0.0, 0.0)
+	# Pass spin value to swing completion - it will be applied after shot starts
+	_on_swing_completed_with_spin(spin_value)
 
 
 func set_hole_info(hole: int, par: int, yardage: int) -> void:
@@ -287,21 +273,20 @@ func set_hole_info(hole: int, par: int, yardage: int) -> void:
 func update_shot_info(strokes_taken: int, distance_to_flag: int) -> void:
 	"""Update shot counter and distance. strokes_taken is how many shots have been made."""
 	shots_this_hole = strokes_taken
-	# Display shows which shot number we're ON (next shot to take)
-	# After 0 strokes, we're on shot 1. After 1 stroke, we're on shot 2.
-	_update_shot_counter_visuals(strokes_taken + 1)
+	# Display shows how many strokes have been taken (not next shot number)
+	_update_shot_counter_visuals(strokes_taken)
 	distance_label.text = "%d yds to flag" % distance_to_flag
 
 
-func _update_shot_counter_visuals(current_shot: int) -> void:
+func _update_shot_counter_visuals(strokes_taken: int) -> void:
 	if not shot_numbers: return
 	
 	# Clear existing
 	for child in shot_numbers.get_children():
 		child.queue_free()
 	
-	# Determine range (e.g. up to Par + 2, or current shot if higher)
-	var max_display = max(current_par + 2, current_shot + 1)
+	# Determine range (e.g. up to Par + 2, or strokes taken if higher)
+	var max_display = max(current_par + 2, strokes_taken + 2)
 	if max_display < 5: max_display = 5 # Minimum 5
 	
 	for i in range(1, max_display + 1):
@@ -309,10 +294,12 @@ func _update_shot_counter_visuals(current_shot: int) -> void:
 		shot_numbers.add_child(shot_node)
 		shot_node.set_number(i)
 		
-		if i == current_shot:
-			shot_node.set_state("current")
-		elif i < current_shot:
-			shot_node.set_state("past")
+		# strokes_taken = how many shots have been completed
+		# Show completed shots as "past", current stroke count as "current", rest as "future"
+		if i <= strokes_taken:
+			shot_node.set_state("past")  # Already taken
+		elif i == strokes_taken + 1:
+			shot_node.set_state("current")  # Next shot to take
 		else:
 			shot_node.set_state("future")
 
@@ -340,6 +327,12 @@ func update_club_display() -> void:
 	var club = clubs[selected_club]
 	club_name.text = club[0]
 	club_range.text = "%d-%d yds" % [club[1], club[2]]
+
+
+func set_putting_club(tile_distance: int) -> void:
+	"""Set club display for putting mode"""
+	club_name.text = "Putter"
+	club_range.text = "%d tiles" % tile_distance
 
 
 func update_lie_info(lie_info: Dictionary) -> void:
@@ -453,6 +446,10 @@ func _update_club_difficulty() -> void:
 		# If club is not appropriate for the lie, increase difficulty
 		if not club_is_appropriate:
 			current_lie_difficulty = min(current_lie_difficulty + 0.5, 1.0)
+	
+	# Update spin meter oscillation speed based on club difficulty
+	if spin_meter:
+		spin_meter.set_club_difficulty(current_club_difficulty)
 
 
 func next_club() -> void:
@@ -600,13 +597,10 @@ func _on_shot_completed(context: ShotContext) -> void:
 	reset_shot_prerequisites()
 
 
-func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> void:
-	"""Called when player completes the swing.
-	With new system, swing button just confirms shot - accuracy is determined by stats.
-	Power/accuracy/curve_mod params kept for backwards compatibility but not used."""
-	
+func _on_swing_completed_with_spin(spin_value: int) -> void:
+	"""Called when player completes the swing with spin value from meter."""
 	if not shot_manager:
-		push_error("ShotUI: No shot_manager reference! Cannot confirm shot.")
+		push_error("[ShotUI] No shot_manager reference! Cannot confirm shot.")
 		return
 	
 	# If shot not started yet, auto-start it now (player did pre-aiming)
@@ -626,11 +620,21 @@ func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> voi
 					var adjusted = hole_controller.get_shape_adjusted_landing(hole_controller.locked_cell)
 					shot_manager.set_aim_target(adjusted)
 	
-	# Stats are already set in context from club/lie/wind/cards
-	# No need to set swing_power/accuracy/curve - those are deprecated
+	# Apply spin value to roll_mod AFTER shot started (modifiers already applied)
+	if shot_manager.current_context:
+		shot_manager.current_context.roll_mod += spin_value
+		print("[ShotUI] Applied spin to roll_mod, new value: %d" % shot_manager.current_context.roll_mod)
 	
 	# Now confirm the shot
 	shot_manager.confirm_shot()
+
+
+func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> void:
+	"""Called when player completes the swing.
+	With new system, swing button just confirms shot - accuracy is determined by stats.
+	Power/accuracy/curve_mod params kept for backwards compatibility but not used."""
+	# Delegate to the new function with no spin
+	_on_swing_completed_with_spin(0)
 
 
 func _on_swing_cancelled() -> void:

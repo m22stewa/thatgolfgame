@@ -72,10 +72,12 @@ func start_shot(ball: Node3D, start_tile: Vector2i) -> void:
 	# Calculate base stats from ball/hole state
 	_calculate_base_stats()
 	
-	shot_started.emit(current_context)
-	
-	# Phase 2: Apply modifiers before aiming
+	# Phase 2: Apply modifiers before aiming (MUST happen before shot_started signal)
+	# This ensures context has correct values when other systems respond to shot_started
 	_apply_modifiers_before_aim()
+	
+	# Now emit signal - context is fully initialized with modifiers
+	shot_started.emit(current_context)
 
 
 func set_aim_target(aim_tile: Vector2i) -> void:
@@ -188,15 +190,24 @@ func _calculate_base_stats() -> void:
 
 func _apply_modifiers_before_aim() -> void:
 	"""Phase 2: Let modifiers adjust context before player aims"""
-	# Apply club accuracy to base AOE radius
+	print("[ShotManager] _apply_modifiers_before_aim - context BEFORE modifiers: distance_mod=%d, accuracy_mod=%d, roll_mod=%d" % [
+		current_context.distance_mod, current_context.accuracy_mod, current_context.roll_mod
+	])
+	
+	# First apply all modifiers (cards, lie, etc.) to the context
+	if modifier_manager and modifier_manager.has_method("apply_before_aim"):
+		modifier_manager.apply_before_aim(current_context)
+	
+	print("[ShotManager] _apply_modifiers_before_aim - context AFTER modifiers: distance_mod=%d, accuracy_mod=%d, roll_mod=%d" % [
+		current_context.distance_mod, current_context.accuracy_mod, current_context.roll_mod
+	])
+	
+	# Now get club stats with modifiers applied to determine final AOE radius
 	if hole_controller and hole_controller.has_method("get_current_shot_stats"):
 		var stats = hole_controller.get_current_shot_stats()
 		if stats.has("final") and stats.final.has("accuracy"):
 			# Accuracy from club + all modifiers determines AOE radius
 			current_context.aoe_radius = maxi(0, stats.final.accuracy)
-	
-	if modifier_manager and modifier_manager.has_method("apply_before_aim"):
-		modifier_manager.apply_before_aim(current_context)
 	
 	modifiers_applied_before_aim.emit(current_context)
 
@@ -256,45 +267,62 @@ func _resolve_landing_tile() -> void:
 
 
 func _calculate_curved_target() -> Vector2i:
-	"""Calculate target tile with curve applied from cards and wind.
-	Ball goes to aim_tile, but curve offsets it perpendicular to shot direction."""
+	"""Calculate target tile with curve and distance modifiers applied.
+	Ball goes to aim_tile, but:
+	- distance_mod extends/shortens along shot direction
+	- curve offsets perpendicular to shot direction"""
 	var start = current_context.start_tile
 	var aim = current_context.aim_tile
 	
-	# Total curve: card curve + wind curve
-	var total_curve = current_context.curve_strength + float(current_context.wind_curve)
-	
-	# If no curve, just return aim tile
-	if abs(total_curve) < 0.1:
-		return aim
-	
 	# Calculate shot direction
-	var dir_x = aim.x - start.x
-	var dir_y = aim.y - start.y
+	var dir_x = float(aim.x - start.x)
+	var dir_y = float(aim.y - start.y)
 	var length = sqrt(dir_x * dir_x + dir_y * dir_y)
 	
 	if length < 0.1:
 		return aim
 	
-	# Perpendicular vector (rotated 90 degrees)
-	var perp_x = -dir_y / length
-	var perp_y = dir_x / length
+	# Normalize direction
+	var norm_x = dir_x / length
+	var norm_y = dir_y / length
 	
-	# Apply curve (positive = right, negative = left)
-	var curve_tiles = int(round(total_curve))
-	var target_x = aim.x + int(round(perp_x * curve_tiles))
-	var target_y = aim.y + int(round(perp_y * curve_tiles))
+	# Start with aim position
+	var target_x = float(aim.x)
+	var target_y = float(aim.y)
 	
-	# Mark that ball curved
-	if abs(curve_tiles) > 0:
-		current_context.did_curve = true
+	# Apply distance modifier (extends/shortens along shot direction)
+	var distance_mod = current_context.distance_mod
+	if distance_mod != 0:
+		target_x += norm_x * float(distance_mod)
+		target_y += norm_y * float(distance_mod)
+		print("[ShotManager] Applied distance_mod %d: aim(%d,%d) -> target(%.1f,%.1f)" % [
+			distance_mod, aim.x, aim.y, target_x, target_y
+		])
+	
+	# Apply curve (perpendicular to shot direction)
+	var total_curve = current_context.curve_strength + float(current_context.wind_curve)
+	if abs(total_curve) >= 0.1:
+		# Perpendicular vector (rotated 90 degrees)
+		var perp_x = -norm_y
+		var perp_y = norm_x
+		
+		var curve_tiles = total_curve
+		target_x += perp_x * curve_tiles
+		target_y += perp_y * curve_tiles
+		
+		if abs(curve_tiles) > 0.5:
+			current_context.did_curve = true
+	
+	# Round to integer tile coordinates
+	var final_x = int(round(target_x))
+	var final_y = int(round(target_y))
 	
 	# Clamp to valid grid bounds if hole_controller available
 	if hole_controller and hole_controller.has_method("get_grid_width"):
-		target_x = clampi(target_x, 0, hole_controller.get_grid_width() - 1)
-		target_y = clampi(target_y, 0, hole_controller.get_grid_height() - 1)
+		final_x = clampi(final_x, 0, hole_controller.get_grid_width() - 1)
+		final_y = clampi(final_y, 0, hole_controller.get_grid_height() - 1)
 	
-	return Vector2i(target_x, target_y)
+	return Vector2i(final_x, final_y)
 
 
 func _calculate_accuracy_landing(target_tile: Vector2i) -> Vector2i:

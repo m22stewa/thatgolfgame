@@ -277,16 +277,18 @@ func _handle_ball_tracking(delta: float) -> void:
 
 func _on_ball_flight_started() -> void:
 	"""Called when ball starts moving"""
-	# Don't change zoom during flight - reduces calculations
-	# Just mark that we're tracking
-	is_tracking_ball = true
+	pass
 
 
 func _on_ball_flight_ended() -> void:
-	"""Called when ball stops"""
-	# Camera will snap to ball position in _handle_ball_tracking
-	if track_after_flight:
-		is_tracking_ball = true
+	"""Called when ball stops - smoothly move camera to ball position"""
+	# Re-enable tracking when shot completes (user can disable again by panning/rotating)
+	is_tracking_ball = true
+	track_after_flight = true
+	
+	# Smoothly move camera to center on ball's new position
+	if ball_node and is_instance_valid(ball_node):
+		target_position = Vector3(ball_node.global_position.x, 0, ball_node.global_position.z)
 
 
 func _smooth_camera_movement(delta: float) -> void:
@@ -486,10 +488,14 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 
 func _handle_putting_mouse_button(event: InputEventMouseButton) -> void:
 	"""Handle mouse input during putting mode"""
-	# Right click in putting mode = cancel aim
+	# Right click in putting mode - handle pan directly (no pitch)
 	if event.button_index == MOUSE_BUTTON_RIGHT:
-		if event.pressed and putting_system:
-			putting_system.cancel_aim()
+		if event.pressed:
+			is_panning = true
+			pan_start_mouse = event.position
+			pan_start_position = target_position
+		else:
+			is_panning = false
 		return
 	
 	# Left click = aim/charge/release
@@ -697,13 +703,29 @@ func reset_view() -> void:
 func look_at_flag() -> void:
 	"""Rotate camera to look toward the flag/hole"""
 	if hex_grid and "flag_position" in hex_grid:
-		var flag_pos = hex_grid.flag_position
+		var flag_grid_pos = hex_grid.flag_position  # Vector2i grid coords
 		var ball_pos = target_position
 		if ball_node and is_instance_valid(ball_node):
 			ball_pos = Vector3(ball_node.global_position.x, 0, ball_node.global_position.z)
 		
+		# Convert flag grid position to world position
+		var flag_world_pos: Vector3
+		if hex_grid.has_method("get_tile_world_position"):
+			flag_world_pos = hex_grid.get_tile_world_position(flag_grid_pos)
+		else:
+			# Fallback: manual hex grid to world conversion
+			var tile_size = 1.0
+			if "TILE_SIZE" in hex_grid:
+				tile_size = hex_grid.TILE_SIZE
+			var hex_height = tile_size * sqrt(3.0)
+			flag_world_pos = Vector3(
+				flag_grid_pos.x * tile_size * 1.5,
+				0,
+				flag_grid_pos.y * hex_height + (flag_grid_pos.x % 2) * hex_height / 2.0
+			)
+		
 		# Calculate angle from ball to flag
-		var dir = flag_pos - ball_pos
+		var dir = flag_world_pos - ball_pos
 		target_yaw = atan2(dir.x, dir.z)
 
 
@@ -791,10 +813,29 @@ func _setup_wind_display() -> void:
 		
 	if wind_widget:
 		# Found existing widget (placed in editor)
+		# Try to find Label as direct child first
 		wind_label = wind_widget.get_node_or_null("Label")
-		var viewport = wind_widget.get_node_or_null("SubViewport")
-		if viewport:
-			wind_indicator = viewport.get_node_or_null("WindIndicator")
+		
+		# Try to find SubViewport in SubViewportContainer child
+		var svc = wind_widget.get_node_or_null("SubViewportContainer")
+		if svc:
+			var viewport = svc.get_node_or_null("SubViewport")
+			if viewport:
+				wind_indicator = viewport.get_node_or_null("WindIndicator")
+		else:
+			# Fall back to Panel hierarchy
+			var panel = wind_widget.get_node_or_null("Panel")
+			if panel:
+				if not wind_label:
+					wind_label = panel.get_node_or_null("Label")
+				var viewport = panel.get_node_or_null("SubViewport")
+				if viewport:
+					wind_indicator = viewport.get_node_or_null("WindIndicator")
+			else:
+				# Try direct SubViewport child (old structure)
+				var viewport = wind_widget.get_node_or_null("SubViewport")
+				if viewport:
+					wind_indicator = viewport.get_node_or_null("WindIndicator")
 
 
 func _update_wind_display() -> void:

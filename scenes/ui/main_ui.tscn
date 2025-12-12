@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://cdby66rujphi3"]
+[gd_scene load_steps=19 format=3 uid="uid://cdby66rujphi3"]
 
 [ext_resource type="Script" uid="uid://bryby6cgtarmo" path="res://scripts/ui/main_ui.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="2_shot_ui"]
@@ -7,9 +7,11 @@
 [ext_resource type="PackedScene" uid="uid://dsma18qptjtff" path="res://scenes/WindWidget.tscn" id="4_wind"]
 [ext_resource type="PackedScene" uid="uid://blt23k5ne8pqf" path="res://scenes/ui/LieView.tscn" id="5_lie_view"]
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_theme"]
+[ext_resource type="Texture2D" uid="uid://bvc1xmvib2oun" path="res://textures/card-back-green.png" id="6_chv3i"]
 [ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="6_hole_viewer"]
 [ext_resource type="Texture2D" uid="uid://0m3ktjyite15" path="res://textures/card-front.png" id="7_oi40j"]
 [ext_resource type="PackedScene" uid="uid://d0p11qbqfw7jg" path="res://scenes/ui/SwingMeter.tscn" id="7_swing_meter"]
+[ext_resource type="Texture2D" uid="uid://3awyxs3ovibd" path="res://textures/card-back-blue.png" id="10_h2n7m"]
 [ext_resource type="Texture2D" uid="uid://c3hpaioup7fto" path="res://textures/click.png" id="12_ampf0"]
 [ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/left-click.png" id="13_chv3i"]
 [ext_resource type="Texture2D" uid="uid://meco8curw6dv" path="res://textures/right-click.png" id="14_h2n7m"]
@@ -68,36 +70,116 @@ layout_mode = 0
 offset_right = 800.0
 offset_bottom = 1080.0
 
+[node name="icons" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Click" type="Sprite2D" parent="icons"]
+position = Vector2(208, 996)
+scale = Vector2(0.125, 0.12500003)
+texture = ExtResource("12_ampf0")
+
+[node name="LeftClick" type="Sprite2D" parent="icons"]
+position = Vector2(332, 994)
+scale = Vector2(0.12500001, 0.1328125)
+texture = ExtResource("13_chv3i")
+
+[node name="RightClick" type="Sprite2D" parent="icons"]
+position = Vector2(464, 994)
+scale = Vector2(0.124999955, 0.13281243)
+texture = ExtResource("14_h2n7m")
+
+[node name="Scroll" type="Sprite2D" parent="icons"]
+position = Vector2(592, 994)
+scale = Vector2(0.12499999, 0.13281249)
+texture = ExtResource("15_xfu30")
+
+[node name="Label" type="Label" parent="icons"]
+layout_mode = 0
+offset_left = 168.0
+offset_top = 1036.0
+offset_right = 248.0
+offset_bottom = 1056.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+text = "Rotate"
+horizontal_alignment = 1
+
+[node name="Label2" type="Label" parent="icons"]
+layout_mode = 0
+offset_left = 304.0
+offset_top = 1036.0
+offset_right = 368.0
+offset_bottom = 1056.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+text = "Aim"
+horizontal_alignment = 1
+
+[node name="Label3" type="Label" parent="icons"]
+layout_mode = 0
+offset_left = 432.0
+offset_top = 1036.0
+offset_right = 496.0
+offset_bottom = 1056.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+text = "Pan"
+horizontal_alignment = 1
+
+[node name="Label4" type="Label" parent="icons"]
+layout_mode = 0
+offset_left = 560.0
+offset_top = 1036.0
+offset_right = 624.0
+offset_bottom = 1056.0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+text = "Zoom"
+horizontal_alignment = 1
+
 [node name="ClubDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
 layout_mode = 1
 anchors_preset = 2
 anchor_left = 0.0
 anchor_right = 0.0
-offset_left = 735.0
-offset_top = -840.0
-offset_right = 1485.0
-offset_bottom = -196.0
+offset_left = 780.0
+offset_top = -666.0
+offset_right = 1320.3727
+offset_bottom = -202.0
 grow_horizontal = 1
 deck_type = 1
-card_back_texture = ExtResource("7_oi40j")
+card_back_texture = ExtResource("6_chv3i")
 card_front_texture = ExtResource("7_oi40j")
 interaction_mode = 1
 
-[node name="WindWidget" parent="." instance=ExtResource("4_wind")]
+[node name="ModifierDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
 layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -1900.0
-offset_top = 14.0
-offset_right = -1770.0
-offset_bottom = 144.0
-grow_horizontal = 0
+offset_left = -736.0
+offset_top = -659.0
+offset_right = -253.75574
+offset_bottom = -205.0
+card_back_texture = ExtResource("10_h2n7m")
+card_front_texture = ExtResource("7_oi40j")
 
 [node name="ShotUI" parent="." instance=ExtResource("2_shot_ui")]
 layout_mode = 1
 mouse_filter = 2
 bypass_card_selection = false
+
+[node name="WindWidget" parent="." instance=ExtResource("4_wind")]
+anchors_preset = 0
+offset_left = 17.0
+offset_top = 16.0
+offset_right = 117.0
+offset_bottom = 166.0
+
+[node name="LieView" parent="." instance=ExtResource("5_lie_view")]
+anchors_preset = 0
+offset_left = 17.0
+offset_top = 194.0
+offset_right = 117.0
+offset_bottom = 344.0
 
 [node name="LieInfoPanel" type="PanelContainer" parent="."]
 unique_name_in_owner = true
@@ -148,26 +230,6 @@ text = "[color=white]Power: 100%[/color]
 [color=white]Roll: 100%[/color]"
 fit_content = true
 
-[node name="ModifierDeckWidget" parent="." instance=ExtResource("3_deck_widget")]
-layout_mode = 1
-offset_left = -629.0
-offset_top = -739.0
-offset_right = -168.0
-offset_bottom = -305.0
-card_back_texture = ExtResource("7_oi40j")
-card_front_texture = ExtResource("7_oi40j")
-
-[node name="LieView" parent="." instance=ExtResource("5_lie_view")]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -1904.0
-offset_top = 152.0
-offset_right = -1764.0
-offset_bottom = 322.0
-grow_horizontal = 0
-
 [node name="HoleInfoLabel" type="Label" parent="."]
 visible = false
 layout_mode = 0
@@ -189,66 +251,6 @@ offset_right = -28.675903
 offset_bottom = 270.251
 grow_horizontal = 0
 text = "Generate New Hole"
-
-[node name="Click" type="Sprite2D" parent="."]
-position = Vector2(208, 996)
-scale = Vector2(0.125, 0.12500003)
-texture = ExtResource("12_ampf0")
-
-[node name="LeftClick" type="Sprite2D" parent="."]
-position = Vector2(332, 994)
-scale = Vector2(0.12500001, 0.1328125)
-texture = ExtResource("13_chv3i")
-
-[node name="RightClick" type="Sprite2D" parent="."]
-position = Vector2(464, 994)
-scale = Vector2(0.124999955, 0.13281243)
-texture = ExtResource("14_h2n7m")
-
-[node name="Scroll" type="Sprite2D" parent="."]
-position = Vector2(592, 994)
-scale = Vector2(0.12499999, 0.13281249)
-texture = ExtResource("15_xfu30")
-
-[node name="Label" type="Label" parent="."]
-layout_mode = 0
-offset_left = 168.0
-offset_top = 1036.0
-offset_right = 248.0
-offset_bottom = 1056.0
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-text = "Rotate"
-horizontal_alignment = 1
-
-[node name="Label2" type="Label" parent="."]
-layout_mode = 0
-offset_left = 304.0
-offset_top = 1036.0
-offset_right = 368.0
-offset_bottom = 1056.0
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-text = "Aim"
-horizontal_alignment = 1
-
-[node name="Label3" type="Label" parent="."]
-layout_mode = 0
-offset_left = 432.0
-offset_top = 1036.0
-offset_right = 496.0
-offset_bottom = 1056.0
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-text = "Pan"
-horizontal_alignment = 1
-
-[node name="Label4" type="Label" parent="."]
-layout_mode = 0
-offset_left = 560.0
-offset_top = 1036.0
-offset_right = 624.0
-offset_bottom = 1056.0
-theme_override_colors/font_color = Color(0, 0, 0, 1)
-text = "Zoom"
-horizontal_alignment = 1
 
 [node name="SwingMeter" parent="." instance=ExtResource("7_swing_meter")]
 layout_mode = 1

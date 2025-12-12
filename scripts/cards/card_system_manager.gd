@@ -512,23 +512,19 @@ func get_card_library() -> CardLibrary:
 
 func _on_shot_started(context: ShotContext) -> void:
 	"""Called when a new shot begins"""
-	# Re-apply all active card modifiers to the fresh context
-	# (context was reset, but we still have the card modifiers from pre-shot selection)
-	print("[CardSystem] Shot started - re-applying %d active card modifiers" % active_card_modifiers.size())
-	for card_mod in active_card_modifiers:
-		if card_mod.has_method("apply_before_aim"):
-			card_mod.apply_before_aim(context)
-			print("[CardSystem] Re-applied modifier: %s" % (card_mod.card.data.card_name if card_mod.card else "unknown"))
-	
-	print("[CardSystem] Context after re-applying modifiers - accuracy_mod: %d, distance_mod: %d, roll_mod: %d, curve: %.1f" % [
-		context.accuracy_mod, context.distance_mod, context.roll_mod, context.curve_strength
-	])
+	# NOTE: We don't re-apply modifiers here because shot_manager._apply_modifiers_before_aim()
+	# will call modifier_manager.apply_before_aim() which handles all modifiers including cards.
+	# The card modifiers are already registered with modifier_manager.
+	print("[CardSystem] Shot started - %d active card modifiers registered with modifier_manager" % active_card_modifiers.size())
 
 
 func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot finishes"""
 	# Clear active modifiers
 	_clear_active_modifiers()
+	
+	# Dim played cards at end of shot
+	dim_played_cards()
 	
 	# Reset the context modifier values so they don't persist to next shot preview
 	if shot_manager and shot_manager.current_context:
@@ -564,11 +560,33 @@ func _clear_active_modifiers() -> void:
 	active_card_modifiers.clear()
 
 
+func dim_played_cards() -> void:
+	"""Dim all drawn cards to indicate they've been used this hole"""
+	if deck_view:
+		deck_view.dim_played_cards()
+	if club_deck_view:
+		club_deck_view.dim_played_cards()
+
+
+func undim_all_cards() -> void:
+	"""Restore normal appearance to all cards (for new hole)"""
+	if deck_view:
+		deck_view.undim_all_cards()
+	if club_deck_view:
+		club_deck_view.undim_all_cards()
+
+
 # --- Event Handlers ---
 
 func _on_card_activated(card: CardInstance) -> void:
 	"""Handle card activated from deck manager (direct draw, not selection UI)"""
 	print("[CardSystem] _on_card_activated: %s" % card.data.card_name)
+	
+	# Skip cards from swing deck - they're handled by _on_club_selected
+	if club_deck_manager and card in club_deck_manager._active_cards:
+		print("[CardSystem] Card is from swing deck, skipping (handled by _on_club_selected)")
+		return
+	
 	activate_card_modifier(card)
 	
 	# Also notify shot_ui that a modifier was drawn (if this is from modifier deck)

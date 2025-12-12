@@ -8,4 +8,4 @@ script = ExtResource("1_script")
 deck_id = "swing_deck"
 display_name = "Swing Deck"
 description = "Cards that modify how you swing. Pick one per shot."
-card_ids = Array[String](["standard_swing", "standard_swing", "standard_swing", "precision_swing", "precision_swing", "go_for_it", "go_for_it", "safe_layup", "punch_draw", "controlled_fade", "high_soft_fade", "power_draw"])
+card_ids = Array[String](["standard_swing", "standard_swing", "standard_swing", "god_mode", "god_mode", "go_for_it", "go_for_it", "safe_layup", "punch_draw", "controlled_fade", "high_soft_fade", "power_draw"])

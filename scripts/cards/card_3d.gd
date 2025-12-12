@@ -13,6 +13,15 @@ class_name Card3D
 @onready var tags_label: Label3D = $MeshInstance3D/TagsLabel
 @onready var rarity_bar: MeshInstance3D = $MeshInstance3D/RarityBar
 
+# Modifier icons container (created dynamically)
+var modifier_icons_container: Node3D = null
+
+# Modifier icon textures (cached)
+static var _icon_distance: Texture2D
+static var _icon_accuracy: Texture2D
+static var _icon_roll: Texture2D
+static var _icon_curve: Texture2D
+
 # Rarity colors
 const RARITY_COLORS = {
 	CardData.Rarity.COMMON: Color(0.6, 0.6, 0.6),
@@ -51,6 +60,16 @@ func _ready() -> void:
 		_default_front_texture = load("res://textures/card-front.png")
 	if not _default_back_texture:
 		_default_back_texture = load("res://textures/card-back.png")
+	
+	# Cache modifier icon textures
+	if not _icon_distance:
+		_icon_distance = load("res://textures/distance.png")
+	if not _icon_accuracy:
+		_icon_accuracy = load("res://textures/accuracy.png")
+	if not _icon_roll:
+		_icon_roll = load("res://textures/roll.png")
+	if not _icon_curve:
+		_icon_curve = load("res://textures/curve.png")
 	
 	# Setup collision shape if not present (for clicks)
 	if not has_node("CollisionShape3D"):
@@ -93,9 +112,13 @@ func _update_visuals() -> void:
 			mat = mat.duplicate()
 			mat.albedo_color = RARITY_COLORS.get(card_instance.data.rarity, Color.GRAY)
 			rarity_bar.set_surface_override_material(0, mat)
-		
+	
+	# Show base description (without effect modifiers)
 	if desc_label:
-		desc_label.text = card_instance.get_full_description()
+		desc_label.text = card_instance.data.description
+	
+	# Create modifier icons for effects
+	_update_modifier_icons()
 		
 	if flavor_label:
 		flavor_label.text = card_instance.data.flavor_text
@@ -113,9 +136,85 @@ func _update_visuals() -> void:
 		icon_sprite.visible = true
 	elif icon_sprite:
 		icon_sprite.visible = false
+
+
+func _update_modifier_icons() -> void:
+	"""Create icon + value displays for each stat modifier effect"""
+	# Clear existing icons
+	if modifier_icons_container:
+		modifier_icons_container.queue_free()
+		modifier_icons_container = null
+	
+	if not card_instance or not mesh_instance:
+		return
+	
+	# Collect modifiers from effects
+	var modifiers: Array[Dictionary] = []
+	for effect in card_instance.data.effects:
+		if effect is EffectSimpleStat:
+			var icon_tex: Texture2D = null
+			match effect.target_stat:
+				"distance_mod":
+					icon_tex = _icon_distance
+				"accuracy_mod":
+					icon_tex = _icon_accuracy
+				"roll_mod":
+					icon_tex = _icon_roll
+				"curve_strength":
+					icon_tex = _icon_curve
+				"aoe_radius":
+					icon_tex = _icon_accuracy  # Use accuracy icon for AOE (related concept)
+			
+			if icon_tex:
+				modifiers.append({
+					"icon": icon_tex,
+					"value": effect.value
+				})
+	
+	if modifiers.is_empty():
+		return
+	
+	# Create container for icons
+	modifier_icons_container = Node3D.new()
+	modifier_icons_container.name = "ModifierIcons"
+	mesh_instance.add_child(modifier_icons_container)
+	
+	# Position below the description
+	var start_x = -0.8
+	var y_pos = -0.55
+	var z_pos = 0.035
+	var spacing = 0.6
+	
+	for i in range(modifiers.size()):
+		var mod = modifiers[i]
+		var x_pos = start_x + i * spacing
 		
-	# TODO: Set texture based on card type/data
-	# For now, we rely on the material set in the scene
+		# Create icon sprite
+		var icon_sprite3d = Sprite3D.new()
+		icon_sprite3d.texture = mod["icon"]
+		icon_sprite3d.pixel_size = 0.004
+		icon_sprite3d.position = Vector3(x_pos, y_pos, z_pos)
+		icon_sprite3d.render_priority = 10
+		icon_sprite3d.double_sided = false
+		modifier_icons_container.add_child(icon_sprite3d)
+		
+		# Create value label
+		var value_label = Label3D.new()
+		var val = mod["value"]
+		value_label.text = ("+%d" % val) if val >= 0 else ("%d" % val)
+		value_label.font_size = 48
+		value_label.pixel_size = 0.003
+		value_label.position = Vector3(x_pos + 0.22, y_pos, z_pos)
+		value_label.render_priority = 10
+		value_label.outline_size = 0
+		# Color based on positive/negative
+		if val > 0:
+			value_label.modulate = Color(0.1, 0.6, 0.1)  # Green for positive
+		elif val < 0:
+			value_label.modulate = Color(0.7, 0.2, 0.2)  # Red for negative
+		else:
+			value_label.modulate = Color(0.3, 0.3, 0.3)  # Gray for zero
+		modifier_icons_container.add_child(value_label)
 
 
 func _setup_rounded_mesh() -> void:
@@ -323,3 +422,31 @@ func animate_flip(duration: float = 0.4) -> void:
 	
 	tween.tween_property(self, "position:y", peak_y, duration/2.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.chain().tween_property(self, "position:y", end_y, duration/2.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+func set_dimmed(dimmed: bool) -> void:
+	"""Dim the card to indicate it has been used/played"""
+	# Try to use the Dim mesh overlay if it exists (check unique name first)
+	var dim_mesh = get_node_or_null("%Dim")
+	if dim_mesh == null:
+		dim_mesh = get_node_or_null("Dim")
+	if dim_mesh == null:
+		dim_mesh = get_node_or_null("MeshInstance3D/Dim")
+	
+	if dim_mesh:
+		dim_mesh.visible = dimmed
+		return
+	
+	# Fallback: modify albedo colors if no Dim mesh
+	if not mesh_instance:
+		return
+	
+	var dim_color = Color(0.4, 0.4, 0.4, 1.0) if dimmed else Color(1.0, 1.0, 1.0, 1.0)
+	
+	# Dim all surfaces (front, back, edge)
+	for i in range(mesh_instance.get_surface_override_material_count()):
+		var mat = mesh_instance.get_surface_override_material(i)
+		if mat:
+			mat = mat.duplicate()
+			mat.albedo_color = dim_color
+			mesh_instance.set_surface_override_material(i, mat)

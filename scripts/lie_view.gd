@@ -1,13 +1,14 @@
-extends SubViewportContainer
+extends Control
 class_name LieView
 
 ## LieView - Displays the current ball lie with a 3D preview
 ## Shows the ball model sitting on the current terrain tile type
 ##
 ## SCENE STRUCTURE (edit in editor):
-## - LieView (this script)
-##   - LieLabel (Label) - displays lie name
-##   - SubViewport
+## - LieView (this script, Control)
+##   - Panel (textured background)
+##   - SubViewportContainer
+##     - SubViewport
 ##     - WorldEnvironment - edit lighting/environment here
 ##     - Camera3D - adjust camera position/angle/FOV here
 ##     - DirectionalLight3D - adjust lighting here

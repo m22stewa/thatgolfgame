@@ -20,6 +20,8 @@ func _ready() -> void:
 func add_modifier(modifier: Variant) -> void:
 	"""Add a modifier to the active list"""
 	if modifier not in modifiers:
+		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
+		print("[ModifierManager] Adding modifier: %s" % mod_name)
 		modifiers.append(modifier)
 		
 		# If it's a node, add as child for lifecycle management
@@ -31,6 +33,8 @@ func remove_modifier(modifier: Variant) -> void:
 	"""Remove a modifier from the active list"""
 	var idx = modifiers.find(modifier)
 	if idx >= 0:
+		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
+		print("[ModifierManager] Removing modifier: %s" % mod_name)
 		modifiers.remove_at(idx)
 		
 		# If it's a child node, remove it
@@ -66,15 +70,22 @@ func get_modifiers_by_type(type_name: String) -> Array:
 
 func apply_before_aim(context: ShotContext) -> void:
 	"""Called before player aims - modifiers can change base stats"""
+	print("[ModifierManager] apply_before_aim - Active modifiers: %d" % modifiers.size())
 	for modifier in modifiers:
+		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
+		print("[ModifierManager]   - Modifier: %s" % mod_name)
 		if modifier.has_method("apply_before_aim"):
+			print("[ModifierManager]     Applying before_aim for: %s" % mod_name)
 			modifier.apply_before_aim(context)
 
 
 func apply_on_aoe(context: ShotContext) -> void:
 	"""Called after AOE computed - modifiers can change AOE shape/tiles"""
+	print("[ModifierManager] apply_on_aoe - Active modifiers: %d" % modifiers.size())
 	for modifier in modifiers:
+		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
 		if modifier.has_method("apply_on_aoe"):
+			print("[ModifierManager]   Applying on_aoe for: %s" % mod_name)
 			modifier.apply_on_aoe(context)
 
 
@@ -87,8 +98,11 @@ func apply_on_landing(context: ShotContext) -> void:
 
 func apply_on_scoring(context: ShotContext) -> void:
 	"""Called during scoring - modifiers can adjust chips/mult"""
+	print("[ModifierManager] apply_on_scoring - Active modifiers: %d" % modifiers.size())
 	for modifier in modifiers:
+		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
 		if modifier.has_method("apply_on_scoring"):
+			print("[ModifierManager]   Applying on_scoring for: %s" % mod_name)
 			modifier.apply_on_scoring(context)
 
 

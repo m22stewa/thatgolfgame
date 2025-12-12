@@ -21,6 +21,12 @@ var active_card_node: Card3D = null
 var played_cards: Array[Card3D] = []
 var discarded_cards: Array[Card3D] = [] # Legacy support, kept for safety but unused
 
+# Card inspection state
+var inspected_card: Card3D = null
+var inspected_card_original_pos: Vector3 = Vector3.ZERO
+var inspected_card_original_rot: Vector3 = Vector3.ZERO
+var inspection_overlay: MeshInstance3D = null
+
 # Configuration
 @export_group("Visuals")
 @export var card_back_texture: Texture2D = preload("res://textures/card-back.png")
@@ -57,6 +63,9 @@ var interaction_mode: InteractionMode = InteractionMode.DRAW_TOP
 
 # Signals
 signal request_club_selection()
+signal card_inspection_requested(card_instance: CardInstance)  # Emitted when a card is clicked for inspection
+signal inspection_started()  # Emitted when card inspection begins (for parent to expand viewport)
+signal inspection_closed()   # Emitted when card inspection ends (for parent to restore viewport)
 
 func _ready() -> void:
 	# Setup deck pile visual
@@ -277,7 +286,12 @@ func _unhandled_input(event: InputEvent) -> void:
 func _check_click(screen_pos: Vector2) -> void:
 	if not camera:
 		return
-		
+	
+	# If currently inspecting, click closes inspection
+	if inspected_card:
+		_close_inspection()
+		return
+	
 	var from = camera.project_ray_origin(screen_pos)
 	var to = from + camera.project_ray_normal(screen_pos) * 100.0
 	
@@ -291,6 +305,85 @@ func _check_click(screen_pos: Vector2) -> void:
 		var collider = result.collider
 		if collider.name == "DeckClickArea":
 			_on_deck_clicked()
+		elif collider is Card3D:
+			_on_card_clicked(collider)
+
+
+func _on_card_clicked(card: Card3D) -> void:
+	"""Handle clicking on a drawn card - show local inspection and signal parent to expand"""
+	if card and card.card_instance:
+		_show_inspection(card)
+
+
+func _show_inspection(card: Card3D) -> void:
+	"""Animate card to center of view for inspection (local, within SubViewport)"""
+	# NOTE: This is limited by SubViewport clipping. 
+	# For full-screen inspection, use the card_inspection_requested signal instead.
+	if not card or not is_instance_valid(card):
+		return
+	
+	inspected_card = card
+	inspected_card_original_pos = card.position
+	inspected_card_original_rot = card.rotation
+	
+	# Create dark overlay behind card
+	if not inspection_overlay:
+		inspection_overlay = MeshInstance3D.new()
+		var quad = QuadMesh.new()
+		quad.size = Vector2(20, 20)  # Large enough to cover view
+		inspection_overlay.mesh = quad
+		var mat = StandardMaterial3D.new()
+		mat.albedo_color = Color(0, 0, 0, 0.7)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		inspection_overlay.material_override = mat
+		add_child(inspection_overlay)
+	
+	# Position overlay in front of camera but behind inspected card
+	inspection_overlay.position = camera.position + Vector3(0, -5, 0)  # Y is forward in this setup
+	inspection_overlay.rotation = Vector3(-PI/2, 0, 0)  # Face camera
+	inspection_overlay.visible = true
+	
+	# Calculate center position for card (in front of camera, moved down 50%)
+	# Y is forward, Z is up in this camera orientation
+	var center_pos = camera.position + Vector3(0, -5.5, -1.5)  # Further back and moved down
+	
+	# Animate card to center, zoomed out more (scale 0.8)
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(card, "position", center_pos, 0.3).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(card, "rotation", Vector3(-PI/2, 0, 0), 0.3).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(card, "scale", Vector3(0.8, 0.8, 0.8), 0.3).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	
+	# Signal parent to expand viewport for full view
+	inspection_started.emit()
+
+
+func _close_inspection() -> void:
+	"""Return inspected card to original position"""
+	if not inspected_card or not is_instance_valid(inspected_card):
+		inspected_card = null
+		if inspection_overlay:
+			inspection_overlay.visible = false
+		inspection_closed.emit()
+		return
+	
+	# Hide overlay
+	if inspection_overlay:
+		inspection_overlay.visible = false
+	
+	# Animate card back
+	var card = inspected_card
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(card, "position", inspected_card_original_pos, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tween.tween_property(card, "rotation", inspected_card_original_rot, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tween.tween_property(card, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	
+	inspected_card = null
+	
+	# Signal parent to restore viewport size
+	inspection_closed.emit()
 
 
 func _on_deck_clicked() -> void:
@@ -321,6 +414,24 @@ func _on_active_cards_changed(cards: Array[CardInstance]) -> void:
 		# This happens when generating a new hole
 		if deck_manager and deck_manager.get_discard_pile_count() == 0:
 			_clear_visual_stack()
+
+
+func dim_played_cards() -> void:
+	"""Dim all played cards to indicate they've been used this hole"""
+	for card in played_cards:
+		if is_instance_valid(card):
+			card.set_dimmed(true)
+	if active_card_node and is_instance_valid(active_card_node):
+		active_card_node.set_dimmed(true)
+
+
+func undim_all_cards() -> void:
+	"""Restore normal appearance to all cards"""
+	for card in played_cards:
+		if is_instance_valid(card):
+			card.set_dimmed(false)
+	if active_card_node and is_instance_valid(active_card_node):
+		active_card_node.set_dimmed(false)
 
 
 func _clear_visual_stack() -> void:

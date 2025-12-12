@@ -1,10 +1,21 @@
-[gd_scene load_steps=7 format=3 uid="uid://blt23k5ne8pqf"]
+[gd_scene load_steps=10 format=3 uid="uid://blt23k5ne8pqf"]
 
 [ext_resource type="Script" uid="uid://bmlhnr54aw3fw" path="res://scripts/lie_view.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://by4ow8fifrk3l" path="res://scenes/golf_ball.tscn" id="2_ball"]
+[ext_resource type="Texture2D" uid="uid://bwurbene7j8vj" path="res://assets/kenney_fantasy-ui-borders/PNG/Default/Panel/panel-001.png" id="2_ct8s5"]
 [ext_resource type="ArrayMesh" uid="uid://d0rii61gihxjq" path="res://scenes/tiles/teebox-mesh.tres" id="3_teebox"]
 [ext_resource type="ArrayMesh" uid="uid://b4eaqsjfkbr05" path="res://scenes/tiles/ground-mesh.tres" id="4_ground"]
 [ext_resource type="ArrayMesh" uid="uid://b6vfv1t0jvu0r" path="res://scenes/tiles/deeprough-mesh.tres" id="5_w3vbn"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_kaytx"]
+texture = ExtResource("2_ct8s5")
+texture_margin_left = 15.0
+texture_margin_top = 15.0
+texture_margin_right = 15.0
+texture_margin_bottom = 15.0
+modulate_color = Color(0, 0, 0, 0.4745098)
+
+[sub_resource type="LabelSettings" id="LabelSettings_ct8s5"]
 
 [sub_resource type="Environment" id="Environment_lieview"]
 background_mode = 1
@@ -14,15 +25,14 @@ ambient_light_color = Color(1, 1, 1, 1)
 ambient_light_energy = 0.9
 tonemap_mode = 3
 
-[node name="LieView" type="SubViewportContainer"]
-custom_minimum_size = Vector2(140, 170)
-offset_right = 140.0
-offset_bottom = 170.0
+[node name="LieView" type="Control"]
+custom_minimum_size = Vector2(100, 150)
+offset_right = 100.0
+offset_bottom = 150.0
 size_flags_horizontal = 4
 size_flags_vertical = 4
-stretch = true
 script = ExtResource("1_script")
-auto_rotate = false
+rotation_speed = 0.01
 ball_height_tee = 1.25
 ball_height_fairway = 1.25
 ball_height_green = 1.25
@@ -31,81 +41,103 @@ ball_height_deep_rough = 1.25
 ball_height_sand = 1.25
 ball_height_water = 1.25
 
-[node name="LieLabel" type="Label" parent="."]
-unique_name_in_owner = true
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
-theme_override_constants/outline_size = 4
-theme_override_font_sizes/font_size = 18
-text = "Tee Box"
-horizontal_alignment = 1
-vertical_alignment = 2
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxTexture_kaytx")
 
-[node name="SubViewport" type="SubViewport" parent="."]
+[node name="SubViewportContainer" type="SubViewportContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
 unique_name_in_owner = true
 own_world_3d = true
 transparent_bg = true
 handle_input_locally = false
-size = Vector2i(140, 170)
-size_2d_override = Vector2i(5000, 5165)
+size = Vector2i(100, 150)
 render_target_update_mode = 4
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewport"]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewportContainer/SubViewport"]
 environment = SubResource("Environment_lieview")
 
-[node name="Camera3D" type="Camera3D" parent="SubViewport"]
+[node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 0.8191518, 0.57357687, 0, -0.57357687, 0.8191518, 0, 4.5277424, 5.671626)
 current = true
 fov = 40.0
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewport"]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewportContainer/SubViewport"]
 unique_name_in_owner = true
 transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 2, 3, 2)
 light_energy = 1.3
 
-[node name="TileRoot" type="Node3D" parent="SubViewport"]
+[node name="TileRoot" type="Node3D" parent="SubViewportContainer/SubViewport"]
 unique_name_in_owner = true
 
-[node name="TileGround" type="MeshInstance3D" parent="SubViewport/TileRoot"]
+[node name="TileGround" type="MeshInstance3D" parent="SubViewportContainer/SubViewport/TileRoot"]
 unique_name_in_owner = true
 transform = Transform3D(0.9, 0, 0, 0, 0.9, 0, 0, 0, 0.9, 0, 0, 0)
 visible = false
 mesh = ExtResource("4_ground")
 
-[node name="TileSurface" type="MeshInstance3D" parent="SubViewport/TileRoot"]
+[node name="TileSurface" type="MeshInstance3D" parent="SubViewportContainer/SubViewport/TileRoot"]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 0.4, 0, 0, 0, 1, 0, 0.7036133, 0)
 mesh = ExtResource("3_teebox")
 
-[node name="BallModel" parent="SubViewport/TileRoot" instance=ExtResource("2_ball")]
+[node name="BallModel" parent="SubViewportContainer/SubViewport/TileRoot" instance=ExtResource("2_ball")]
 unique_name_in_owner = true
 transform = Transform3D(0.25, 0, 0, 0, 0.25, 0, 0, 0, 0.25, 0, 1.2871292, 0)
 
-[node name="Decorations" type="Node3D" parent="SubViewport/TileRoot"]
+[node name="Decorations" type="Node3D" parent="SubViewportContainer/SubViewport/TileRoot"]
 unique_name_in_owner = true
 
-[node name="DeepRoughGrass" type="Node3D" parent="SubViewport/TileRoot/Decorations"]
+[node name="DeepRoughGrass" type="Node3D" parent="SubViewportContainer/SubViewport/TileRoot/Decorations"]
 unique_name_in_owner = true
 visible = false
 
-[node name="DeeproughMesh" type="MeshInstance3D" parent="SubViewport/TileRoot/Decorations/DeepRoughGrass"]
+[node name="DeeproughMesh" type="MeshInstance3D" parent="SubViewportContainer/SubViewport/TileRoot/Decorations/DeepRoughGrass"]
 mesh = ExtResource("5_w3vbn")
 skeleton = NodePath("../..")
 
-[node name="RoughGrass" type="Node3D" parent="SubViewport/TileRoot/Decorations"]
+[node name="RoughGrass" type="Node3D" parent="SubViewportContainer/SubViewport/TileRoot/Decorations"]
 unique_name_in_owner = true
 visible = false
 
-[node name="SandDetail" type="Node3D" parent="SubViewport/TileRoot/Decorations"]
+[node name="SandDetail" type="Node3D" parent="SubViewportContainer/SubViewport/TileRoot/Decorations"]
 unique_name_in_owner = true
 visible = false
 
-[node name="WaterEffect" type="Node3D" parent="SubViewport/TileRoot/Decorations"]
+[node name="WaterEffect" type="Node3D" parent="SubViewportContainer/SubViewport/TileRoot/Decorations"]
 unique_name_in_owner = true
 visible = false
 
-[node name="GreenDetail" type="Node3D" parent="SubViewport/TileRoot/Decorations"]
+[node name="GreenDetail" type="Node3D" parent="SubViewportContainer/SubViewport/TileRoot/Decorations"]
 unique_name_in_owner = true
 visible = false
+
+[node name="LieLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 0
+offset_top = 8.0
+offset_right = 100.0
+offset_bottom = 32.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 18
+text = "Tee Box"
+label_settings = SubResource("LabelSettings_ct8s5")
+horizontal_alignment = 1
+vertical_alignment = 2

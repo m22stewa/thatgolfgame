@@ -261,7 +261,7 @@ func set_hovered(hovered: bool) -> void:
 	is_hovered = hovered
 	
 	if hovered and is_playable:
-		target_scale = Vector2(1.1, 1.1)
+		target_scale = Vector2(2, 2)  # Larger hover for readability
 		z_index = 10
 	else:
 		target_scale = Vector2.ONE

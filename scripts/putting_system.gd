@@ -23,6 +23,7 @@ var aim_direction: Vector3 = Vector3.FORWARD  # Direction arrow is pointing
 var is_charging: bool = false
 var charge_power: float = 0.0
 var charge_start_time: float = 0.0
+var putt_start_tile: Vector2i = Vector2i(-1, -1)  # Where ball was when putt started
 
 # Ball rolling
 var ball_velocity: Vector3 = Vector3.ZERO
@@ -30,9 +31,10 @@ var is_ball_rolling: bool = false
 
 # Constants
 const PUTT_BASE_DISTANCE: float = 20.0  # Base putter distance in yards
-const PUTT_SPEED: float = 15.0  # Base speed multiplier - higher = further
-const FRICTION: float = 2.0  # Reduced friction
-const SLOPE_FORCE: float = 2.0
+const PUTT_SPEED: float = 10.0  # Speed multiplier - at 100% power, ball travels ~10 tiles
+const FRICTION: float = 2.0  # Friction on green
+const FRICTION_OFF_GREEN: float = 12.0  # Much higher friction off green (rough, fringe)
+const SLOPE_FORCE: float = 10.0  # Substantial slope effect on ball
 const MIN_VELOCITY: float = 0.05
 const CIRCLE_RADIUS: float = 0.5  # Radius of aim circle around ball
 const ARROW_LENGTH: float = 1.0  # Length of aim arrow
@@ -79,7 +81,8 @@ func enter_putting_mode() -> void:
 	
 	is_putting_mode = true
 	set_process(true)
-	set_process_input(true)
+	# Don't enable global input - input is handled via hole_viewer.handle_input()
+	# set_process_input(true)
 	is_charging = false
 	charge_power = 0.0
 	
@@ -97,6 +100,10 @@ func enter_putting_mode() -> void:
 	
 	if hole_viewer and hole_viewer.has_method("enter_putting_mode"):
 		hole_viewer.enter_putting_mode(green_center, Rect2i())
+	
+	# Update club display to show Putter
+	if hex_grid and hex_grid.shot_ui and hex_grid.shot_ui.has_method("set_putting_club"):
+		hex_grid.shot_ui.set_putting_club(int(PUTT_SPEED))
 	
 	putting_mode_entered.emit()
 
@@ -381,6 +388,9 @@ func _execute_putt() -> void:
 	if golf_ball == null or hex_grid == null:
 		return
 	
+	# Record where putt started (for water hazard return)
+	putt_start_tile = hex_grid.world_to_grid(golf_ball.global_position)
+	
 	# Emit signal before starting
 	putt_started.emit(aim_direction, charge_power)
 	
@@ -410,15 +420,20 @@ func _update_rolling(delta: float) -> void:
 	# Get current tile for slope
 	var current_tile = hex_grid.world_to_grid(golf_ball.global_position)
 	
+	# Check if ball is on green or off green for friction
+	var current_surface = hex_grid.get_cell(current_tile.x, current_tile.y)
+	var is_on_green = (current_surface == hex_grid.SurfaceType.GREEN or current_surface == hex_grid.SurfaceType.FLAG)
+	
 	# Apply slope influence
 	var slope = _get_slope(current_tile)
 	ball_velocity.x += slope.x * SLOPE_FORCE * delta
 	ball_velocity.z += slope.y * SLOPE_FORCE * delta
 	
-	# Apply friction
+	# Apply friction - much higher when off the green
+	var current_friction = FRICTION if is_on_green else FRICTION_OFF_GREEN
 	var speed = ball_velocity.length()
 	if speed > 0:
-		var friction_amount = FRICTION * delta
+		var friction_amount = current_friction * delta
 		speed = max(0, speed - friction_amount)
 		ball_velocity = ball_velocity.normalized() * speed if speed > 0 else Vector3.ZERO
 	
@@ -427,16 +442,33 @@ func _update_rolling(delta: float) -> void:
 	
 	# Get ground height at new position
 	var new_tile = hex_grid.world_to_grid(new_pos)
+	
+	# Check if ball rolled into water - handle immediately
+	var tile_surface = hex_grid.get_cell(new_tile.x, new_tile.y)
+	if tile_surface == hex_grid.SurfaceType.WATER:
+		is_ball_rolling = false
+		ball_velocity = Vector3.ZERO
+		_handle_putt_water_hazard()
+		return
+	
 	if new_tile.x >= 0 and new_tile.x < hex_grid.grid_width and new_tile.y >= 0 and new_tile.y < hex_grid.grid_height:
 		var ground_y = hex_grid.get_elevation(new_tile.x, new_tile.y) + 0.65
 		new_pos.y = ground_y
 		
-		# Check for hole
+		# Check for hole - ball must be close to hole center and slow enough
 		if new_tile == hex_grid.flag_position:
-			is_ball_rolling = false
-			ball_velocity = Vector3.ZERO
-			hex_grid._trigger_hole_complete()
-			return
+			var hole_world_pos = hex_grid.get_tile_surface_position(hex_grid.flag_position)
+			var dist_to_hole_center = Vector2(new_pos.x - hole_world_pos.x, new_pos.z - hole_world_pos.z).length()
+			var hole_radius = 0.5  # Radius of the hole (slightly larger for easier drop)
+			
+			# Ball must be over hole (within ~90% of radius) and slow enough to fall in
+			if dist_to_hole_center < hole_radius * 0.9 and ball_velocity.length() < 4.0:
+				is_ball_rolling = false
+				ball_velocity = Vector3.ZERO
+				# Animate ball falling into hole
+				await _animate_ball_into_hole(hole_world_pos)
+				hex_grid._trigger_hole_complete()
+				return
 	
 	golf_ball.global_position = new_pos
 	
@@ -453,6 +485,11 @@ func _update_rolling(delta: float) -> void:
 		
 		var final_tile = hex_grid.world_to_grid(golf_ball.global_position)
 		var final_surface = hex_grid.get_cell(final_tile.x, final_tile.y)
+		
+		# Check if ball rolled into water
+		if final_surface == hex_grid.SurfaceType.WATER:
+			_handle_putt_water_hazard()
+			return
 		
 		# Check if ball is still on green
 		var still_on_green = (final_surface == hex_grid.SurfaceType.GREEN or final_surface == hex_grid.SurfaceType.FLAG)
@@ -473,6 +510,58 @@ func _update_rolling(delta: float) -> void:
 				hex_grid._start_new_shot()
 		
 		putt_completed.emit(final_tile)
+
+
+func _handle_putt_water_hazard() -> void:
+	"""Handle ball rolling into water during putting - show rain, add penalty, return ball"""
+	if hex_grid == null or golf_ball == null:
+		return
+	
+	# Show rain/water effect overlay if hex_grid has one
+	if hex_grid.water_effect:
+		hex_grid.water_effect.color = Color(1, 1, 1, 0)  # Start transparent
+		hex_grid.water_effect.visible = true
+		var fade_in = create_tween()
+		fade_in.tween_property(hex_grid.water_effect, "color:a", 1.0, 0.3)
+	
+	# Wait a moment for effect
+	await get_tree().create_timer(0.5).timeout
+	
+	# Return ball to where putt started (on the green)
+	if putt_start_tile.x >= 0:
+		var return_pos = hex_grid.get_tile_surface_position(putt_start_tile)
+		golf_ball.global_position = return_pos
+	
+	# Add penalty stroke (+1)
+	if hex_grid.run_state:
+		hex_grid.run_state.record_stroke(0)  # Penalty stroke with 0 score bonus
+		# Update UI with new stroke count
+		if hex_grid.shot_ui:
+			var dist_to_flag = 0
+			if hex_grid.flag_position.x >= 0:
+				var ball_tile = hex_grid.world_to_grid(golf_ball.global_position)
+				dist_to_flag = hex_grid._calculate_distance_yards(ball_tile, hex_grid.flag_position)
+			hex_grid.shot_ui.update_shot_info(hex_grid.run_state.strokes_this_hole, dist_to_flag)
+	
+	# Wait before fading out
+	await get_tree().create_timer(0.3).timeout
+	
+	# Fade out water effect
+	if hex_grid.water_effect:
+		var fade_out = create_tween()
+		fade_out.tween_property(hex_grid.water_effect, "color:a", 0.0, 0.7)
+		await fade_out.finished
+		hex_grid.water_effect.visible = false
+	
+	# Show aim visuals again - ball is back on green for another putt
+	if aim_circle:
+		aim_circle.visible = true
+	if aim_arrow:
+		aim_arrow.visible = true
+	if ball_outline:
+		ball_outline.visible = true
+	
+	putt_completed.emit(putt_start_tile)
 
 
 func _get_slope(tile: Vector2i) -> Vector2:
@@ -499,3 +588,40 @@ func _get_slope(tile: Vector2i) -> Vector2:
 			slope.y += off.y * diff
 	
 	return slope
+
+
+func _animate_ball_into_hole(hole_pos: Vector3) -> void:
+	"""Animate ball shrinking and turning dark as it falls into the hole"""
+	if golf_ball == null:
+		return
+	
+	# Get original scale and material
+	var original_scale = golf_ball.scale
+	
+	# Create tween for the animation
+	var tween = create_tween()
+	tween.set_parallel(true)
+	
+	# Move ball to hole center
+	tween.tween_property(golf_ball, "global_position", Vector3(hole_pos.x, hole_pos.y - 0.3, hole_pos.z), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	
+	# Shrink ball
+	tween.tween_property(golf_ball, "scale", original_scale * 0.1, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	
+	# Darken ball (if it has a mesh with material)
+	var mesh = golf_ball.get_node_or_null("MeshInstance3D")
+	if mesh == null:
+		mesh = golf_ball.get_node_or_null("BallMesh")
+	if mesh and mesh is MeshInstance3D:
+		var mat = mesh.get_surface_override_material(0)
+		if mat == null and mesh.mesh:
+			mat = mesh.mesh.surface_get_material(0)
+		if mat:
+			mat = mat.duplicate()
+			mesh.set_surface_override_material(0, mat)
+			tween.tween_property(mat, "albedo_color", Color(0.1, 0.1, 0.1, 1.0), 0.4)
+	
+	await tween.finished
+	
+	# Restore ball scale for next hole (it will be repositioned)
+	golf_ball.scale = original_scale

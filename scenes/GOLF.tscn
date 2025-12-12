@@ -39,16 +39,17 @@ sky_material = SubResource("ProceduralSkyMaterial_cdobm")
 background_mode = 2
 sky = SubResource("Sky_keddd")
 tonemap_mode = 2
-sdfgi_enabled = true
 sdfgi_use_occlusion = true
 glow_enabled = true
 glow_normalized = true
 glow_intensity = 6.49
+fog_enabled = true
 fog_mode = 1
-fog_light_color = Color(0.025474409, 0.18949398, 0.1443255, 1)
-fog_density = 0.8889
-fog_aerial_perspective = 0.249
-fog_sky_affect = 0.555
+fog_light_color = Color(0, 0.4, 0.5176471, 1)
+fog_density = 1.0
+fog_depth_curve = 3.7321038
+fog_depth_begin = 100.0
+fog_depth_end = 180.0
 volumetric_fog_density = 0.013
 volumetric_fog_length = 28.6
 volumetric_fog_sky_affect = 0.18
@@ -384,6 +385,7 @@ theme_override_font_sizes/font_size = 66
 text = "Generating new hole..."
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="Control/CanvasLayer/sceen-transition/LoadingMessage"]
+visible = false
 layout_mode = 0
 offset_left = -116.0
 offset_top = -177.0
@@ -396,7 +398,7 @@ world_3d = SubResource("World3D_eulkx")
 transparent_bg = true
 handle_input_locally = false
 size = Vector2i(200, 200)
-render_target_update_mode = 4
+render_target_update_mode = 0
 
 [node name="Camera3D" type="Camera3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08075428, 100.4028, 4.5826488)
@@ -456,7 +458,7 @@ visible = false
 script = ExtResource("3_tryan")
 
 [node name="textureFloor" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.0508864, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.1, 0)
 material_overlay = SubResource("ShaderMaterial_q0ffo")
 gi_mode = 2
 mesh = SubResource("PlaneMesh_q0ffo")

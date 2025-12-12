@@ -591,15 +591,25 @@ func _on_card_played(_card: CardInstance) -> void:
 
 
 func _on_card_clicked(card_ui: CardUI) -> void:
-	select_card(card_ui)
+	# Track if this card was already selected before we toggle
+	var was_selected = (selected_card == card_ui)
+	
+	# If not selected, select it
+	if not was_selected:
+		select_card(card_ui)
+	# If already selected, clicking again opens inspection (don't deselect)
 
 
-func _on_card_hovered(card_ui: CardUI, hovering: bool) -> void:
+func _on_card_hovered(_card_ui: CardUI, _hovering: bool) -> void:
 	pass
 
 
 func _on_card_inspect_requested(card_ui: CardUI) -> void:
-	"""Show card in fullscreen inspection view"""
+	"""Show card in fullscreen inspection view - only if card was already selected"""
+	# Only inspect if clicking on an already-selected card
+	if selected_card != card_ui:
+		return
+	
 	# If clicking the currently inspected card, close inspection
 	if inspected_card == card_ui:
 		_close_inspection()

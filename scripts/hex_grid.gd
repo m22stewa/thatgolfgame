@@ -420,6 +420,8 @@ func _clear_course_nodes() -> void:
 			to_remove.append(child)
 		elif child.is_in_group("foliage"):
 			to_remove.append(child)
+		elif child.is_in_group("slope_arrows"):
+			to_remove.append(child)
 	for child in to_remove:
 		remove_child(child)
 		child.queue_free()
@@ -872,8 +874,8 @@ func _calculate_elevation(col: int, row: int, surface_type: int) -> float:
 	var landform_multiplier = 1.0
 	
 	if surface_type == SurfaceType.GREEN:
-		terrain_multiplier = 0.15  # Greens are relatively flat
-		landform_multiplier = 0.3  # Landforms still affect greens slightly
+		terrain_multiplier = 0.35  # Greens have gentle undulations (hills/valleys)
+		landform_multiplier = 0.5  # Landforms create natural breaks
 	elif surface_type == SurfaceType.TEE:
 		terrain_multiplier = 0.1   # Tees are very flat
 		landform_multiplier = 0.2  # Minimal landform influence
@@ -1200,7 +1202,15 @@ func get_current_club_base_distance() -> int:
 func get_club_for_tile_distance(tile_distance: int) -> Dictionary:
 	"""Get the best club for a given tile distance.
 	Returns dictionary with 'type', 'name', 'distance', 'accuracy' or null if out of range.
-	Excludes putter (only used in putting mode)."""
+	Excludes putter (only used in putting mode).
+	Excludes driver after the tee shot (ball not on tee)."""
+	
+	# Check if ball is on tee to determine driver availability
+	var ball_on_tee = false
+	if golf_ball:
+		var ball_tile = world_to_grid(golf_ball.position)
+		var surface = get_cell(ball_tile.x, ball_tile.y)
+		ball_on_tee = (surface == SurfaceType.TEE)
 	
 	# Find the club with the smallest distance that can still reach the target
 	var best_club: int = -1
@@ -1209,6 +1219,10 @@ func get_club_for_tile_distance(tile_distance: int) -> Dictionary:
 	for club_type in CLUB_STATS:
 		# Skip putter - it's exclusive to putting mode
 		if club_type == ClubType.PUTTER:
+			continue
+		
+		# Skip driver if not on tee
+		if club_type == ClubType.DRIVER and not ball_on_tee:
 			continue
 		
 		var stats = CLUB_STATS[club_type]
@@ -1232,8 +1246,15 @@ func get_club_for_tile_distance(tile_distance: int) -> Dictionary:
 
 
 func get_max_club_distance() -> int:
-	"""Get the maximum distance any club can reach (Driver distance)"""
-	return CLUB_STATS[ClubType.DRIVER].distance
+	"""Get the maximum distance any club can reach.
+	Returns driver distance if on tee, otherwise 3-wood distance."""
+	if golf_ball:
+		var ball_tile = world_to_grid(golf_ball.position)
+		var surface = get_cell(ball_tile.x, ball_tile.y)
+		if surface == SurfaceType.TEE:
+			return CLUB_STATS[ClubType.DRIVER].distance
+	# Not on tee - max is 3-wood
+	return CLUB_STATS[ClubType.WOOD_3].distance
 
 
 func get_current_club_loft() -> int:
@@ -1605,9 +1626,21 @@ func _try_lock_target(cell: Vector2i) -> void:
 		
 		# Update on-screen label with club name
 		var club_info = get_club_for_tile_distance(tile_dist)
-		var club_name = club_info.get("name", "---") if club_info else "---"
+		var club_name_str = club_info.get("name", "---") if club_info else "---"
+		var club_range_str = ""
+		if club_info:
+			var max_range = club_info.get("distance", 0)
+			club_range_str = "%d tiles" % max_range
+		
+		# Update shot_ui ClubName and ClubRange labels
+		print("[HexGrid] Updating club: %s, range: %s" % [club_name_str, club_range_str])
+		if shot_ui and shot_ui.club_name:
+			shot_ui.club_name.text = club_name_str
+		if shot_ui and shot_ui.club_range:
+			shot_ui.club_range.text = club_range_str
+		
 		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance_and_club"):
-			target_highlight_mesh.set_distance_and_club(distance, club_name)
+			target_highlight_mesh.set_distance_and_club(distance, club_name_str)
 		elif target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
 			target_highlight_mesh.set_distance(distance)
 
@@ -1748,9 +1781,21 @@ func set_aim_cell(cell: Vector2i) -> bool:
 		
 		# Update on-screen label with club name
 		var club_info = get_club_for_tile_distance(tile_dist)
-		var club_name = club_info.get("name", "---") if club_info else "---"
+		var club_name_str = club_info.get("name", "---") if club_info else "---"
+		var club_range_str = ""
+		if club_info:
+			var max_range = club_info.get("distance", 0)
+			club_range_str = "%d tiles" % max_range
+		
+		# Update shot_ui ClubName and ClubRange labels
+		print("[HexGrid] set_aim_cell: Updating club: %s, range: %s" % [club_name_str, club_range_str])
+		if shot_ui.club_name:
+			shot_ui.club_name.text = club_name_str
+		if shot_ui.club_range:
+			shot_ui.club_range.text = club_range_str
+		
 		if target_highlight_mesh and target_highlight_mesh.has_method("set_distance_and_club"):
-			target_highlight_mesh.set_distance_and_club(distance, club_name)
+			target_highlight_mesh.set_distance_and_club(distance, club_name_str)
 		elif target_highlight_mesh and target_highlight_mesh.has_method("set_distance"):
 			target_highlight_mesh.set_distance(distance)
 	
@@ -2179,15 +2224,26 @@ func _on_putting_mode_entered() -> void:
 	"""Called when entering putting mode"""
 	# Hide regular shot UI elements
 	_hide_shot_visuals()
+	# Show green contour overlay
+	_set_green_overlay_visible(true)
 
 
 func _on_putting_mode_exited() -> void:
 	"""Called when exiting putting mode"""
 	# Show regular shot UI elements again
 	_show_shot_visuals()
+	# Hide green contour overlay
+	_set_green_overlay_visible(false)
 
 
-func _on_putt_started(target_tile: Vector2i, power: float) -> void:
+func _set_green_overlay_visible(visible: bool) -> void:
+	"""Show or hide the green contour overlay (slope_arrows group)"""
+	for child in get_children():
+		if child.is_in_group("slope_arrows"):
+			child.visible = visible
+
+
+func _on_putt_started(_direction: Vector3, _power: float) -> void:
 	"""Called when a putt is executed"""
 	# Record the stroke in run state
 	if run_state:
@@ -2903,6 +2959,10 @@ func _trigger_hole_complete() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
+	
+	# Dim the played cards to show they've been used this hole
+	if card_system:
+		card_system.dim_played_cards()
 	
 	# Trigger confetti on the flag
 	_play_hole_confetti()
@@ -3827,7 +3887,7 @@ func _create_highlight_mesh() -> void:
 	
 	# Create a bright, unshaded material for maximum visibility
 	var mat = StandardMaterial3D.new()
-	mat.albedo_color = Color(1.0, 0.85, 0.0, 0.6)  # Bright yellow/gold, semi-transparent
+	mat.albedo_color = Color(1.0, 0.85, 0.0, 0.3)  # Bright yellow/gold, lower opacity
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # Always fully bright
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -5490,6 +5550,9 @@ func _generate_grid() -> void:
 	
 	# Spawn foliage (grass patches, bushes, rocks, flowers) based on surface type
 	_spawn_foliage()
+	
+	# Add slope arrows on green tiles
+	_spawn_green_slope_arrows(green_cells)
 
 
 # Spawn grass, bushes, rocks, and flowers based on golf course landscaping rules
@@ -5587,6 +5650,145 @@ func _apply_random_tree_colors(tree: Node3D) -> void:
 				var v = clamp(base_color.v + randf_range(-0.2, 0.2), 0.15, 0.9)
 				new_mat.albedo_color = Color.from_hsv(h, s, v)
 				child.material = new_mat
+
+
+# Spawn contour grid overlay on green tiles to show elevation (like PGA Tour games)
+func _spawn_green_slope_arrows(green_cells: Array) -> void:
+	var width = TILE_SIZE
+	var height = TILE_SIZE * sqrt(3.0)
+	
+	# Find elevation range on the green for color mapping
+	var min_elev = INF
+	var max_elev = -INF
+	for cell in green_cells:
+		var elev = get_elevation(cell.x, cell.y)
+		min_elev = min(min_elev, elev)
+		max_elev = max(max_elev, elev)
+	
+	var elev_range = max_elev - min_elev
+	if elev_range < 0.01:
+		elev_range = 0.01  # Prevent division by zero
+	
+	# Create a single grid mesh for all green tiles (more efficient)
+	var grid_mesh = _create_green_contour_grid(green_cells, min_elev, elev_range)
+	if grid_mesh:
+		var grid_instance = MeshInstance3D.new()
+		grid_instance.mesh = grid_mesh
+		grid_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		grid_instance.add_to_group("slope_arrows")
+		grid_instance.visible = false  # Hidden until putting mode
+		add_child(grid_instance)
+	
+	# Spawn elevation dots at sub-tile resolution for smoother visualization
+	var dot_mesh = SphereMesh.new()
+	dot_mesh.radius = 0.05  # Slightly smaller
+	dot_mesh.height = 0.10
+	dot_mesh.radial_segments = 8
+	dot_mesh.rings = 4
+	
+	for cell in green_cells:
+		var col = cell.x
+		var row = cell.y
+		
+		# Base cell position
+		var cell_x = col * width * 1.5
+		var cell_z = row * height + (col % 2) * (height / 2.0)
+		
+		# Spawn 4 dots per cell in a grid pattern
+		var dot_offsets = [
+			Vector2(-0.25, -0.25), Vector2(0.25, -0.25),
+			Vector2(-0.25, 0.25), Vector2(0.25, 0.25)
+		]
+		
+		for offset in dot_offsets:
+			var x_pos = cell_x + offset.x * width * 0.5
+			var z_pos = cell_z + offset.y * height * 0.5
+			var y_pos = get_elevation(col, row) + TILE_SURFACE_OFFSET + 0.02
+			
+			# Get elevation and map to color
+			var elev = get_elevation(col, row)
+			var elev_norm = (elev - min_elev) / elev_range
+			
+			# Color gradient: blue (low) -> cyan -> green -> yellow -> orange (high)
+			var dot_color = _get_elevation_color(elev_norm)
+			
+			var dot = MeshInstance3D.new()
+			dot.mesh = dot_mesh
+			
+			var mat = StandardMaterial3D.new()
+			mat.albedo_color = dot_color
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			dot.material_override = mat
+			dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			
+			dot.position = Vector3(x_pos, y_pos, z_pos)
+			dot.visible = false  # Hidden until putting mode
+			dot.add_to_group("slope_arrows")
+			add_child(dot)
+
+
+func _get_elevation_color(normalized_elev: float) -> Color:
+	"""Map normalized elevation (0-1) to a subtle gradient color"""
+	# Subtle pastels: light blue (low) -> light green (mid) -> light yellow (high)
+	if normalized_elev < 0.33:
+		# Light blue to light cyan
+		var t = normalized_elev / 0.33
+		return Color(0.5, 0.6 + t * 0.15, 0.85, 0.45)
+	elif normalized_elev < 0.66:
+		# Light cyan to light green
+		var t = (normalized_elev - 0.33) / 0.33
+		return Color(0.5 + t * 0.2, 0.75, 0.7 - t * 0.2, 0.45)
+	else:
+		# Light green to light yellow/cream
+		var t = (normalized_elev - 0.66) / 0.34
+		return Color(0.7 + t * 0.15, 0.75, 0.5 - t * 0.1, 0.45)
+
+
+func _create_green_contour_grid(green_cells: Array, min_elev: float, elev_range: float) -> ArrayMesh:
+	"""Create a grid mesh with contour lines colored by elevation"""
+	var st = SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_LINES)
+	
+	var width = TILE_SIZE
+	var height = TILE_SIZE * sqrt(3.0)
+	
+	for cell in green_cells:
+		var col = cell.x
+		var row = cell.y
+		
+		var cell_x = col * width * 1.5
+		var cell_z = row * height + (col % 2) * (height / 2.0)
+		var y_pos = get_elevation(col, row) + TILE_SURFACE_OFFSET + 0.01
+		
+		# Get elevation-based color
+		var elev_norm = (get_elevation(col, row) - min_elev) / elev_range
+		var line_color = _get_elevation_color(elev_norm)
+		line_color.a = 0.25  # Very subtle lines
+		st.set_color(line_color)
+		
+		# Draw grid lines within the cell
+		var half_w = width * 0.4
+		var half_h = height * 0.4
+		
+		# Horizontal line
+		st.add_vertex(Vector3(cell_x - half_w, y_pos, cell_z))
+		st.add_vertex(Vector3(cell_x + half_w, y_pos, cell_z))
+		
+		# Vertical line  
+		st.add_vertex(Vector3(cell_x, y_pos, cell_z - half_h))
+		st.add_vertex(Vector3(cell_x, y_pos, cell_z + half_h))
+	
+	var mesh = st.commit()
+	
+	# Create material for the mesh
+	var mat = StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mesh.surface_set_material(0, mat)
+	
+	return mesh
 
 
 # --- UI callbacks -------------------------------------------------------

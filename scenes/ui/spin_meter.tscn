@@ -1,0 +1,176 @@
+[gd_scene load_steps=5 format=3 uid="uid://bpu5t0r0qhhcc"]
+
+[ext_resource type="Script" uid="uid://ccfo8nv7ij4lk" path="res://scripts/spin_meter.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://bwnxxq6rb2f5i" path="res://textures/golfball.png" id="2_pgeq0"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_meter"]
+bg_color = Color(0.15, 0.15, 0.15, 0.9)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.4, 0.4, 0.4, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="Theme" id="Theme_pgeq0"]
+
+[node name="SpinMeter" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="BallButton" type="TextureRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 24.0
+offset_bottom = 4.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_pgeq0")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Hint" type="Label" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -20.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 12
+text = "Hold to set spin"
+horizontal_alignment = 1
+
+[node name="MeterPanel" type="Panel" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -30.0
+offset_top = -80.0
+offset_right = 30.0
+offset_bottom = 80.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_meter")
+
+[node name="TopLabel" type="Label" parent="MeterPanel"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -25.0
+offset_top = 5.0
+offset_right = 25.0
+offset_bottom = 22.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.2, 0.8, 0.2, 1)
+theme_override_font_sizes/font_size = 11
+text = "TOP"
+horizontal_alignment = 1
+
+[node name="BottomLabel" type="Label" parent="MeterPanel"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -25.0
+offset_top = -22.0
+offset_right = 25.0
+offset_bottom = -5.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0.8, 0.2, 0.2, 1)
+theme_override_font_sizes/font_size = 11
+text = "BACK"
+horizontal_alignment = 1
+
+[node name="MeterTrack" type="ColorRect" parent="MeterPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -5.0
+offset_top = -68.0
+offset_right = 5.0
+offset_bottom = 68.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.14952376, 0.34387633, 0.28665698, 1)
+
+[node name="CenterLine" type="ColorRect" parent="MeterPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -15.0
+offset_top = -1.0
+offset_right = 15.0
+offset_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.9, 0.9, 0.9, 0.5)
+
+[node name="MeterMarker" type="ColorRect" parent="MeterPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -12.0
+offset_top = -6.0
+offset_right = 12.0
+offset_bottom = 6.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = SubResource("Theme_pgeq0")
+color = Color(1, 0.8, 0, 1)
+
+[node name="SpinLabel" type="Label" parent="MeterPanel"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 14
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -60.0
+offset_top = -10.0
+offset_bottom = 10.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.9, 0.9, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Neutral"
+horizontal_alignment = 2
