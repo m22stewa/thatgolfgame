@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://dg56vg8jbsg1a"]
+[gd_scene load_steps=17 format=3 uid="uid://dg56vg8jbsg1a"]
 
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="1_nxo7y"]
 [ext_resource type="Script" uid="uid://q8ialhsivonw" path="res://scripts/shot_ui.gd" id="1_shot_ui"]
@@ -37,6 +37,12 @@ shadow_size = 0
 shadow_color = Color(0, 0, 0, 0.19607843)
 shadow_offset = Vector2(0, 5)
 
+[sub_resource type="LabelSettings" id="LabelSettings_pbkhi"]
+font_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_bc86g"]
+font_color = Color(0, 0, 0, 1)
+
 [sub_resource type="StyleBoxTexture" id="StyleBoxTexture_n5q2d"]
 texture = ExtResource("4_n5q2d")
 texture_margin_left = 20.0
@@ -60,7 +66,7 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -750.0
+offset_left = -1099.0
 offset_top = 10.0
 offset_right = -10.0
 offset_bottom = 98.0
@@ -72,7 +78,7 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -750.0
+offset_left = -1099.0
 offset_top = 97.0
 offset_right = -10.0
 offset_bottom = 135.0
@@ -84,7 +90,7 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -750.0
+offset_left = -1099.0
 offset_top = 135.0
 offset_right = -10.0
 offset_bottom = 175.0
@@ -139,7 +145,7 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -740.0
+offset_left = -1087.0
 offset_top = 100.0
 offset_right = -20.0
 offset_bottom = 140.0
@@ -184,7 +190,7 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -740.0
+offset_left = -1085.0
 offset_top = 140.0
 offset_right = -20.0
 offset_bottom = 175.0
@@ -215,22 +221,14 @@ offset_bottom = 178.5
 grow_horizontal = 0
 grow_vertical = 2
 
-[node name="SpinMeter" parent="ActionPanel" instance=ExtResource("5_spinmeter")]
-unique_name_in_owner = true
-layout_mode = 1
-offset_left = -392.33618
-offset_top = -260.0
-offset_right = -392.33618
-offset_bottom = -260.0
-
 [node name="BottomPanel" type="Control" parent="."]
 layout_mode = 1
-anchors_preset = 12
 anchor_top = 1.0
-anchor_right = 1.0
+anchor_right = 0.41400003
 anchor_bottom = 1.0
-offset_left = 810.0
+offset_left = 22.0
 offset_top = -150.0
+offset_right = 0.11993408
 grow_horizontal = 2
 grow_vertical = 0
 
@@ -239,27 +237,29 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 20.0
 offset_top = -120.0
-offset_right = 220.0
+offset_right = 200.0
 grow_vertical = 0
 theme_override_constants/separation = 5
 
 [node name="ClubLabel" type="Label" parent="BottomPanel/ClubPanel"]
 layout_mode = 2
 text = "Club"
+label_settings = SubResource("LabelSettings_pbkhi")
 
 [node name="ClubName" type="Label" parent="BottomPanel/ClubPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
 text = "Driver"
+label_settings = SubResource("LabelSettings_pbkhi")
 
 [node name="ClubRange" type="Label" parent="BottomPanel/ClubPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 text = "200-250 yds"
+label_settings = SubResource("LabelSettings_pbkhi")
 
 [node name="TerrainPanel" type="Control" parent="BottomPanel"]
 visible = false
@@ -317,6 +317,7 @@ theme_override_constants/separation = 5
 [node name="TargetLabel" type="Label" parent="BottomPanel/TargetPanel"]
 layout_mode = 2
 text = "Target"
+label_settings = SubResource("LabelSettings_bc86g")
 horizontal_alignment = 2
 
 [node name="TargetTerrain" type="Label" parent="BottomPanel/TargetPanel"]
@@ -324,6 +325,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
 text = "Fairway"
+label_settings = SubResource("LabelSettings_bc86g")
 horizontal_alignment = 2
 
 [node name="TargetDistance" type="Label" parent="BottomPanel/TargetPanel"]
@@ -331,6 +333,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 text = "180 yds"
+label_settings = SubResource("LabelSettings_bc86g")
 horizontal_alignment = 2
 
 [node name="ScorePopup" type="PanelContainer" parent="."]
@@ -376,6 +379,7 @@ text = "50 chips × 5.0 mult"
 horizontal_alignment = 1
 
 [node name="HoleCompletePopup" type="PanelContainer" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5

@@ -3,6 +3,14 @@ class_name ShopManager
 
 ## ShopManager - Handles shop inventory and card offerings
 ## Generates random card selections for between-hole shopping
+## Also handles modifier deck manipulation and item purchases
+##
+## Modifier Deck Prices:
+## - Remove negative card: 10 coins
+## - Add +1 card: 15 coins
+## - Add neutral card: 5 coins
+##
+## Limit: 3 actions per hole
 
 # Signals
 signal shop_opened()
@@ -11,12 +19,26 @@ signal shop_refreshed(offers: Array[CardData])
 signal card_purchased(card_data: CardData)
 signal card_upgraded(card_instance: CardInstance)
 signal card_removed(card_instance: CardInstance)
+signal modifier_deck_changed()
+signal item_purchased(item: ItemData)
+signal actions_remaining_changed(remaining: int)
+signal purchase_failed(reason: String)
 
 # Shop configuration
 @export_group("Offer Settings")
 @export var cards_offered: int = 3                  # Cards to show in shop
 @export var reroll_cost: int = 25                   # Cost to refresh shop
 @export var free_rerolls_per_hole: int = 1          # Free rerolls each hole
+
+# Modifier deck prices
+const MODIFIER_PRICES = {
+	"remove_negative": 10,
+	"add_plus_1": 15,
+	"add_neutral": 5,
+}
+
+# Actions per shop visit
+const MAX_ACTIONS_PER_HOLE: int = 3
 
 # Rarity weights (higher = more common)
 @export var rarity_weights: Dictionary = {
@@ -30,11 +52,14 @@ signal card_removed(card_instance: CardInstance)
 var current_offers: Array[CardData] = []
 var rerolls_remaining: int = 0
 var is_shop_open: bool = false
+var actions_remaining: int = MAX_ACTIONS_PER_HOLE
 
 # References
 var currency_manager: CurrencyManager = null
 var deck_manager: DeckManager = null
 var card_library: CardLibrary = null
+var modifier_deck_manager = null  # ModifierDeckManager
+var item_manager: ItemManager = null
 
 
 func _ready() -> void:
@@ -65,9 +90,11 @@ func open_shop() -> void:
 	"""Open the shop and generate offers"""
 	is_shop_open = true
 	rerolls_remaining = free_rerolls_per_hole
+	actions_remaining = MAX_ACTIONS_PER_HOLE
 	
 	generate_offers()
 	shop_opened.emit()
+	actions_remaining_changed.emit(actions_remaining)
 
 
 func close_shop() -> void:
@@ -268,3 +295,170 @@ func can_afford_offer(index: int) -> bool:
 	
 	var price = get_offer_price(index)
 	return currency_manager.can_afford(price)
+
+
+func can_purchase() -> bool:
+	"""Check if player can still make purchases this hole"""
+	return is_shop_open and actions_remaining > 0
+
+
+func get_actions_remaining() -> int:
+	return actions_remaining
+
+
+func _consume_action(description: String, cost: int) -> void:
+	"""Consume a shop action"""
+	actions_remaining -= 1
+	actions_remaining_changed.emit(actions_remaining)
+	print("[ShopManager] Purchase: %s for %d coins. Actions remaining: %d" % [description, cost, actions_remaining])
+
+
+# --- Modifier Deck Operations ---
+
+func remove_negative_modifier(modifier_type: int) -> bool:
+	"""Remove a negative modifier card from the deck"""
+	if not can_purchase():
+		purchase_failed.emit("No actions remaining")
+		return false
+	
+	var cost = MODIFIER_PRICES["remove_negative"]
+	if not currency_manager or not currency_manager.can_afford(cost):
+		purchase_failed.emit("Not enough coins")
+		return false
+	
+	if modifier_deck_manager and modifier_deck_manager.has_method("remove_card"):
+		if modifier_deck_manager.remove_card(modifier_type):
+			currency_manager.remove_chips(cost, "Remove modifier card")
+			_consume_action("Remove negative card", cost)
+			modifier_deck_changed.emit()
+			return true
+		else:
+			purchase_failed.emit("Card not found in deck")
+			return false
+	
+	purchase_failed.emit("Modifier deck not available")
+	return false
+
+
+func add_plus_one_modifier() -> bool:
+	"""Add a +1 distance card to the modifier deck"""
+	if not can_purchase():
+		purchase_failed.emit("No actions remaining")
+		return false
+	
+	var cost = MODIFIER_PRICES["add_plus_1"]
+	if not currency_manager or not currency_manager.can_afford(cost):
+		purchase_failed.emit("Not enough coins")
+		return false
+	
+	if modifier_deck_manager and modifier_deck_manager.has_method("add_card"):
+		currency_manager.remove_chips(cost, "Add +1 modifier")
+		# ModifierType.DISTANCE_PLUS_1 = 1
+		modifier_deck_manager.add_card(1)
+		_consume_action("Add +1 Distance card", cost)
+		modifier_deck_changed.emit()
+		return true
+	
+	purchase_failed.emit("Modifier deck not available")
+	return false
+
+
+func add_neutral_modifier() -> bool:
+	"""Add a neutral (+0) card to the modifier deck"""
+	if not can_purchase():
+		purchase_failed.emit("No actions remaining")
+		return false
+	
+	var cost = MODIFIER_PRICES["add_neutral"]
+	if not currency_manager or not currency_manager.can_afford(cost):
+		purchase_failed.emit("Not enough coins")
+		return false
+	
+	if modifier_deck_manager and modifier_deck_manager.has_method("add_card"):
+		currency_manager.remove_chips(cost, "Add neutral modifier")
+		# ModifierType.NEUTRAL = 0
+		modifier_deck_manager.add_card(0)
+		_consume_action("Add Neutral card", cost)
+		modifier_deck_changed.emit()
+		return true
+	
+	purchase_failed.emit("Modifier deck not available")
+	return false
+
+
+func get_modifier_deck_composition() -> Dictionary:
+	"""Get current modifier deck composition for display"""
+	if modifier_deck_manager and modifier_deck_manager.has_method("get_deck_composition"):
+		return modifier_deck_manager.get_deck_composition()
+	return {}
+
+
+# --- Item Operations ---
+
+func buy_item(item_id: String) -> bool:
+	"""Purchase an item by ID"""
+	if not can_purchase():
+		purchase_failed.emit("No actions remaining")
+		return false
+	
+	if item_manager and item_manager.get_inventory_size() >= item_manager.get_max_slots():
+		purchase_failed.emit("Inventory full")
+		return false
+	
+	# Create item to get its cost
+	var item = _create_item_by_id(item_id)
+	if not item:
+		purchase_failed.emit("Unknown item")
+		return false
+	
+	var cost = item.shop_cost
+	if not currency_manager or not currency_manager.can_afford(cost):
+		purchase_failed.emit("Not enough coins")
+		return false
+	
+	if item_manager:
+		if item_manager.add_item(item):
+			currency_manager.remove_chips(cost, "Buy item: %s" % item.item_name)
+			_consume_action("Buy %s" % item.item_name, cost)
+			item_purchased.emit(item)
+			return true
+		else:
+			purchase_failed.emit("Could not add item")
+			return false
+	
+	purchase_failed.emit("Item manager not available")
+	return false
+
+
+func _create_item_by_id(item_id: String) -> ItemData:
+	"""Create an item by its ID"""
+	match item_id:
+		"mulligan": return ItemManager.create_mulligan()
+		"lucky_ball": return ItemManager.create_lucky_ball()
+		"power_tee": return ItemManager.create_power_tee()
+		"ignore_water": return ItemManager.create_ignore_water()
+		"ignore_sand": return ItemManager.create_ignore_sand()
+		"ignore_wind": return ItemManager.create_ignore_wind()
+		"coin_magnet": return ItemManager.create_coin_magnet()
+		"worm_burner": return ItemManager.create_worm_burner()
+		"sky_ball": return ItemManager.create_sky_ball()
+		_: return null
+
+
+func get_available_items() -> Array[Dictionary]:
+	"""Get list of items available for purchase"""
+	var items: Array[Dictionary] = []
+	var item_ids = ["mulligan", "lucky_ball", "power_tee", "ignore_water", 
+					"ignore_sand", "ignore_wind", "coin_magnet", "worm_burner", "sky_ball"]
+	
+	for item_id in item_ids:
+		var item = _create_item_by_id(item_id)
+		if item:
+			items.append({
+				"id": item_id,
+				"name": item.item_name,
+				"description": item.description,
+				"cost": item.shop_cost,
+			})
+	
+	return items

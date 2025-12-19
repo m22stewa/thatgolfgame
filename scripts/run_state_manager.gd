@@ -9,6 +9,7 @@ signal hole_started(hole_number: int, par: int, yardage: int)
 signal hole_completed(hole_number: int, strokes: int, par: int, hole_score: int)
 signal run_completed(total_holes: int, total_strokes: int, total_score: int)
 signal score_changed(new_score: int)
+signal coins_changed(new_total: int)
 
 # Run configuration
 @export var total_holes: int = 9  # 9 or 18 hole round
@@ -32,6 +33,14 @@ var hole_history: Array[Dictionary] = []
 # Run status
 var is_run_active: bool = false
 
+# NEW: Progression tracking
+var total_coins_earned: int = 0
+var coins_this_hole: int = 0
+var best_scores: Dictionary = {}  # hole_number -> best_score
+
+# NEW: Modifier deck state (saved between holes)
+var modifier_deck_state: Dictionary = {}
+
 
 func _ready() -> void:
 	pass
@@ -50,6 +59,12 @@ func start_new_run(holes: int = 9) -> void:
 	score_this_hole = 0
 	hole_history.clear()
 	is_run_active = true
+	
+	# Reset progression tracking
+	total_coins_earned = 0
+	coins_this_hole = 0
+	best_scores.clear()
+	modifier_deck_state.clear()
 
 
 func end_run() -> void:
@@ -66,6 +81,7 @@ func start_hole(par: int, yardage: int) -> void:
 	current_yardage = yardage
 	strokes_this_hole = 0  # Strokes counter starts at 0, increments on each record_stroke()
 	score_this_hole = 0
+	coins_this_hole = 0
 	
 	hole_started.emit(current_hole, par, yardage)
 
@@ -198,3 +214,69 @@ func is_final_hole() -> bool:
 func get_hole_display() -> String:
 	"""Get formatted hole display string"""
 	return "Hole %d of %d" % [current_hole, total_holes]
+
+
+# --- Coin Tracking ---
+
+func add_coins(amount: int) -> void:
+	"""Add coins collected during play"""
+	coins_this_hole += amount
+	total_coins_earned += amount
+	coins_changed.emit(total_coins_earned)
+
+
+func get_coins_this_hole() -> int:
+	return coins_this_hole
+
+
+func get_total_coins() -> int:
+	return total_coins_earned
+
+
+# --- Best Score Tracking ---
+
+func update_best_score(hole_number: int, score: int) -> bool:
+	"""Update best score for a hole. Returns true if it's a new best."""
+	if hole_number not in best_scores or score > best_scores[hole_number]:
+		best_scores[hole_number] = score
+		return true
+	return false
+
+
+func get_best_score(hole_number: int) -> int:
+	"""Get best score for a hole, or 0 if not played"""
+	return best_scores.get(hole_number, 0)
+
+
+# --- Modifier Deck State ---
+
+func save_modifier_deck_state(composition: Dictionary) -> void:
+	"""Save modifier deck state between holes"""
+	modifier_deck_state = composition.duplicate()
+
+
+func get_modifier_deck_state() -> Dictionary:
+	"""Get saved modifier deck state"""
+	return modifier_deck_state
+
+
+func has_saved_deck_state() -> bool:
+	"""Check if there's a saved deck state"""
+	return not modifier_deck_state.is_empty()
+
+
+# --- Run Statistics ---
+
+func get_run_statistics() -> Dictionary:
+	"""Get comprehensive run statistics for UI display"""
+	return {
+		"current_hole": current_hole,
+		"total_holes": total_holes,
+		"holes_completed": holes_completed,
+		"total_strokes": total_strokes,
+		"total_score": total_score,
+		"total_coins": total_coins_earned,
+		"vs_par": get_vs_par(),
+		"best_scores": best_scores.duplicate(),
+		"is_run_active": is_run_active
+	}

@@ -2116,6 +2116,15 @@ func _init_card_system() -> void:
 	card_system.starter_deck_definition = starter_deck
 	card_system.club_deck_definition = club_deck
 	card_system.initialize_starter_deck()
+	
+	# Connect swing hand 3D to deck manager (now in UI SubViewport)
+	var swing_hand_3d = get_node_or_null("/root/GOLF/Control/MainUI/SwingHand/SubViewportContainer/SubViewport/SwingHand3D")
+	if swing_hand_3d:
+		print("SwingHand3D found, setting up with deck_manager")
+		swing_hand_3d.setup(deck_manager)
+		print("Hand has ", deck_manager.get_hand().size(), " cards")
+	else:
+		print("SwingHand3D not found!")
 
 	
 	# Register wind modifier (always active when wind is present)
@@ -6235,9 +6244,46 @@ func _generate_grid() -> void:
 				tree_instance.add_to_group("trees")
 				add_child(tree_instance)
 	
-	# Spawn a coin on a random fairway tile
-	if fairway_cells.size() > 0:
-		var coin_cell = fairway_cells[randi() % fairway_cells.size()]
+	# Spawn coins based on par: Par 5 = 3 coins, Par 4 = 2 coins, Par 3 = 1 coin
+	_spawn_coins(fairway_cells)
+	
+	# Spawn foliage (grass patches, bushes, rocks, flowers) based on surface type
+	_spawn_foliage()
+	
+	# Add slope arrows on green tiles
+	_spawn_green_slope_arrows(green_cells)
+
+
+# Coin magnet radius - base is 1 tile, can be increased by items
+var coin_magnet_radius: int = 1
+
+
+# Spawn coins on fairway tiles based on par
+# Par 5 = 3 coins, Par 4 = 2 coins, Par 3 = 1 coin
+func _spawn_coins(fairway_cells: Array) -> void:
+	if fairway_cells.is_empty():
+		print("WARNING: No fairway tiles found for coin placement!")
+		return
+	
+	# Determine coin count based on par
+	var coin_count: int = 1
+	match current_par:
+		5: coin_count = 3
+		4: coin_count = 2
+		3: coin_count = 1
+		_: coin_count = 2  # Default
+	
+	var width = TILE_SIZE
+	var height = TILE_SIZE * sqrt(3.0)
+	
+	# Shuffle fairway cells to get random positions
+	var shuffled_cells = fairway_cells.duplicate()
+	shuffled_cells.shuffle()
+	
+	# Spawn coins (up to available fairway cells)
+	var coins_to_spawn = min(coin_count, shuffled_cells.size())
+	for i in range(coins_to_spawn):
+		var coin_cell = shuffled_cells[i]
 		var coin_scene = load("res://scenes/coin.tscn")
 		var coin_instance = coin_scene.instantiate()
 		
@@ -6245,22 +6291,82 @@ func _generate_grid() -> void:
 		var coin_row = coin_cell.y
 		var coin_x = coin_col * width * 1.5
 		var coin_z = coin_row * height + (coin_col % 2) * (height / 2.0)
-		var coin_y = get_elevation(coin_col, coin_row) + TILE_SURFACE_OFFSET + 0.5  # Slightly above surface
+		var coin_y = get_elevation(coin_col, coin_row) + TILE_SURFACE_OFFSET + 0.5
 		
 		# Wrap coin in a parent Node3D so animation doesn't override world position
 		var coin_holder = Node3D.new()
 		coin_holder.position = Vector3(coin_x, coin_y, coin_z)
 		coin_holder.add_child(coin_instance)
 		coin_holder.add_to_group("coins")
+		# Store cell position for magnet detection
+		coin_holder.set_meta("cell", Vector2i(coin_col, coin_row))
 		add_child(coin_holder)
-	else:
-		print("WARNING: No fairway tiles found for coin placement!")
 	
-	# Spawn foliage (grass patches, bushes, rocks, flowers) based on surface type
-	_spawn_foliage()
+	print("[HexGrid] Spawned %d coins for Par %d hole" % [coins_to_spawn, current_par])
+
+
+# Collect coins within magnet radius of a landing cell
+func collect_coins_at(landing_cell: Vector2i) -> int:
+	"""Collect any coins within magnet radius of landing position. Returns count collected."""
+	var collected = 0
+	var coins_to_remove: Array[Node] = []
 	
-	# Add slope arrows on green tiles
-	_spawn_green_slope_arrows(green_cells)
+	for child in get_children():
+		if child.is_in_group("coins"):
+			var coin_cell = child.get_meta("cell", Vector2i(-999, -999))
+			var distance = hex_distance(landing_cell, coin_cell)
+			
+			if distance <= coin_magnet_radius:
+				coins_to_remove.append(child)
+				collected += 1
+	
+	# Remove collected coins with animation
+	for coin in coins_to_remove:
+		_animate_coin_collection(coin)
+	
+	if collected > 0:
+		print("[HexGrid] Collected %d coins at %s (magnet radius: %d)" % [collected, landing_cell, coin_magnet_radius])
+	
+	return collected
+
+
+func _animate_coin_collection(coin_node: Node3D) -> void:
+	"""Animate coin being collected then remove it"""
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(coin_node, "position:y", coin_node.position.y + 2.0, 0.3)
+	tween.tween_property(coin_node, "scale", Vector3.ZERO, 0.3)
+	tween.set_parallel(false)
+	tween.tween_callback(coin_node.queue_free)
+
+
+func hex_distance(a: Vector2i, b: Vector2i) -> int:
+	"""Calculate hex grid distance between two cells (axial coordinates)"""
+	# Convert offset to cube coordinates for proper hex distance
+	var a_cube = offset_to_cube(a)
+	var b_cube = offset_to_cube(b)
+	return (abs(a_cube.x - b_cube.x) + abs(a_cube.y - b_cube.y) + abs(a_cube.z - b_cube.z)) / 2
+
+
+func offset_to_cube(offset: Vector2i) -> Vector3i:
+	"""Convert offset coordinates to cube coordinates for hex math"""
+	var col = offset.x
+	var row = offset.y
+	var x = col
+	var z = row - (col - (col & 1)) / 2
+	var y = -x - z
+	return Vector3i(x, y, z)
+
+
+func set_coin_magnet_radius(radius: int) -> void:
+	"""Set the coin collection radius (for Coin Magnet item)"""
+	coin_magnet_radius = radius
+	print("[HexGrid] Coin magnet radius set to %d" % radius)
+
+
+func reset_coin_magnet_radius() -> void:
+	"""Reset coin magnet radius to default"""
+	coin_magnet_radius = 1
 
 
 # Spawn grass, bushes, rocks, and flowers based on golf course landscaping rules

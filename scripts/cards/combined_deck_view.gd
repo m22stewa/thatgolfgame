@@ -217,9 +217,12 @@ func setup(swing_manager: DeckManager, modifier_manager: DeckManager) -> void:
 	swing_deck_manager = swing_manager
 	modifier_deck_manager = modifier_manager
 	
-	if swing_deck and swing_manager:
+	# Only setup swing deck if it's visible
+	if swing_deck and swing_manager and swing_deck.visible:
 		swing_deck.setup(swing_manager)
 		print("[CombinedDeckView] Swing deck setup complete, deck_manager=%s" % swing_deck.deck_manager)
+	elif swing_deck and not swing_deck.visible:
+		print("[CombinedDeckView] Swing deck hidden - skipping setup (using HandUI instead)")
 	else:
 		print("[CombinedDeckView] WARNING: swing_deck=%s, swing_manager=%s" % [swing_deck, swing_manager])
 	

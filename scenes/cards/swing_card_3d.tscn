@@ -1,0 +1,16 @@
+[gd_scene load_steps=2 format=3 uid="uid://swing_card_3d_custom"]
+
+[ext_resource type="PackedScene" uid="uid://dxpc2iac0hjpw" path="res://addons/card_3d/scenes/card_3d.tscn" id="1_base_card"]
+[ext_resource type="Script" path="res://scripts/cards/swing_card_3d.gd" id="2_script"]
+
+[node name="SwingCard3D" instance=ExtResource("1_base_card")]
+script = ExtResource("2_script")
+
+[node name="TempoLabel" type="Label3D" parent="CardMesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 1.2, 0.01)
+pixel_size = 0.005
+text = "1"
+font_size = 128
+outline_size = 8
+horizontal_alignment = 0
+vertical_alignment = 0

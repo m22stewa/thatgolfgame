@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://cdby66rujphi3"]
+[gd_scene load_steps=19 format=3 uid="uid://cdby66rujphi3"]
 
 [ext_resource type="Script" uid="uid://bryby6cgtarmo" path="res://scripts/ui/main_ui.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="2_shot_ui"]
@@ -10,6 +10,7 @@
 [ext_resource type="Theme" uid="uid://cuubp4a7q28lw" path="res://theme/kenneyUI-green.tres" id="5_theme"]
 [ext_resource type="PackedScene" uid="uid://j4r0osq52hig" path="res://scenes/ui/hole_viewer.tscn" id="6_hole_viewer"]
 [ext_resource type="PackedScene" uid="uid://d0p11qbqfw7jg" path="res://scenes/ui/SwingMeter.tscn" id="7_swing_meter"]
+[ext_resource type="PackedScene" uid="uid://cswinghand1" path="res://scenes/ui/swing_hand.tscn" id="8_swing_hand"]
 [ext_resource type="Texture2D" uid="uid://c3hpaioup7fto" path="res://textures/icons/click.png" id="12_ampf0"]
 [ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/icons/left-click.png" id="13_chv3i"]
 [ext_resource type="Texture2D" uid="uid://meco8curw6dv" path="res://textures/icons/right-click.png" id="14_h2n7m"]
@@ -152,6 +153,7 @@ text = "Zoom"
 horizontal_alignment = 1
 
 [node name="Label" type="Label" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_top = 0.02962963
@@ -165,6 +167,7 @@ horizontal_alignment = 1
 metadata/_edit_use_anchors_ = true
 
 [node name="Label2" type="Label" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.15520833
@@ -180,6 +183,7 @@ horizontal_alignment = 1
 metadata/_edit_use_anchors_ = true
 
 [node name="Label3" type="Label" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.078125
@@ -195,6 +199,7 @@ horizontal_alignment = 1
 metadata/_edit_use_anchors_ = true
 
 [node name="DeckWidget" parent="." instance=ExtResource("3_deck_widget")]
+visible = false
 layout_mode = 1
 offset_left = -1118.0
 offset_top = -667.0
@@ -304,6 +309,7 @@ grow_horizontal = 0
 text = "Generate Unique Hole"
 
 [node name="SwingMeter" parent="." instance=ExtResource("7_swing_meter")]
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 1.1390625
@@ -317,3 +323,19 @@ offset_bottom = 0.0
 grow_horizontal = 2
 grow_vertical = 2
 metadata/_edit_use_anchors_ = true
+
+[node name="SpinMeterPanel" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -380.0
+offset_top = 190.0
+offset_right = -300.0
+offset_bottom = 390.0
+grow_horizontal = 0
+
+[node name="SwingHand" parent="." instance=ExtResource("8_swing_hand")]
+layout_mode = 1
+offset_left = -1130.0
+offset_top = -509.0

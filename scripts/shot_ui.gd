@@ -57,6 +57,19 @@ var displayed_chips: int = 0  # For animated chip counting
 # Currency reference
 var currency_manager: CurrencyManager = null
 
+# NEW: References to new managers
+var tempo_manager = null  # TempoManager
+var scoring_manager = null  # ScoringManager
+var modifier_deck_manager = null  # ModifierDeckManager
+var game_flow_manager = null  # GameFlowManager
+
+# NEW: Dynamic UI labels for new systems (created at runtime)
+var tempo_label: Label = null
+var multiplier_label: Label = null
+var streak_label: Label = null
+var deck_count_label: Label = null
+var modifier_display_label: RichTextLabel = null
+
 @onready var hole_complete_popup: PanelContainer = $HoleCompletePopup
 @onready var hole_complete_title: Label = %HoleCompleteTitle
 @onready var hole_score: Label = %HoleScore
@@ -546,10 +559,27 @@ func show_hole_complete(strokes: int, par: int, hole_points: int) -> void:
 	
 	hole_score.text = "%s\n%d strokes" % [score_name, strokes]
 	
-	# Show score breakdown
+	# Show score breakdown with new scoring info
 	var score_text = "Hole Score: %d pts" % hole_points
+	
+	# Add scoring manager breakdown if available
+	if scoring_manager:
+		var fairways = scoring_manager.get_consecutive_fairways()
+		if fairways > 0:
+			score_text += "\nFairway Streak: %d" % fairways
+		var multiplier = scoring_manager.get_current_multiplier()
+		if multiplier > 1.0:
+			score_text += "\nMultiplier: %.1fx" % multiplier
+	
 	if par_bonus > 0:
-		score_text += "\nPar Bonus: +%d pts" % par_bonus
+		score_text += "\n\n%s Bonus: +%d pts" % [score_name.split("!")[0].strip_edges(), par_bonus]
+	
+	# Add coins collected if run_state tracks it
+	if run_state:
+		var coins = run_state.get_coins_this_hole()
+		if coins > 0:
+			score_text += "\nCoins: +%d" % coins
+	
 	score_text += "\n\nTotal: %d pts" % total_points
 	total_score.text = score_text
 	
@@ -647,6 +677,212 @@ func _on_swing_cancelled() -> void:
 func _on_next_hole_pressed() -> void:
 	"""Next hole button clicked"""
 	hide_hole_complete()
+	next_hole_requested.emit()
+
+
+# --- NEW: Tempo/Scoring/Modifier System UI ---
+
+func setup_new_managers(tempo: Node, scoring: Node, modifier_deck: Node, game_flow: Node) -> void:
+	"""Connect to new game systems"""
+	tempo_manager = tempo
+	scoring_manager = scoring
+	modifier_deck_manager = modifier_deck
+	game_flow_manager = game_flow
+	
+	# Connect signals
+	if tempo_manager and tempo_manager.has_signal("tempo_changed"):
+		tempo_manager.tempo_changed.connect(_on_tempo_changed)
+	
+	if scoring_manager:
+		if scoring_manager.has_signal("multiplier_changed"):
+			scoring_manager.multiplier_changed.connect(_on_multiplier_changed)
+		if scoring_manager.has_signal("streak_changed"):
+			scoring_manager.streak_changed.connect(_on_streak_changed)
+		if scoring_manager.has_signal("points_awarded"):
+			scoring_manager.points_awarded.connect(_on_points_awarded)
+		if scoring_manager.has_signal("golf_bonus_awarded"):
+			scoring_manager.golf_bonus_awarded.connect(_on_golf_bonus_awarded)
+	
+	if modifier_deck_manager and modifier_deck_manager.has_signal("deck_size_changed"):
+		modifier_deck_manager.deck_size_changed.connect(_on_deck_size_changed)
+	
+	if game_flow_manager and game_flow_manager.has_signal("modifier_flipped"):
+		game_flow_manager.modifier_flipped.connect(_on_modifier_flipped)
+	
+	# Create UI elements
+	_create_new_system_ui()
+
+
+func _create_new_system_ui() -> void:
+	"""Create UI elements for tempo, multiplier, streak, and deck counts"""
+	# Find or create a container for these elements
+	var info_container = get_node_or_null("TopBar/InfoContainer")
+	if not info_container:
+		# Try to find TopBar
+		var top_bar = get_node_or_null("TopBar")
+		if top_bar:
+			info_container = HBoxContainer.new()
+			info_container.name = "InfoContainer"
+			info_container.add_theme_constant_override("separation", 20)
+			top_bar.add_child(info_container)
+	
+	if not info_container:
+		# Create at root level
+		info_container = HBoxContainer.new()
+		info_container.name = "InfoContainer"
+		info_container.add_theme_constant_override("separation", 20)
+		info_container.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		info_container.position = Vector2(800, 10)
+		add_child(info_container)
+	
+	# Tempo display
+	tempo_label = Label.new()
+	tempo_label.name = "TempoLabel"
+	tempo_label.text = "⚡ 2/2"
+	tempo_label.add_theme_font_size_override("font_size", 18)
+	tempo_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+	info_container.add_child(tempo_label)
+	
+	# Multiplier display
+	multiplier_label = Label.new()
+	multiplier_label.name = "MultiplierLabel"
+	multiplier_label.text = "🎯 1.0x"
+	multiplier_label.add_theme_font_size_override("font_size", 18)
+	multiplier_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+	info_container.add_child(multiplier_label)
+	
+	# Streak display
+	streak_label = Label.new()
+	streak_label.name = "StreakLabel"
+	streak_label.text = "🔥 0"
+	streak_label.add_theme_font_size_override("font_size", 18)
+	streak_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.2))
+	streak_label.visible = false  # Hidden until streak starts
+	info_container.add_child(streak_label)
+	
+	# Deck count display
+	deck_count_label = Label.new()
+	deck_count_label.name = "DeckCountLabel"
+	deck_count_label.text = "🃏 20/0"
+	deck_count_label.add_theme_font_size_override("font_size", 16)
+	deck_count_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+	info_container.add_child(deck_count_label)
+	
+	# Modifier display (shows last drawn modifier)
+	modifier_display_label = RichTextLabel.new()
+	modifier_display_label.name = "ModifierDisplay"
+	modifier_display_label.bbcode_enabled = true
+	modifier_display_label.fit_content = true
+	modifier_display_label.custom_minimum_size = Vector2(150, 30)
+	modifier_display_label.text = ""
+	info_container.add_child(modifier_display_label)
+
+
+func _on_tempo_changed(current: int, max_tempo: int) -> void:
+	"""Update tempo display"""
+	if tempo_label:
+		tempo_label.text = "⚡ %d/%d" % [current, max_tempo]
+		# Color based on remaining tempo
+		if current == 0:
+			tempo_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		elif current <= max_tempo / 2:
+			tempo_label.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3))
+		else:
+			tempo_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+
+
+func _on_multiplier_changed(new_multiplier: float) -> void:
+	"""Update multiplier display"""
+	if multiplier_label:
+		multiplier_label.text = "🎯 %.1fx" % new_multiplier
+		# Color based on multiplier value
+		if new_multiplier >= 2.0:
+			multiplier_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.0))
+		elif new_multiplier >= 1.5:
+			multiplier_label.add_theme_color_override("font_color", Color(0.8, 1.0, 0.3))
+		else:
+			multiplier_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+
+
+func _on_streak_changed(streak_count: int) -> void:
+	"""Update streak display"""
+	if streak_label:
+		streak_label.text = "🔥 %d" % streak_count
+		streak_label.visible = streak_count > 0
+		# Animate on streak increase
+		if streak_count >= 3:
+			streak_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.1))
+		elif streak_count >= 2:
+			streak_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
+		else:
+			streak_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.4))
+
+
+func _on_deck_size_changed(draw_size: int, discard_size: int) -> void:
+	"""Update modifier deck count display"""
+	if deck_count_label:
+		deck_count_label.text = "🃏 %d/%d" % [draw_size, discard_size]
+
+
+func _on_modifier_flipped(card) -> void:
+	"""Display the flipped modifier card"""
+	if modifier_display_label and card:
+		modifier_display_label.text = card.get_display_text() if card.has_method("get_display_text") else "[Modifier]"
+
+
+func _on_points_awarded(points: int, reason: String, multiplier: float) -> void:
+	"""Show points popup when points are awarded"""
+	_show_points_popup(points, reason)
+
+
+func _on_golf_bonus_awarded(bonus_name: String, bonus_points: int) -> void:
+	"""Show golf bonus achievement"""
+	_show_golf_bonus_popup(bonus_name, bonus_points)
+
+
+func _show_points_popup(points: int, reason: String) -> void:
+	"""Show a floating points indicator"""
+	var popup = Label.new()
+	popup.text = "+%d" % points if points >= 0 else "%d" % points
+	popup.add_theme_font_size_override("font_size", 24)
+	
+	if points > 0:
+		popup.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3))
+	else:
+		popup.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+	
+	popup.position = Vector2(get_viewport().size.x / 2 - 50, get_viewport().size.y / 2)
+	add_child(popup)
+	
+	# Animate and remove
+	var tween = create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(popup, "position:y", popup.position.y - 50, 1.0)
+	tween.tween_property(popup, "modulate:a", 0.0, 1.0)
+	tween.set_parallel(false)
+	tween.tween_callback(popup.queue_free)
+
+
+func _show_golf_bonus_popup(bonus_name: String, bonus_points: int) -> void:
+	"""Show a prominent golf bonus achievement"""
+	var popup = Label.new()
+	popup.text = "%s +%d" % [bonus_name, bonus_points]
+	popup.add_theme_font_size_override("font_size", 36)
+	popup.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
+	popup.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	
+	popup.set_anchors_preset(Control.PRESET_CENTER)
+	popup.position = Vector2(get_viewport().size.x / 2 - 100, get_viewport().size.y / 2 - 50)
+	add_child(popup)
+	
+	# Animate with scale and fade
+	popup.scale = Vector2(0.5, 0.5)
+	var tween = create_tween()
+	tween.tween_property(popup, "scale", Vector2(1.2, 1.2), 0.3).set_ease(Tween.EASE_OUT)
+	tween.tween_property(popup, "scale", Vector2(1.0, 1.0), 0.2)
+	tween.tween_interval(1.0)
+	tween.tween_property(popup, "modulate:a", 0.0, 0.5)
+	tween.tween_callback(popup.queue_free)
 	# Emit signal for hex_grid to handle hole transition
 	next_hole_requested.emit()
 

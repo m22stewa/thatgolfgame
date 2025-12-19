@@ -8,6 +8,8 @@ class_name DeckManager
 signal active_cards_changed(cards: Array[CardInstance])
 signal card_drawn(card: CardInstance)
 signal card_activated(card: CardInstance)
+signal card_played(card: CardInstance)  # When a card is used/played from hand
+signal hand_changed()  # When the hand changes (for HandUI compatibility)
 signal deck_shuffled()
 signal deck_empty()
 
@@ -242,3 +244,36 @@ func get_draw_pile_size() -> int:
 
 func get_discard_pile_size() -> int:
 	return _discard_pile.size()
+
+
+func get_hand() -> Array[CardInstance]:
+	"""Get all cards available to play (the 'hand').
+	   For swing decks, this is the entire draw pile since all cards are visible."""
+	return _draw_pile.duplicate()
+
+
+func play_card(card: CardInstance) -> void:
+	"""Play a card from hand - moves it to discard and emits played signal"""
+	if not card:
+		return
+	
+	# Find and remove from draw pile
+	var idx = _draw_pile.find(card)
+	if idx >= 0:
+		_draw_pile.remove_at(idx)
+	else:
+		# Maybe in active?
+		idx = _active_cards.find(card)
+		if idx >= 0:
+			_active_cards.remove_at(idx)
+	
+	# Move to discard
+	_discard_pile.append(card)
+	
+	# Mark as used
+	card.use()
+	
+	# Emit signals
+	card_played.emit(card)
+	hand_changed.emit()
+	active_cards_changed.emit(_active_cards)

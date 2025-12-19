@@ -13,7 +13,13 @@ class_name CardData
 
 # Card classification
 enum Rarity { COMMON, UNCOMMON, RARE, LEGENDARY }
-enum CardType { SHOT, PASSIVE, CONSUMABLE, JOKER, CLUB }
+enum CardType { SHOT, PASSIVE, CONSUMABLE, JOKER, CLUB, ITEM }
+
+# Shot shape for swing cards
+enum ShotShape { STRAIGHT, DRAW, FADE, BIG_DRAW, BIG_FADE }
+
+# Accuracy/AOE shape for swing cards  
+enum AccuracyShape { SINGLE, HORIZONTAL_LINE, VERTICAL_LINE, RING }
 
 @export var rarity: Rarity = Rarity.COMMON
 @export var card_type: CardType = CardType.SHOT
@@ -25,8 +31,13 @@ enum CardType { SHOT, PASSIVE, CONSUMABLE, JOKER, CLUB }
 
 # Cost/Requirements
 @export var play_cost: int = 0                 # Energy cost to play (if using energy system)
+@export var tempo_cost: int = 1                # Tempo cost for swing cards (1-3 typically)
 @export var requires_target: bool = false      # Does this card need a target tile?
 @export var requires_shot_in_progress: bool = true  # Must be played during shot phase?
+
+# Swing card properties
+@export var shot_shape: ShotShape = ShotShape.STRAIGHT
+@export var accuracy_shape: AccuracyShape = AccuracyShape.RING
 
 # Card effects - uses composition pattern
 # Each effect is a separate resource that can be mixed and matched
@@ -96,11 +107,46 @@ func duplicate_card() -> CardData:
 	copy.icon = icon
 	copy.color_tint = color_tint
 	copy.play_cost = play_cost
+	copy.tempo_cost = tempo_cost
 	copy.requires_target = requires_target
 	copy.requires_shot_in_progress = requires_shot_in_progress
 	copy.effects = effects.duplicate()
 	copy.can_upgrade = can_upgrade
 	copy.max_upgrade_level = max_upgrade_level
 	copy.max_uses = max_uses
+	copy.shot_shape = shot_shape
+	copy.accuracy_shape = accuracy_shape
 	
 	return copy
+
+
+func get_shot_shape_name() -> String:
+	"""Get display name for shot shape"""
+	match shot_shape:
+		ShotShape.STRAIGHT: return "Straight"
+		ShotShape.DRAW: return "Draw"
+		ShotShape.FADE: return "Fade"
+		ShotShape.BIG_DRAW: return "Big Draw"
+		ShotShape.BIG_FADE: return "Big Fade"
+		_: return "Unknown"
+
+
+func get_accuracy_shape_name() -> String:
+	"""Get display name for accuracy shape"""
+	match accuracy_shape:
+		AccuracyShape.SINGLE: return "Single"
+		AccuracyShape.HORIZONTAL_LINE: return "H-Line"
+		AccuracyShape.VERTICAL_LINE: return "V-Line"
+		AccuracyShape.RING: return "Ring"
+		_: return "Unknown"
+
+
+func get_curve_amount() -> int:
+	"""Get curve value based on shot shape (negative = left/draw, positive = right/fade)"""
+	match shot_shape:
+		ShotShape.STRAIGHT: return 0
+		ShotShape.DRAW: return -2
+		ShotShape.FADE: return 2
+		ShotShape.BIG_DRAW: return -4
+		ShotShape.BIG_FADE: return 4
+		_: return 0

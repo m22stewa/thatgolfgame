@@ -20,7 +20,10 @@ var shot_ui: ShotUI = null  # For updating swing button prerequisites
 var deck_view: DeckView3D = null
 var club_deck_view: DeckView3D = null
 var deck_widget: Control = null  # Modifier deck widget
-var club_deck_widget: Control = null  # Swing deck widget
+var club_deck_widget: Control = null  # Swing deck widget (legacy)
+var swing_hand: SwingHand = null  # Fanned hand display for swing cards
+var swing_card_slot: SwingCardSlot = null  # Drop zone for playing swing card
+var items_bar: ItemsBar = null  # Item slots display
 
 # Signals for external systems
 signal card_system_ready()
@@ -311,7 +314,7 @@ func _recursive_find(node: Node, class_name_str: String) -> Node:
 
 
 func _setup_deck_ui() -> void:
-	"""Find and setup deck widgets - supports both combined and legacy modes"""
+	"""Find and setup deck widgets - supports swing hand, card slot, and modifier deck"""
 	
 	# Try to find MainUI first
 	var main_ui = get_tree().current_scene.find_child("MainUI", true, false)
@@ -319,18 +322,121 @@ func _setup_deck_ui() -> void:
 		push_warning("[CardSystem] MainUI not found")
 		return
 	
-	# Look for any visible DeckWidget that uses combined mode
+	# Setup SwingHand for swing cards (fanned display at bottom)
+	if main_ui.get("swing_hand") and main_ui.swing_hand:
+		_setup_swing_hand(main_ui.swing_hand)
+	
+	# Setup SwingCardSlot (drop zone for playing swing card)
+	if main_ui.get("swing_card_slot") and main_ui.swing_card_slot:
+		_setup_swing_card_slot(main_ui.swing_card_slot)
+	
+	# Setup ItemsBar
+	if main_ui.get("items_bar") and main_ui.items_bar:
+		items_bar = main_ui.items_bar
+	
+	# Setup Modifier deck widget
+	if main_ui.get("modifier_deck_widget") and main_ui.modifier_deck_widget and main_ui.modifier_deck_widget.visible:
+		_setup_modifier_deck(main_ui.modifier_deck_widget)
+	
+	# Look for combined mode DeckWidget (legacy - for modifier deck only now)
 	for child in main_ui.get_children():
 		if child is DeckWidget and child.visible and child.is_combined_mode():
 			_setup_combined_deck_mode(child)
-			return
+			break
+
+
+func _setup_swing_hand(hand: SwingHand) -> void:
+	"""Setup the SwingHand for displaying swing cards as a fanned hand"""
+	print("[CardSystem] Setting up SwingHand for swing cards")
+	swing_hand = hand
 	
-	# Fall back to separate deck widgets (legacy mode)
-	if main_ui.get("modifier_deck_widget") and main_ui.modifier_deck_widget and main_ui.modifier_deck_widget.visible:
-		_setup_legacy_modifier_deck(main_ui.modifier_deck_widget)
+	# Setup hand with swing deck manager
+	swing_hand.setup(club_deck_manager)
 	
-	if main_ui.get("club_deck_widget") and main_ui.club_deck_widget and main_ui.club_deck_widget.visible:
-		_setup_legacy_club_deck(main_ui.club_deck_widget)
+	# Connect hand signals for card selection
+	if not swing_hand.card_selected.is_connected(_on_swing_hand_card_selected):
+		swing_hand.card_selected.connect(_on_swing_hand_card_selected)
+	if not swing_hand.card_played.is_connected(_on_swing_hand_card_played):
+		swing_hand.card_played.connect(_on_swing_hand_card_played)
+	
+	print("[CardSystem] SwingHand setup complete")
+
+
+func _setup_swing_card_slot(slot: SwingCardSlot) -> void:
+	"""Setup the swing card drop zone"""
+	print("[CardSystem] Setting up SwingCardSlot")
+	swing_card_slot = slot
+	
+	# Connect slot signals
+	if not swing_card_slot.card_dropped.is_connected(_on_swing_slot_card_dropped):
+		swing_card_slot.card_dropped.connect(_on_swing_slot_card_dropped)
+	
+	print("[CardSystem] SwingCardSlot setup complete")
+
+
+func _setup_modifier_deck(widget: DeckWidget) -> void:
+	"""Setup standalone modifier deck widget"""
+	print("[CardSystem] Setting up modifier deck widget")
+	deck_widget = widget
+	
+	if widget.has_method("get_deck_view"):
+		deck_view = widget.get_deck_view()
+		widget.setup(deck_manager)
+	
+	# Connect modifier deck signals
+	if deck_view and not deck_view.request_club_selection.is_connected(_start_modifier_selection):
+		deck_view.request_club_selection.connect(_start_modifier_selection)
+	
+	print("[CardSystem] Modifier deck setup complete")
+
+
+func _on_swing_hand_card_selected(card: CardInstance) -> void:
+	"""Handler when a card is selected (hovered/clicked) in the swing hand"""
+	print("[CardSystem] Swing hand card selected: %s" % (card.data.card_name if card else "null"))
+	# This is just highlighting, no action needed
+
+
+func _on_swing_hand_card_played(card: CardInstance) -> void:
+	"""Handler when a card is played from the swing hand (clicked twice to play)"""
+	if not card:
+		return
+	
+	# The card needs to go to the swing card slot
+	# For now, just trigger the same logic as slot drop
+	_on_swing_slot_card_dropped(card)
+
+
+func _on_swing_slot_card_dropped(card: CardInstance) -> void:
+	"""Handler when a swing card is dropped into the slot"""
+	if not card:
+		return
+	
+	if selected_club_card != null:
+		print("[CardSystem] Already have a swing card selected, ignoring")
+		return
+	
+	print("[CardSystem] Swing card played to slot: %s" % card.data.card_name)
+	selected_club_card = card
+	
+	# Mark card as used in the deck manager
+	club_deck_manager.play_card(card)
+	
+	# Apply card as modifier (shot modifier, not club selection)
+	if card.data.target_club and not card.data.target_club.is_empty():
+		# Legacy club card - apply it
+		_apply_club_selection(card)
+	else:
+		# Shot modifier card - apply its effects
+		activate_card_modifier(card)
+	
+	# Notify UI that swing card is selected
+	swing_card_selected.emit(card)
+	if shot_ui:
+		shot_ui.set_swing_card_selected(true)
+	
+	# Refresh hand display
+	if swing_hand:
+		swing_hand.refresh_hand()
 
 
 func _setup_combined_deck_mode(widget: DeckWidget) -> void:

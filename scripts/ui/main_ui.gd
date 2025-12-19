@@ -2,9 +2,9 @@ extends Control
 class_name MainUI
 
 @onready var shot_ui: Control = $ShotUI
-@onready var modifier_deck_widget: DeckWidget = $ModifierDeckWidget
-@onready var club_deck_widget: DeckWidget = $ClubDeckWidget
-@onready var combined_deck_widget: DeckWidget = $DeckWidget  # New combined view widget
+@onready var combined_deck_widget: DeckWidget = $DeckWidget  # Combined view (modifier only now)
+@onready var modifier_deck_widget: DeckWidget = $ModifierDeckWidget  # Standalone modifier deck
+@onready var items_bar: ItemsBar = $ItemsBar  # Item slots
 @onready var wind_widget: Control = $WindWidget
 @onready var lie_view: Control = $LieView
 @onready var hole_info_label: Label = $HoleInfoLabel
@@ -22,14 +22,9 @@ var card_inspection_panel: PanelContainer = null
 var inspected_card: CardInstance = null
 
 func _ready() -> void:
-	# Ensure full screen layout
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	
 	# Connect card inspection signals from deck widgets
 	if modifier_deck_widget and modifier_deck_widget.visible:
 		modifier_deck_widget.card_inspection_requested.connect(_on_card_inspection_requested)
-	if club_deck_widget and club_deck_widget.visible:
-		club_deck_widget.card_inspection_requested.connect(_on_card_inspection_requested)
 	
 	# Connect combined deck widget if present
 	if combined_deck_widget and combined_deck_widget.visible:

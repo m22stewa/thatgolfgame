@@ -1,8 +1,9 @@
 extends Area3D
-class_name Card3D
+class_name GolfCard3D
 
-## 3D representation of a card.
+## 3D representation of a golf card.
 ## Handles visualization and animation.
+## NOTE: Renamed from Card3D to avoid conflict with card_3d addon
 
 # References
 @onready var mesh_instance: MeshInstance3D = $MeshInstance3D

@@ -1,0 +1,75 @@
+[gd_scene load_steps=6 format=3 uid="uid://cswinghand1"]
+
+[ext_resource type="Script" uid="uid://c6t72tpyg6lox" path="res://scripts/ui/swing_hand.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://bolpjbxigoifs" path="res://scenes/swing_hand_3d.tscn" id="2_swing_hand_3d"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cards"]
+sky_top_color = Color(0.4, 0.5, 0.6, 1)
+sky_horizon_color = Color(0.6, 0.65, 0.7, 1)
+ground_bottom_color = Color(0.2, 0.2, 0.2, 1)
+ground_horizon_color = Color(0.4, 0.4, 0.4, 1)
+
+[sub_resource type="Sky" id="Sky_cards"]
+sky_material = SubResource("ProceduralSkyMaterial_cards")
+
+[sub_resource type="Environment" id="Environment_cards"]
+background_mode = 2
+sky = SubResource("Sky_cards")
+ambient_light_source = 3
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.5
+
+[node name="SwingHand" type="Control"]
+layout_mode = 3
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -1900.0
+grow_horizontal = 0
+grow_vertical = 0
+script = ExtResource("1_script")
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+physics_object_picking = true
+size = Vector2i(1900, 1080)
+render_target_update_mode = 4
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewportContainer/SubViewport"]
+environment = SubResource("Environment_cards")
+
+[node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 0.9659259, 0.25881898, 0, -0.25881898, 0.9659259, 0, 9.792814, 13.006404)
+current = true
+fov = 60.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 5, 5)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="SwingHand3D" parent="SubViewportContainer/SubViewport" instance=ExtResource("2_swing_hand_3d")]
+
+[node name="CardsContainer" type="Control" parent="."]
+layout_mode = 1
+anchor_left = 0.020000001
+anchor_top = -0.018000001
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.07999802
+offset_top = -0.26599884
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2

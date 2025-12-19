@@ -15,11 +15,12 @@ modifier_card_front_texture = ExtResource("3_64usb")
 modifier_interaction_mode = 0
 
 [node name="SwingDeck" parent="." instance=ExtResource("2_deck_scene")]
+visible = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2, 0, 0)
 card_back_texture = ExtResource("4_blue_back")
 
 [node name="ModifierDeck" parent="." instance=ExtResource("2_deck_scene")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.2, 0, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
 card_back_texture = ExtResource("3_green_back")
 
 [node name="Camera3D" type="Camera3D" parent="."]

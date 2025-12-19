@@ -1,4 +1,4 @@
-[gd_scene load_steps=51 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=52 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
@@ -257,7 +257,7 @@ current = true
 
 [node name="EditorHelpers" type="Node3D" parent="."]
 unique_name_in_owner = true
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.7913742, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.23413372, 0)
 visible = false
 
 [node name="EditorCamera" type="Camera3D" parent="EditorHelpers"]

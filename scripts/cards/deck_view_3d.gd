@@ -17,12 +17,12 @@ var card_scene: PackedScene = preload("res://scenes/card_3d.tscn")
 @onready var deck_pile_mesh: MeshInstance3D = $DeckAnchor/DeckPileVisual
 
 # State
-var active_card_node: Card3D = null
-var played_cards: Array[Card3D] = []
-var discarded_cards: Array[Card3D] = [] # Legacy support, kept for safety but unused
+var active_card_node: GolfCard3D = null
+var played_cards: Array[GolfCard3D] = []
+var discarded_cards: Array[GolfCard3D] = [] # Legacy support, kept for safety but unused
 
 # Card inspection state
-var inspected_card: Card3D = null
+var inspected_card: GolfCard3D = null
 var inspected_card_original_pos: Vector3 = Vector3.ZERO
 var inspected_card_original_rot: Vector3 = Vector3.ZERO
 var inspected_card_original_scale: Vector3 = Vector3.ONE
@@ -379,13 +379,13 @@ func _check_click(screen_pos: Vector2) -> void:
 			_on_card_clicked(collider)
 
 
-func _on_card_clicked(card: Card3D) -> void:
+func _on_card_clicked(card: GolfCard3D) -> void:
 	"""Handle clicking on a drawn card - show local inspection and signal parent to expand"""
 	if card and card.card_instance:
 		_show_inspection(card)
 
 
-func _show_inspection(card: Card3D) -> void:
+func _show_inspection(card: GolfCard3D) -> void:
 	"""Animate card to center of view, straightened for inspection"""
 	if not card or not is_instance_valid(card):
 		return
