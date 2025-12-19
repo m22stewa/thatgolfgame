@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=8 format=3 uid="uid://dd1ayis6jjmm6"]
+
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
+[ext_resource type="Script" uid="uid://c7oc5wpjuw1g8" path="res://scripts/cards/effects/effect_aoe_line_horizontal.gd" id="2_qwbkn"]
+[ext_resource type="Texture2D" uid="uid://cvvyry3im5q16" path="res://textures/icons/aoe-horz-line.png" id="3_qonrd"]
+
+[sub_resource type="Resource" id="Resource_effect"]
+script = ExtResource("2_effect")
+value = -1
+set_mode = true
+
+[sub_resource type="Resource" id="Resource_dhdy5"]
+script = ExtResource("2_effect")
+target_stat = "curve_strength"
+value = 3
+set_mode = true
+metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
+
+[sub_resource type="Resource" id="Resource_ek33i"]
+script = ExtResource("2_qwbkn")
+metadata/_custom_type_script = "uid://c7oc5wpjuw1g8"
+
+[resource]
+script = ExtResource("1_script")
+card_id = "fade"
+card_name = "Fade"
+description = "Fade, less distance"
+rarity = 2
+icon = ExtResource("3_qonrd")
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_dhdy5"), SubResource("Resource_ek33i")])
