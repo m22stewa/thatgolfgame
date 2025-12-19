@@ -1,16 +1,17 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=6 format=3 uid="uid://bmkqdc256yhfo"]
+[gd_resource type="Resource" script_class="CardData" load_steps=9 format=3 uid="uid://bmkqdc256yhfo"]
 
 [ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="1_5jeil"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_fcpwa"]
+[ext_resource type="Script" uid="uid://cc77salcuxi12" path="res://scripts/cards/effects/effect_aoe_ring.gd" id="2_fkfv6"]
+[ext_resource type="Texture2D" uid="uid://duewygx8s6hr3" path="res://textures/icons/aoe-ring.png" id="3_3rqjw"]
 
 [sub_resource type="Resource" id="Resource_effect"]
 script = ExtResource("1_5jeil")
-value = 4
+value = 3
 
 [sub_resource type="Resource" id="Resource_fkfv6"]
 script = ExtResource("1_5jeil")
 target_stat = "accuracy_mod"
-value = -3
 metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
 
 [sub_resource type="Resource" id="Resource_3rqjw"]
@@ -19,10 +20,15 @@ target_stat = "roll_mod"
 value = 2
 metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
 
+[sub_resource type="Resource" id="Resource_h7siy"]
+script = ExtResource("2_fkfv6")
+metadata/_custom_type_script = "uid://cc77salcuxi12"
+
 [resource]
 script = ExtResource("2_fcpwa")
 card_id = "go_for_it"
 card_name = "Go for it! "
-flavor_text = "Power shot"
-rarity = 1
-effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_fkfv6"), SubResource("Resource_3rqjw")])
+description = "Power shot. More distance, less accurate. "
+rarity = 2
+icon = ExtResource("3_3rqjw")
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_fkfv6"), SubResource("Resource_3rqjw"), SubResource("Resource_h7siy")])

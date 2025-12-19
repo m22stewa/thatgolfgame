@@ -10,6 +10,7 @@ class_name MainUI
 @onready var hole_info_label: Label = $HoleInfoLabel
 @onready var hole_viewer: Control = $HoleViewer
 @onready var generate_button: Button = $GenerateButton
+@onready var generate_unique_button: Button = $GenerateUniqueButton
 @onready var lie_info_panel: PanelContainer = %LieInfoPanel
 @onready var lie_name_label: Label = %LieName
 @onready var lie_desc_label: RichTextLabel = %LieDescription

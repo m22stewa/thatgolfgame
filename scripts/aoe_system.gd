@@ -2,13 +2,20 @@ extends Node
 class_name AOESystem
 
 ## AOESystem - Computes Area of Effect tiles from a center position.
-## Supports different shapes: circle, cone, strip, etc.
+## Supports different shapes: circle, cone, strip, line_vertical, line_horizontal.
+##
+## AOE Patterns (driven by cards):
+## - "circle"/"ring": Filled circle of tiles within radius (traditional AOE)
+## - "line_vertical": Line along shot direction (+N short, center, +N long)
+## - "line_horizontal": Line perpendicular to shot (+N left, center, +N right - draw/fade)
+## - "single": Just the center tile (default when no AOE card)
 
 
 # --- Public API ---
 
-func compute_aoe(center: Vector2i, radius: int, shape: String, hole_controller: Node3D) -> Array[Vector2i]:
-	"""Compute all tiles in the AOE based on shape and radius"""
+func compute_aoe(center: Vector2i, radius: int, shape: String, hole_controller: Node3D, shot_direction: Vector2i = Vector2i.ZERO) -> Array[Vector2i]:
+	"""Compute all tiles in the AOE based on shape and radius.
+	   shot_direction is needed for line_vertical/line_horizontal patterns."""
 	match shape:
 		"circle":
 			return compute_circle_aoe(center, radius, hole_controller)
@@ -18,9 +25,22 @@ func compute_aoe(center: Vector2i, radius: int, shape: String, hole_controller: 
 			return compute_strip_aoe(center, radius, hole_controller)
 		"ring":
 			return compute_ring_aoe(center, radius, hole_controller)
+		"line_vertical":
+			return compute_line_vertical_aoe(center, radius, hole_controller, shot_direction)
+		"line_horizontal":
+			return compute_line_horizontal_aoe(center, radius, hole_controller, shot_direction)
+		"single":
+			# Single tile only
+			var tiles: Array[Vector2i] = []
+			if _is_valid_tile(center, hole_controller):
+				tiles.append(center)
+			return tiles
 		_:
-			# Default to circle
-			return compute_circle_aoe(center, radius, hole_controller)
+			# Default to single tile (no spread)
+			var tiles: Array[Vector2i] = []
+			if _is_valid_tile(center, hole_controller):
+				tiles.append(center)
+			return tiles
 
 
 func compute_circle_aoe(center: Vector2i, radius: int, hole_controller: Node3D) -> Array[Vector2i]:
@@ -338,3 +358,120 @@ func _get_cone_neighbors(tile: Vector2i, direction: int, hole_controller: Node3D
 			neighbors.append(neighbor)
 	
 	return neighbors
+
+
+# --- Line-based AOE patterns (card-driven) ---
+
+func compute_line_vertical_aoe(center: Vector2i, distance: int, hole_controller: Node3D, shot_direction: Vector2i) -> Array[Vector2i]:
+	"""Compute a line AOE along the shot direction.
+	   +distance tiles forward (toward hole), center, +distance tiles backward (toward tee).
+	   This represents short/long variance in the shot."""
+	var tiles: Array[Vector2i] = []
+	
+	# Always include center
+	if _is_valid_tile(center, hole_controller):
+		tiles.append(center)
+	
+	if distance <= 0 or shot_direction == Vector2i.ZERO:
+		return tiles
+	
+	# Calculate the hex direction index from shot_direction
+	var forward_dir = _vector_to_hex_direction(shot_direction)
+	var backward_dir = (forward_dir + 3) % 6  # Opposite direction
+	
+	# Add tiles forward (toward hole)
+	var current = center
+	for i in range(distance):
+		var is_odd = current.x % 2 == 1
+		current = _get_neighbor_in_direction(current, forward_dir, is_odd)
+		if _is_valid_tile(current, hole_controller):
+			tiles.append(current)
+		else:
+			break
+	
+	# Add tiles backward (toward tee)
+	current = center
+	for i in range(distance):
+		var is_odd = current.x % 2 == 1
+		current = _get_neighbor_in_direction(current, backward_dir, is_odd)
+		if _is_valid_tile(current, hole_controller):
+			tiles.append(current)
+		else:
+			break
+	
+	return tiles
+
+
+func compute_line_horizontal_aoe(center: Vector2i, distance: int, hole_controller: Node3D, shot_direction: Vector2i) -> Array[Vector2i]:
+	"""Compute a line AOE perpendicular to the shot direction.
+	   +distance tiles left, center, +distance tiles right.
+	   This represents draw/fade variance in the shot."""
+	var tiles: Array[Vector2i] = []
+	
+	# Always include center
+	if _is_valid_tile(center, hole_controller):
+		tiles.append(center)
+	
+	if distance <= 0 or shot_direction == Vector2i.ZERO:
+		return tiles
+	
+	# Calculate the hex direction index from shot_direction
+	var forward_dir = _vector_to_hex_direction(shot_direction)
+	# Perpendicular directions: +2 and -2 from forward (or +1/-1 depending on hex layout)
+	var left_dir = (forward_dir + 5) % 6   # Counter-clockwise
+	var right_dir = (forward_dir + 1) % 6  # Clockwise
+	
+	# Add tiles to the left (draw side)
+	var current = center
+	for i in range(distance):
+		var is_odd = current.x % 2 == 1
+		current = _get_neighbor_in_direction(current, left_dir, is_odd)
+		if _is_valid_tile(current, hole_controller):
+			tiles.append(current)
+		else:
+			break
+	
+	# Add tiles to the right (fade side)
+	current = center
+	for i in range(distance):
+		var is_odd = current.x % 2 == 1
+		current = _get_neighbor_in_direction(current, right_dir, is_odd)
+		if _is_valid_tile(current, hole_controller):
+			tiles.append(current)
+		else:
+			break
+	
+	return tiles
+
+
+func _vector_to_hex_direction(direction: Vector2i) -> int:
+	"""Convert a grid direction vector to a hex direction index (0-5).
+	   0=Up (toward hole), 3=Down (toward tee), etc."""
+	# Normalize direction to get primary axis
+	var dx = sign(direction.x)
+	var dy = sign(direction.y)
+	
+	# Map to hex directions based on dominant axis
+	# In hex grid: negative Y = toward top of grid (usually toward hole)
+	if dy < 0:
+		if dx > 0:
+			return 1  # Up-Right
+		elif dx < 0:
+			return 5  # Up-Left
+		else:
+			return 0  # Up
+	elif dy > 0:
+		if dx > 0:
+			return 2  # Down-Right
+		elif dx < 0:
+			return 4  # Down-Left
+		else:
+			return 3  # Down
+	else:
+		# dy == 0, horizontal movement
+		if dx > 0:
+			return 1  # Default to Up-Right
+		elif dx < 0:
+			return 5  # Default to Up-Left
+		else:
+			return 0  # No direction, default to Up

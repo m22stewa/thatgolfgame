@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bvc1xmvib2oun"
 path.s3tc="res://.godot/imported/card-back-green.png-75c944578ba69785333370f08a3447b4.s3tc.ctex"
+path.etc2="res://.godot/imported/card-back-green.png-75c944578ba69785333370f08a3447b4.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/cards/card-back-green.png"
-dest_files=["res://.godot/imported/card-back-green.png-75c944578ba69785333370f08a3447b4.s3tc.ctex"]
+dest_files=["res://.godot/imported/card-back-green.png-75c944578ba69785333370f08a3447b4.s3tc.ctex", "res://.godot/imported/card-back-green.png-75c944578ba69785333370f08a3447b4.etc2.ctex"]
 
 [params]
 

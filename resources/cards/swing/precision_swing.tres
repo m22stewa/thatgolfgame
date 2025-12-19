@@ -1,27 +1,24 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="CardData" load_steps=7 format=3 uid="uid://u0iuxxnj7roe"]
 
-[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_script"]
-[ext_resource type="Script" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
+[ext_resource type="Script" uid="uid://d0pjisuwlwg16" path="res://scripts/cards/effects/effect_aoe_perfect.gd" id="2_gk8a7"]
+[ext_resource type="Texture2D" uid="uid://wua2fis0mjlp" path="res://textures/icons/aoe.png" id="3_7ds4y"]
 
 [sub_resource type="Resource" id="Resource_effect"]
 script = ExtResource("2_effect")
 target_stat = "accuracy_mod"
 value = -1.0
-set_mode = false
+
+[sub_resource type="Resource" id="Resource_4owxe"]
+script = ExtResource("2_gk8a7")
+metadata/_custom_type_script = "uid://d0pjisuwlwg16"
 
 [resource]
 script = ExtResource("1_script")
 card_id = "precision_swing"
 card_name = "Precision Swing"
-description = "-1 AOE ring (more accurate)"
-flavor_text = "Slow and steady wins the hole."
-rarity = 1
-card_type = 0
-play_cost = 0
-requires_target = false
-requires_shot_in_progress = true
-can_upgrade = true
-max_upgrade_level = 3
-max_uses = -1
-tags = PackedStringArray("accuracy", "precision")
-effects = Array[Resource]([SubResource("Resource_effect")])
+description = "Accuracy +1"
+rarity = 2
+icon = ExtResource("3_7ds4y")
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_4owxe")])

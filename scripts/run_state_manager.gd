@@ -61,10 +61,10 @@ func end_run() -> void:
 # --- Hole Lifecycle ---
 
 func start_hole(par: int, yardage: int) -> void:
-	"""Begin a new hole"""
+	"""Begin a new hole - strokes start at 0 and increment on each actual stroke"""
 	current_par = par
 	current_yardage = yardage
-	strokes_this_hole = 0
+	strokes_this_hole = 0  # Strokes counter starts at 0, increments on each record_stroke()
 	score_this_hole = 0
 	
 	hole_started.emit(current_hole, par, yardage)

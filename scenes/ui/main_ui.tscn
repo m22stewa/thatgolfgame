@@ -63,7 +63,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.08, 0.1, 0.12, 1)
 
 [node name="HoleViewer" parent="." instance=ExtResource("6_hole_viewer")]
 layout_mode = 1
@@ -71,6 +70,7 @@ min_zoom = 20.0
 max_zoom = 100.0
 
 [node name="tiltshift" type="ColorRect" parent="."]
+visible = false
 material = SubResource("ShaderMaterial_aa6wj")
 layout_mode = 0
 offset_right = 800.0
@@ -83,6 +83,7 @@ offset_bottom = 1081.0
 theme_override_styles/panel = SubResource("StyleBoxTexture_ampf0")
 
 [node name="icons" type="Control" parent="."]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -174,7 +175,7 @@ offset_left = 1102.0
 offset_top = 488.0
 offset_right = 1318.0
 offset_bottom = 519.0
-text = "1. Draw a modifier"
+text = "2. Draw a modifier"
 horizontal_alignment = 1
 metadata/_edit_use_anchors_ = true
 
@@ -204,6 +205,7 @@ mouse_filter = 2
 bypass_card_selection = false
 
 [node name="WindWidget" parent="." instance=ExtResource("4_wind")]
+visible = false
 layout_mode = 0
 offset_left = 17.0
 offset_top = 16.0
@@ -211,6 +213,7 @@ offset_right = 117.0
 offset_bottom = 166.0
 
 [node name="LieView" parent="." instance=ExtResource("5_lie_view")]
+visible = false
 layout_mode = 0
 offset_left = 17.0
 offset_top = 194.0
@@ -287,6 +290,18 @@ offset_right = -28.675903
 offset_bottom = 270.251
 grow_horizontal = 0
 text = "Generate New Hole"
+
+[node name="GenerateUniqueButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -234.0
+offset_top = 275.0
+offset_right = -28.675903
+offset_bottom = 319.251
+grow_horizontal = 0
+text = "Generate Unique Hole"
 
 [node name="SwingMeter" parent="." instance=ExtResource("7_swing_meter")]
 layout_mode = 1

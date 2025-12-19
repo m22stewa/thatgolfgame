@@ -191,21 +191,19 @@ func apply_lie_to_shot(context: ShotContext, lie_info: Dictionary) -> void:
 	
 	# Set the additive modifier fields on the context
 	context.distance_mod += lie_info.get("distance_mod", 0)
-	context.accuracy_mod += lie_info.get("accuracy_mod", 0)
+	# Note: accuracy_mod no longer affects AOE - AOE is card-driven only
+	# context.accuracy_mod += lie_info.get("accuracy_mod", 0)
 	context.roll_mod += lie_info.get("roll_mod", 0)
 	
 	# Store lie info in context metadata (for UI and debugging)
 	context.add_metadata("lie_info", lie_info)
 	context.add_metadata("lie_name", lie_info.get("lie_name", "FAIRWAY"))
 	context.add_metadata("distance_mod", lie_info.get("distance_mod", 0))
-	context.add_metadata("accuracy_mod", lie_info.get("accuracy_mod", 0))
 	context.add_metadata("allowed_clubs", lie_info.get("allowed_clubs", []))
 	context.add_metadata("preferred_club", lie_info.get("preferred_club", ""))
 	
-	# AOE radius affected by accuracy mod
-	var accuracy_mod = lie_info.get("accuracy_mod", 0)
-	if accuracy_mod > 0:
-		context.aoe_radius += accuracy_mod
+	# AOE is now card-driven only - terrain no longer affects AOE
+	# (Keeping accuracy_mod data in case we want to use it for other purposes)
 	
 	# Apply scoring effects
 	context.chips += lie_info.get("chip_bonus", 0)

@@ -75,6 +75,8 @@ func initialize_with_instances(cards: Array[CardInstance]) -> void:
 	# Don't shuffle club deck by default so they might be ordered?
 	# Actually, for a picker UI, order doesn't matter much if we sort there.
 	active_cards_changed.emit(_active_cards)
+	# Emit shuffled signal so deck visuals update their height
+	deck_shuffled.emit()
 
 
 func clear_deck() -> void:

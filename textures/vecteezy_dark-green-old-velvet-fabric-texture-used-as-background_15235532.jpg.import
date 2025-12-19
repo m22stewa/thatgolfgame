@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dm41e52tpcmki"
 path.s3tc="res://.godot/imported/vecteezy_dark-green-old-velvet-fabric-texture-used-as-background_15235532.jpg-97dc4f972ac8ceb92ce935b272ce5888.s3tc.ctex"
+path.etc2="res://.godot/imported/vecteezy_dark-green-old-velvet-fabric-texture-used-as-background_15235532.jpg-97dc4f972ac8ceb92ce935b272ce5888.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/vecteezy_dark-green-old-velvet-fabric-texture-used-as-background_15235532.jpg"
-dest_files=["res://.godot/imported/vecteezy_dark-green-old-velvet-fabric-texture-used-as-background_15235532.jpg-97dc4f972ac8ceb92ce935b272ce5888.s3tc.ctex"]
+dest_files=["res://.godot/imported/vecteezy_dark-green-old-velvet-fabric-texture-used-as-background_15235532.jpg-97dc4f972ac8ceb92ce935b272ce5888.s3tc.ctex", "res://.godot/imported/vecteezy_dark-green-old-velvet-fabric-texture-used-as-background_15235532.jpg-97dc4f972ac8ceb92ce935b272ce5888.etc2.ctex"]
 
 [params]
 

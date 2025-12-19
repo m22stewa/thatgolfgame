@@ -145,13 +145,14 @@ func _create_visuals() -> void:
 	ball_outline.material_override = outline_mat
 	hex_grid.add_child(ball_outline)
 	
-	# --- INNER CIRCLE (black, SMALLER - sits on top, creating ring effect) ---
+	# --- INNER RING (black, creates inner ring - hollow so ball is visible) ---
 	aim_circle = MeshInstance3D.new()
-	var cylinder = CylinderMesh.new()
-	cylinder.top_radius = CIRCLE_RADIUS + 0.05  # Smaller inner disc
-	cylinder.bottom_radius = CIRCLE_RADIUS + 0.05
-	cylinder.height = 0.06  # Slightly thicker so it's on top
-	aim_circle.mesh = cylinder
+	var torus = TorusMesh.new()
+	torus.inner_radius = CIRCLE_RADIUS - 0.08  # Inner edge of ring
+	torus.outer_radius = CIRCLE_RADIUS + 0.05  # Outer edge of ring
+	torus.rings = 32
+	torus.ring_segments = 8
+	aim_circle.mesh = torus
 	var circle_mat = StandardMaterial3D.new()
 	circle_mat.albedo_color = Color(0.0, 0.0, 0.0, 1.0)  # Black
 	circle_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -262,7 +263,7 @@ func _update_visuals_position() -> void:
 		return
 	
 	var ball_pos = golf_ball.global_position
-	var y_offset = 0.15  # Slightly above ground
+	var y_offset = 2.0  # High above ground to render on top of all tiles
 	
 	# Ball outline stays tight around ball - slightly higher than circle for visibility
 	if ball_outline and is_instance_valid(ball_outline):
@@ -467,6 +468,8 @@ func _update_rolling(delta: float) -> void:
 				ball_velocity = Vector3.ZERO
 				# Animate ball falling into hole
 				await _animate_ball_into_hole(hole_world_pos)
+				# Exit putting mode - disables input and hides stroke meter
+				exit_putting_mode()
 				hex_grid._trigger_hole_complete()
 				return
 	

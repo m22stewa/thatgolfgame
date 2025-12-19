@@ -273,9 +273,10 @@ func set_hole_info(hole: int, par: int, yardage: int) -> void:
 func update_shot_info(strokes_taken: int, distance_to_flag: int) -> void:
 	"""Update shot counter and distance. strokes_taken is how many shots have been made."""
 	shots_this_hole = strokes_taken
-	# Display shows how many strokes have been taken (not next shot number)
+	# Display shows how many strokes have been taken (starts at 0 for tee shot)
 	_update_shot_counter_visuals(strokes_taken)
-	distance_label.text = "%d yds to flag" % distance_to_flag
+	if distance_label:
+		distance_label.text = "%d yds to flag" % distance_to_flag
 
 
 func _update_shot_counter_visuals(strokes_taken: int) -> void:
@@ -295,11 +296,11 @@ func _update_shot_counter_visuals(strokes_taken: int) -> void:
 		shot_node.set_number(i)
 		
 		# strokes_taken = how many shots have been completed
-		# Show completed shots as "past", current stroke count as "current", rest as "future"
+		# Don't show "current" until tee shot is taken (strokes_taken > 0)
 		if i <= strokes_taken:
 			shot_node.set_state("past")  # Already taken
-		elif i == strokes_taken + 1:
-			shot_node.set_state("current")  # Next shot to take
+		elif strokes_taken > 0 and i == strokes_taken + 1:
+			shot_node.set_state("current")  # Next shot to take (only after tee shot)
 		else:
 			shot_node.set_state("future")
 

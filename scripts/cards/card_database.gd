@@ -1,8 +1,10 @@
 extends Node
 class_name CardDatabase
 
-## CardDatabase - Loads and manages card definitions from JSON.
-## Use this as an autoload/singleton for easy access across the game.
+## DEPRECATED: CardDatabase - JSON-based card loading is no longer used.
+## Cards are now defined as .tres resources in resources/cards/.
+## This file is kept for reference but should not be used.
+## See CardLibrary for the resource-based card system.
 
 const CARDS_JSON_PATH = "res://resources/cards/cards.json"
 

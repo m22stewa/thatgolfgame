@@ -202,12 +202,9 @@ func _apply_modifiers_before_aim() -> void:
 		current_context.distance_mod, current_context.accuracy_mod, current_context.roll_mod
 	])
 	
-	# Now get club stats with modifiers applied to determine final AOE radius
-	if hole_controller and hole_controller.has_method("get_current_shot_stats"):
-		var stats = hole_controller.get_current_shot_stats()
-		if stats.has("final") and stats.final.has("accuracy"):
-			# Accuracy from club + all modifiers determines AOE radius
-			current_context.aoe_radius = maxi(0, stats.final.accuracy)
+	# AOE is now card-driven only - no automatic club-based AOE
+	# Cards can set aoe_radius, aoe_shape, etc. via their effects
+	# Default remains at 0 (single tile, perfect accuracy) unless cards modify it
 	
 	modifiers_applied_before_aim.emit(current_context)
 

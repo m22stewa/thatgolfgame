@@ -1,7 +1,9 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=6 format=3 uid="uid://dqg81oku4go6x"]
+[gd_resource type="Resource" script_class="CardData" load_steps=9 format=3 uid="uid://dqg81oku4go6x"]
 
 [ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="1_tjpis"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_01qqc"]
+[ext_resource type="Script" uid="uid://hyf83v5ybdep" path="res://scripts/cards/effects/effect_aoe_line_vertical.gd" id="2_mmouj"]
+[ext_resource type="Texture2D" uid="uid://d175r5bodqhjg" path="res://textures/icons/aoe-vert-line.png" id="3_ok1wv"]
 
 [sub_resource type="Resource" id="Resource_effect"]
 script = ExtResource("1_tjpis")
@@ -22,10 +24,15 @@ value = -1
 set_mode = true
 metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
 
+[sub_resource type="Resource" id="Resource_ta8n6"]
+script = ExtResource("2_mmouj")
+metadata/_custom_type_script = "uid://hyf83v5ybdep"
+
 [resource]
 script = ExtResource("2_01qqc")
 card_id = "safe_layup"
 card_name = "Safe Layup"
 flavor_text = "Layup"
 rarity = 1
-effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_1cs8j"), SubResource("Resource_qxvaq")])
+icon = ExtResource("3_ok1wv")
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_1cs8j"), SubResource("Resource_qxvaq"), SubResource("Resource_ta8n6")])

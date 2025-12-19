@@ -16,28 +16,29 @@
 
 ### Club Statistics Table
 
-| Club | Distance (tiles) | Distance (yards) | Accuracy (AOE rings) | Roll (tiles) | Loft (1-5) | Arc Height | Swing Difficulty |
-|------|------------------|------------------|---------------------|--------------|------------|------------|------------------|
-| **Driver** | 22 | 220 | 1 (hardest) | 3 | 1 (low) | 12.0 | 1.0 |
-| **3 Wood** | 20 | 200 | 1 | 3 | 1 | 11.0 | 0.9 |
-| **5 Wood** | 18 | 180 | 1 | 2 | 2 | 10.0 | 0.8 |
-| **3 Iron** | 17 | 170 | 1 | 2 | 2 | 9.0 | 0.7 |
-| **5 Iron** | 16 | 160 | 0 | 2 | 2 | 8.5 | 0.5 |
-| **6 Iron** | 15 | 150 | 0 | 1 | 3 | 8.0 | 0.4 |
-| **7 Iron** | 14 | 140 | 0 | 1 | 3 | 7.5 | 0.4 |
-| **8 Iron** | 13 | 130 | 0 | 1 | 3 | 7.0 | 0.3 |
-| **9 Iron** | 12 | 120 | 0 | 1 | 4 | 6.5 | 0.3 |
-| **Pitching Wedge** | 11 | 110 | 0 | 0 | 4 | 6.0 | 0.2 |
-| **Sand Wedge** | 9 | 90 | 0 | 0 | 5 (highest) | 5.0 | 0.15 |
-| **Putter** | - | - | - | - | - | - | 0.0 (easiest) |
+| Club | Distance (tiles) | Distance (yards) | Roll (tiles) | Loft (1-5) | Arc Height | Swing Difficulty |
+|------|------------------|------------------|--------------|------------|------------|------------------|
+| **Driver** | 22 | 220 | 3 | 1 (low) | 12.0 | 1.0 |
+| **3 Wood** | 20 | 200 | 3 | 1 | 11.0 | 0.9 |
+| **5 Wood** | 18 | 180 | 2 | 2 | 10.0 | 0.8 |
+| **3 Iron** | 17 | 170 | 2 | 2 | 9.0 | 0.7 |
+| **5 Iron** | 16 | 160 | 2 | 2 | 8.5 | 0.5 |
+| **6 Iron** | 15 | 150 | 1 | 3 | 8.0 | 0.4 |
+| **7 Iron** | 14 | 140 | 1 | 3 | 7.5 | 0.4 |
+| **8 Iron** | 13 | 130 | 1 | 3 | 7.0 | 0.3 |
+| **9 Iron** | 12 | 120 | 1 | 4 | 6.5 | 0.3 |
+| **Pitching Wedge** | 11 | 110 | 0 | 4 | 6.0 | 0.2 |
+| **Sand Wedge** | 9 | 90 | 0 | 5 (highest) | 5.0 | 0.15 |
+| **Putter** | - | - | - | - | - | 0.0 (easiest) |
 
 ### Stat Definitions
 - **Distance**: Maximum range the club can hit (1 tile = 10 yards via `YARDS_PER_CELL`)
-- **Accuracy**: AOE ring penalty (higher = larger landing zone = less precise)
 - **Roll**: How many tiles the ball rolls after landing
 - **Loft**: Ball trajectory height (1=low/piercing, 5=high/soft landing). Intended to affect wind sensitivity.
 - **Arc Height**: Visual height of ball flight arc
 - **Swing Difficulty**: Affects swing meter timing difficulty (0.0=easy, 1.0=hard)
+
+> **Note**: Accuracy/AOE is now card-driven only. Clubs no longer have inherent accuracy penalties. See Card System for AOE patterns.
 
 ---
 
@@ -45,33 +46,34 @@
 
 ### Terrain Modifier Table
 
-| Lie | Display Name | Power Mod | Accuracy Mod | Spin Mod | Curve Mod | Roll Mod | Chip Bonus | Mult Bonus | Allowed Clubs |
-|-----|--------------|-----------|--------------|----------|-----------|----------|------------|------------|---------------|
-| **TEE** | Tee Box | 0 | 0 | 0.0 | 0.0 | 0 | +5 | 0.0 | All except SW |
-| **FAIRWAY** | Fairway | -1 | 0 | 0.0 | 0.0 | 0 | 0 | +0.1 | Woods, Irons, Wedges |
-| **ROUGH** | Rough | -4 | +1 | -0.5 | -0.3 | -1 | -5 | 0.0 | 5I-9I, PW, SW |
-| **DEEP_ROUGH** | Deep Rough | -8 | +2 | -0.8 | -0.7 | -2 | -15 | -0.2 | 7I-9I, PW, SW |
-| **SAND** | Bunker | -6 | +1 | +0.5 | -0.6 | -2 | -20 | 0.0 | SW (preferred), PW, 9I |
-| **GREEN** | Green | -15 | -1 | 0.0 | 0.0 | +2 | 0 | 0.0 | PUTTER only |
-| **WATER** | Water | -100 | 0 | 0.0 | 0.0 | 0 | -50 | -0.5 | None (penalty) |
-| **TREE** | Trees | -10 | +2 | -0.7 | -0.8 | -1 | -25 | -0.3 | 7I-9I, PW, SW |
-| **FLAG** | Hole | 0 | 0 | 0.0 | 0.0 | 0 | +100 | +1.0 | None (holed!) |
+| Lie | Display Name | Power Mod | Spin Mod | Curve Mod | Roll Mod | Chip Bonus | Mult Bonus | Allowed Clubs |
+|-----|--------------|-----------|----------|-----------|----------|------------|------------|---------------|
+| **TEE** | Tee Box | 0 | 0.0 | 0.0 | 0 | +5 | 0.0 | All except SW |
+| **FAIRWAY** | Fairway | -1 | 0.0 | 0.0 | 0 | 0 | +0.1 | Woods, Irons, Wedges |
+| **ROUGH** | Rough | -4 | -0.5 | -0.3 | -1 | -5 | 0.0 | 5I-9I, PW, SW |
+| **DEEP_ROUGH** | Deep Rough | -8 | -0.8 | -0.7 | -2 | -15 | -0.2 | 7I-9I, PW, SW |
+| **SAND** | Bunker | -6 | +0.5 | -0.6 | -2 | -20 | 0.0 | SW (preferred), PW, 9I |
+| **GREEN** | Green | -15 | 0.0 | 0.0 | +2 | 0 | 0.0 | PUTTER only |
+| **WATER** | Water | -100 | 0.0 | 0.0 | 0 | -50 | -0.5 | None (penalty) |
+| **TREE** | Trees | -10 | -0.7 | -0.8 | -1 | -25 | -0.3 | 7I-9I, PW, SW |
+| **FLAG** | Hole | 0 | 0.0 | 0.0 | 0 | +100 | +1.0 | None (holed!) |
 
 ### Modifier Definitions
 - **Power Mod**: Tiles added/subtracted from club's max distance
-- **Accuracy Mod**: AOE rings added (positive = less accurate, larger landing zone)
 - **Spin Mod**: Affects ball spin behavior
 - **Curve Mod**: Affects shot curve/hook/slice tendency
 - **Roll Mod**: Tiles added/subtracted from roll distance
 - **Chip Bonus**: Flat chips added to scoring
 - **Mult Bonus**: Multiplier added to scoring
 
+> **Note**: Terrain no longer affects AOE/accuracy. AOE is now card-driven only.
+
 ### Slope Modifiers
 | Slope Type | Effect |
 |------------|--------|
 | **Uphill** | `power_mod -= slope_strength * 2` (lose distance) |
 | **Downhill** | `power_mod += slope_strength` (gain distance) |
-| **Sidehill (left/right)** | `accuracy_mod += 1` (lose accuracy) |
+| **Sidehill (left/right)** | Affects shot curve |
 
 ---
 

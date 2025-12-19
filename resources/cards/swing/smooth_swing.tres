@@ -1,13 +1,18 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3]
+[gd_resource type="Resource" script_class="CardData" load_steps=7 format=3 uid="uid://cygrqtbayqcpj"]
 
-[ext_resource type="Script" path="res://scripts/cards/card_data.gd" id="1_script"]
-[ext_resource type="Script" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
+[ext_resource type="Script" uid="uid://hyf83v5ybdep" path="res://scripts/cards/effects/effect_aoe_line_vertical.gd" id="2_idkd4"]
+[ext_resource type="Texture2D" uid="uid://d175r5bodqhjg" path="res://textures/icons/aoe-vert-line.png" id="3_f28ea"]
 
 [sub_resource type="Resource" id="Resource_effect"]
 script = ExtResource("2_effect")
 target_stat = "roll_mod"
 value = -1.0
-set_mode = false
+
+[sub_resource type="Resource" id="Resource_h2ns6"]
+script = ExtResource("2_idkd4")
+metadata/_custom_type_script = "uid://hyf83v5ybdep"
 
 [resource]
 script = ExtResource("1_script")
@@ -15,13 +20,5 @@ card_id = "smooth_swing"
 card_name = "Smooth Swing"
 description = "-1 Roll (ball stops faster)"
 flavor_text = "Easy does it."
-rarity = 0
-card_type = 0
-play_cost = 0
-requires_target = false
-requires_shot_in_progress = true
-can_upgrade = true
-max_upgrade_level = 3
-max_uses = -1
-tags = PackedStringArray("roll", "control")
-effects = Array[Resource]([SubResource("Resource_effect")])
+icon = ExtResource("3_f28ea")
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_h2ns6")])

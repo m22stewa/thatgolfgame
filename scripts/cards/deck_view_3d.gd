@@ -294,8 +294,10 @@ func setup(manager: DeckManager) -> void:
 	if deck_manager:
 		deck_manager.active_cards_changed.connect(_on_active_cards_changed)
 		deck_manager.card_drawn.connect(_on_card_drawn)
+		deck_manager.deck_shuffled.connect(_on_deck_shuffled)
 		
-		# Initial state
+		# Initial state - update deck height immediately
+		_update_deck_height()
 		if not deck_manager.get_active_cards().is_empty():
 			_spawn_active_card(deck_manager.get_active_cards().back())
 
@@ -466,6 +468,11 @@ func _on_deck_clicked() -> void:
 func _on_card_drawn(card: CardInstance) -> void:
 	_update_deck_height()
 	_animate_draw(card)
+
+
+func _on_deck_shuffled() -> void:
+	"""Called when deck is shuffled/reset - update visual height"""
+	_update_deck_height()
 
 
 func _on_active_cards_changed(cards: Array[CardInstance]) -> void:

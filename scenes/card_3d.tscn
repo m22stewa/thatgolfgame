@@ -68,9 +68,8 @@ font_size = 64
 outline_size = 26
 
 [node name="IconSprite" type="Sprite3D" parent="MeshInstance3D"]
-transform = Transform3D(0.101165175, 0, 0, 0, 0.101165175, 0, 0, 0, 0.101165175, -1.3794845, -0.18397367, 0.03)
+transform = Transform3D(0.101165175, 0, 0, 0, 0.101165175, 0, 0, 0, 0.101165175, -1.326025, -0.17933351, 0.025)
 double_sided = false
-fixed_size = true
 render_priority = 10
 texture = ExtResource("5_p0d7p")
 

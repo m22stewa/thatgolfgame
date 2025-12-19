@@ -422,6 +422,8 @@ func _clear_course_nodes() -> void:
 			to_remove.append(child)
 		elif child.is_in_group("slope_arrows"):
 			to_remove.append(child)
+		elif child.is_in_group("coins"):
+			to_remove.append(child)
 	for child in to_remove:
 		remove_child(child)
 		child.queue_free()
@@ -1061,10 +1063,9 @@ func get_shape_adjusted_world_position(aim_tile: Vector2i) -> Vector3:
 
 
 func get_shape_aoe_offset() -> int:
-	"""Returns the curve offset in tiles (right = +, left = -) from shot context.
-	   Negated so AOE shifts in the direction the ball will curve TO."""
-	if shot_manager and shot_manager.current_context:
-		return -int(round(shot_manager.current_context.curve_strength))
+	"""DEPRECATED: AOE no longer shifts based on curve.
+	   AOE is always centered on the target tile.
+	   Curve affects the trajectory arc preview, not the AOE position."""
 	return 0
 
 
@@ -1646,73 +1647,85 @@ func _try_lock_target(cell: Vector2i) -> void:
 
 
 func _update_aoe_for_cell(cell: Vector2i) -> void:
-	"""Update AOE highlights around a cell based on club accuracy"""
+	"""Update AOE highlights around a cell based on card-driven AOE patterns.
+	   Default is single tile (no AOE) unless cards provide AOE patterns."""
 	var width = TILE_SIZE
 	var hex_height = TILE_SIZE * sqrt(3.0)
 	
 	_hide_all_aoe_highlights()
 	
-	# Get AOE radius based on club accuracy for the target distance
-	var aoe_radius = 1  # Default
+	# AOE is now card-driven only - default to 0 (single tile, no spread)
+	var aoe_radius = 0
+	var aoe_shape = "single"
+	
+	# Get AOE settings from shot context (set by cards)
+	if shot_manager and shot_manager.current_context:
+		aoe_radius = maxi(0, shot_manager.current_context.aoe_radius + shot_manager.current_context.accuracy_mod)
+		aoe_shape = shot_manager.current_context.aoe_shape
+	
+	# No AOE highlights if radius is 0 (single tile)
+	if aoe_radius == 0:
+		return
+	
+	# AOE is always centered on the target tile (no curve offset)
+	var aoe_center = cell
+	
+	# Calculate shot direction for line patterns
+	var shot_direction = Vector2i.ZERO
 	if golf_ball:
 		var ball_tile = world_to_grid(golf_ball.position)
-		var tile_dist = get_tile_distance(ball_tile, cell)
-		var club_info = get_club_for_tile_distance(tile_dist)
-		if club_info:
-			aoe_radius = club_info.get("accuracy", 1)
+		shot_direction = aoe_center - ball_tile
 	
-	# Apply any modifiers from shot context (cards, lie, etc.)
-	if shot_manager and shot_manager.current_context:
-		aoe_radius = maxi(0, aoe_radius + shot_manager.current_context.accuracy_mod)
+	# Use AOESystem to compute tiles based on shape
+	var aoe_tiles: Array[Vector2i] = []
+	if aoe_system:
+		aoe_tiles = aoe_system.compute_aoe(aoe_center, aoe_radius, aoe_shape, self, shot_direction)
+	else:
+		# Fallback: just use circle pattern manually
+		aoe_tiles = _compute_circle_aoe_fallback(aoe_center, aoe_radius)
 	
-	var aoe_offset = get_shape_aoe_offset()
-	var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
-	aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
+	# Display highlights for all AOE tiles (except center which has its own highlight)
+	for aoe_tile in aoe_tiles:
+		if aoe_tile == aoe_center:
+			continue  # Skip center tile, it has the target highlight
+		if aoe_tile.x >= 0 and aoe_tile.x < grid_width and aoe_tile.y >= 0 and aoe_tile.y < grid_height:
+			var surface = get_cell(aoe_tile.x, aoe_tile.y)
+			if surface != -1 and surface != SurfaceType.WATER:
+				# Determine ring distance for coloring
+				var ring = _get_hex_distance(aoe_center, aoe_tile)
+				var highlight = _get_or_create_aoe_highlight(aoe_tile, ring)
+				var t_x = aoe_tile.x * width * 1.5
+				var t_z = aoe_tile.y * hex_height + (aoe_tile.x % 2) * (hex_height / 2.0)
+				var t_y = get_elevation(aoe_tile.x, aoe_tile.y) + TILE_SURFACE_OFFSET
+				highlight.position = Vector3(t_x, t_y, t_z)
+				highlight.rotation.y = PI / 6.0
+				highlight.visible = true
+
+
+func _compute_circle_aoe_fallback(center: Vector2i, radius: int) -> Array[Vector2i]:
+	"""Fallback circle AOE computation if AOESystem not available"""
+	var tiles: Array[Vector2i] = [center]
+	if radius >= 1:
+		tiles.append_array(get_adjacent_cells(center.x, center.y))
+	if radius >= 2:
+		tiles.append_array(get_outer_ring_cells(center.x, center.y))
+	if radius >= 3:
+		tiles.append_array(get_ring_3_cells(center.x, center.y))
+	return tiles
+
+
+func _get_hex_distance(a: Vector2i, b: Vector2i) -> int:
+	"""Calculate hex distance between two tiles"""
+	# Convert to cube coordinates for accurate hex distance
+	var ax = a.x
+	var ay = a.y - (a.x - (a.x & 1)) / 2
+	var az = -ax - ay
 	
-	# Show ring 1 AOE only if aoe_radius >= 1
-	if aoe_radius >= 1:
-		var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
-		for neighbor in neighbors:
-			if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
-				var n_surface = get_cell(neighbor.x, neighbor.y)
-				if n_surface != -1 and n_surface != SurfaceType.WATER:
-					var highlight = _get_or_create_aoe_highlight(neighbor, 1)
-					var n_x = neighbor.x * width * 1.5
-					var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-					var n_y = get_elevation(neighbor.x, neighbor.y) + TILE_SURFACE_OFFSET
-					highlight.position = Vector3(n_x, n_y, n_z)
-					highlight.rotation.y = PI / 6.0
-					highlight.visible = true
+	var bx = b.x
+	var by = b.y - (b.x - (b.x & 1)) / 2
+	var bz = -bx - by
 	
-	# Show ring 2 AOE only if radius >= 2
-	if aoe_radius >= 2:
-		var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
-		for outer_cell in outer_cells:
-			if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
-				var o_surface = get_cell(outer_cell.x, outer_cell.y)
-				if o_surface != -1 and o_surface != SurfaceType.WATER:
-					var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
-					var o_x = outer_cell.x * width * 1.5
-					var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-					var o_y = get_elevation(outer_cell.x, outer_cell.y) + TILE_SURFACE_OFFSET
-					highlight.position = Vector3(o_x, o_y, o_z)
-					highlight.rotation.y = PI / 6.0
-					highlight.visible = true
-	
-	# Show ring 3 AOE for clubs with accuracy 3 (Driver, Woods)
-	if aoe_radius >= 3:
-		var ring3_cells = get_ring_3_cells(aoe_center.x, aoe_center.y)
-		for ring3_cell in ring3_cells:
-			if ring3_cell.x >= 0 and ring3_cell.x < grid_width and ring3_cell.y >= 0 and ring3_cell.y < grid_height:
-				var r3_surface = get_cell(ring3_cell.x, ring3_cell.y)
-				if r3_surface != -1 and r3_surface != SurfaceType.WATER:
-					var highlight = _get_or_create_aoe_highlight(ring3_cell, 3)
-					var r3_x = ring3_cell.x * width * 1.5
-					var r3_z = ring3_cell.y * hex_height + (ring3_cell.x % 2) * (hex_height / 2.0)
-					var r3_y = get_elevation(ring3_cell.x, ring3_cell.y) + TILE_SURFACE_OFFSET
-					highlight.position = Vector3(r3_x, r3_y, r3_z)
-					highlight.rotation.y = PI / 6.0
-					highlight.visible = true
+	return (abs(ax - bx) + abs(ay - by) + abs(az - bz)) / 2
 
 
 func refresh_aoe_display() -> void:
@@ -1893,68 +1906,13 @@ func set_hover_cell(cell: Vector2i) -> void:
 	
 	# Only show AOE and trajectory if valid target (in range)
 	if is_clickable:
-		# Get AOE offset based on shot shape
-		var aoe_offset = get_shape_aoe_offset()
-		var aoe_center = Vector2i(cell.x + aoe_offset, cell.y)
-		aoe_center.x = clampi(aoe_center.x, 0, grid_width - 1)
+		# Don't show AOE after hole complete
+		if hole_complete_triggered:
+			_hide_all_aoe_highlights()
+			return
 		
-		# Get the club's base accuracy for AOE display
-		var ball_tile = world_to_grid(golf_ball.position) if golf_ball else Vector2i(0, 0)
-		var tile_dist = get_tile_distance(ball_tile, cell)
-		var club_info = get_club_for_tile_distance(tile_dist)
-		
-		# Use club's accuracy as base AOE radius
-		var aoe_radius = club_info.get("accuracy", 1) if club_info else 1
-		
-		# Apply any modifiers from shot context
-		if shot_manager and shot_manager.current_context:
-			aoe_radius = maxi(0, aoe_radius + shot_manager.current_context.accuracy_mod)
-		
-		# Show AOE rings based on calculated radius
-		if aoe_radius >= 1:
-			# Update adjacent highlights (ring 1)
-			var neighbors = get_adjacent_cells(aoe_center.x, aoe_center.y)
-			for neighbor in neighbors:
-				if neighbor.x >= 0 and neighbor.x < grid_width and neighbor.y >= 0 and neighbor.y < grid_height:
-					var n_surface = get_cell(neighbor.x, neighbor.y)
-					if n_surface != -1 and n_surface != SurfaceType.WATER:
-						var highlight = _get_or_create_aoe_highlight(neighbor, 1)
-						var n_x = neighbor.x * width * 1.5
-						var n_z = neighbor.y * hex_height + (neighbor.x % 2) * (hex_height / 2.0)
-						var n_y = get_elevation(neighbor.x, neighbor.y) + TILE_SURFACE_OFFSET
-						highlight.position = Vector3(n_x, n_y, n_z)
-						highlight.rotation.y = PI / 6.0
-						highlight.visible = true
-		
-		# Update outer ring highlights (ring 2)
-		if aoe_radius >= 2:
-			var outer_cells = get_outer_ring_cells(aoe_center.x, aoe_center.y)
-			for outer_cell in outer_cells:
-				if outer_cell.x >= 0 and outer_cell.x < grid_width and outer_cell.y >= 0 and outer_cell.y < grid_height:
-					var o_surface = get_cell(outer_cell.x, outer_cell.y)
-					if o_surface != -1 and o_surface != SurfaceType.WATER:
-						var highlight = _get_or_create_aoe_highlight(outer_cell, 2)
-						var o_x = outer_cell.x * width * 1.5
-						var o_z = outer_cell.y * hex_height + (outer_cell.x % 2) * (hex_height / 2.0)
-						var o_y = get_elevation(outer_cell.x, outer_cell.y) + TILE_SURFACE_OFFSET
-						highlight.position = Vector3(o_x, o_y, o_z)
-						highlight.rotation.y = PI / 6.0
-						highlight.visible = true
-		
-		# Update ring 3 highlights for clubs with accuracy 3 (Driver, Woods)
-		if aoe_radius >= 3:
-			var ring3_cells = get_ring_3_cells(aoe_center.x, aoe_center.y)
-			for ring3_cell in ring3_cells:
-				if ring3_cell.x >= 0 and ring3_cell.x < grid_width and ring3_cell.y >= 0 and ring3_cell.y < grid_height:
-					var r3_surface = get_cell(ring3_cell.x, ring3_cell.y)
-					if r3_surface != -1 and r3_surface != SurfaceType.WATER:
-						var highlight = _get_or_create_aoe_highlight(ring3_cell, 3)
-						var r3_x = ring3_cell.x * width * 1.5
-						var r3_z = ring3_cell.y * hex_height + (ring3_cell.x % 2) * (hex_height / 2.0)
-						var r3_y = get_elevation(ring3_cell.x, ring3_cell.y) + TILE_SURFACE_OFFSET
-						highlight.position = Vector3(r3_x, r3_y, r3_z)
-						highlight.rotation.y = PI / 6.0
-						highlight.visible = true
+		# Use the centralized AOE display function (card-driven)
+		_update_aoe_for_cell(cell)
 		
 		# Update trajectory arc
 		if target_locked:
@@ -2327,6 +2285,11 @@ func _find_and_setup_ui() -> void:
 		if main_ui.generate_button:
 			if not main_ui.generate_button.pressed.is_connected(_on_button_pressed):
 				main_ui.generate_button.pressed.connect(_on_button_pressed)
+		
+		# Connect Generate Unique Button
+		if main_ui.generate_unique_button:
+			if not main_ui.generate_unique_button.pressed.is_connected(_on_generate_unique_pressed):
+				main_ui.generate_unique_button.pressed.connect(_on_generate_unique_pressed)
 		
 		# Connect ShotUI
 		if shot_ui:
@@ -2959,6 +2922,23 @@ func _trigger_hole_complete() -> void:
 	trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
 	curved_trajectory_mesh.visible = false
+	
+	# Hide target highlight and club/distance overlay
+	if target_highlight_mesh:
+		target_highlight_mesh.visible = false
+	
+	# Hide shot UI club/distance info
+	if shot_ui:
+		if shot_ui.club_name:
+			shot_ui.club_name.visible = false
+		if shot_ui.club_range:
+			shot_ui.club_range.visible = false
+		if shot_ui.distance_label:
+			shot_ui.distance_label.visible = false
+		if shot_ui.current_terrain:
+			shot_ui.current_terrain.visible = false
+		if shot_ui.target_terrain:
+			shot_ui.target_terrain.visible = false
 	
 	# Dim the played cards to show they've been used this hole
 	if card_system:
@@ -4047,7 +4027,8 @@ func _create_trajectory_mesh() -> void:
 
 # Update the trajectory arc from ball to target
 func _update_trajectory(target_pos: Vector3) -> void:
-	if golf_ball == null:
+	# Safety check: need ball reference and hole not complete
+	if golf_ball == null or hole_complete_triggered:
 		trajectory_mesh.visible = false
 		trajectory_shadow_mesh.visible = false
 		curved_trajectory_mesh.visible = false
@@ -4368,6 +4349,11 @@ func _calculate_trajectory_point(start_pos: Vector3, aim_pos: Vector3, curved_en
 
 # Update tile highlight based on mouse position
 func _update_tile_highlight() -> void:
+	# Don't update highlights after hole is complete
+	if hole_complete_triggered:
+		highlight_mesh.visible = false
+		return
+	
 	# Use external camera if set (from HoleViewer), otherwise fall back to main viewport
 	var camera: Camera3D = null
 	var mouse_pos: Vector2
@@ -4542,6 +4528,17 @@ func _log_hole_info() -> void:
 	
 	# Build info text
 	hole_info_text = "Par %d  |  %d yards\n" % [current_par, current_yardage]
+	
+	# Add unique hole type if applicable
+	if current_unique_type != UniqueHoleType.NONE:
+		var unique_name = ""
+		match current_unique_type:
+			UniqueHoleType.TRUE_DOGLEG: unique_name = "True Dogleg"
+			UniqueHoleType.ISLAND_GREEN: unique_name = "Island Green"
+			UniqueHoleType.S_CURVE: unique_name = "S-Curve"
+			UniqueHoleType.NARROW_FAIRWAY: unique_name = "Narrow Fairway"
+		hole_info_text += "Special: %s\n" % unique_name
+	
 	hole_info_text += "Grid: %d x %d\n" % [grid_width, grid_height]
 	hole_info_text += "Elevation: %.2f to %.2f\n" % [min_elev, max_elev]
 	hole_info_text += "Landforms: %d hills, %d mounds, %d valleys\n" % [hills, mounds, valleys]
@@ -4606,6 +4603,20 @@ func generate_hole_with_par(par: int) -> void:
 # Dogleg type for current hole (set during generation, used for width calculation)
 var current_dogleg_type: int = 3  # 0-2 = dogleg, 3 = straight
 
+# ============================================================================
+# UNIQUE HOLE TYPES
+# 30% chance of generating a unique/special hole layout
+# ============================================================================
+enum UniqueHoleType {
+	NONE,           # Standard hole generation
+	TRUE_DOGLEG,    # Sharp 90° turn with trees at corner (par 4/5 only)
+	ISLAND_GREEN,   # Full island green surrounded by water (par 3 only)
+	S_CURVE,        # S-shaped fairway for interesting routing
+	NARROW_FAIRWAY  # Trees encroaching creating narrow choke points
+}
+
+var current_unique_type: int = UniqueHoleType.NONE
+
 func _generate_course() -> void:
 	# Randomly select par (3, 4, or 5)
 	var par_options = [3, 4, 5]
@@ -4620,19 +4631,146 @@ func _generate_course() -> void:
 	# Convert yardage to grid height (length of hole)
 	grid_height = int(current_yardage / YARDS_PER_CELL)
 	
-	# Decide dogleg type BEFORE setting width
-	# 0 = random dogleg, 1 = dogleg left, 2 = dogleg right, 3 = mostly straight
-	current_dogleg_type = randi() % 4
+	# ============================================================
+	# UNIQUE HOLE DECISION (30% chance)
+	# ============================================================
+	current_unique_type = UniqueHoleType.NONE
+	if randf() < 0.30:
+		# Pick a unique hole type appropriate for this par
+		var available_types: Array = []
+		
+		if current_par >= 4:
+			# Par 4/5 can have true doglegs
+			available_types.append(UniqueHoleType.TRUE_DOGLEG)
+		if current_par == 3:
+			# Par 3 can have full island green
+			available_types.append(UniqueHoleType.ISLAND_GREEN)
+		
+		# S-curves and narrow fairways work for all pars
+		available_types.append(UniqueHoleType.S_CURVE)
+		available_types.append(UniqueHoleType.NARROW_FAIRWAY)
+		
+		if available_types.size() > 0:
+			current_unique_type = available_types[randi() % available_types.size()]
 	
-	# Set width based on par (longer holes are wider)
-	# If there's a dogleg (types 0-2), ignore the max_width limit to accommodate curves
+	# Decide dogleg type BEFORE setting width
+	# For TRUE_DOGLEG unique type, force a dogleg direction
+	# 0 = random dogleg, 1 = dogleg left, 2 = dogleg right, 3 = mostly straight
+	if current_unique_type == UniqueHoleType.TRUE_DOGLEG:
+		# Force a left or right dogleg for true dogleg holes
+		current_dogleg_type = 1 + randi() % 2  # 1 or 2
+	elif current_unique_type == UniqueHoleType.S_CURVE:
+		# S-curves need extra width but use their own path logic
+		current_dogleg_type = 3  # Mark as straight, S-curve handles its own path
+	else:
+		current_dogleg_type = randi() % 4
+	
+	# Set width based on par - unique holes ignore normal restrictions
 	var base_width = config.min_width + randi() % (config.max_width - config.min_width + 1)
-	if current_dogleg_type < 3:
+	if current_unique_type == UniqueHoleType.TRUE_DOGLEG:
+		# True doglegs need massive width for the horizontal section (20+ tiles)
+		grid_width = 45 + randi() % 10  # 45-54 tiles wide
+	elif current_unique_type == UniqueHoleType.S_CURVE:
+		# S-curves need extra width for dramatic curves
+		grid_width = 40 + randi() % 10  # 40-49 tiles wide
+	elif current_dogleg_type < 3:
 		# Dogleg holes can be wider - add extra width based on how severe the dogleg is
 		var dogleg_extra_width = 6 + randi() % 8  # Add 6-13 extra tiles for doglegs
 		grid_width = base_width + dogleg_extra_width
+	elif current_unique_type == UniqueHoleType.ISLAND_GREEN:
+		# Island green par 3s can be narrower since it's mostly water
+		grid_width = max(base_width, 14)
 	else:
 		grid_width = base_width
+	
+	# Log unique hole type if generated
+	if current_unique_type != UniqueHoleType.NONE:
+		var type_name = ""
+		match current_unique_type:
+			UniqueHoleType.TRUE_DOGLEG: type_name = "TRUE_DOGLEG"
+			UniqueHoleType.ISLAND_GREEN: type_name = "ISLAND_GREEN"
+			UniqueHoleType.S_CURVE: type_name = "S_CURVE"
+			UniqueHoleType.NARROW_FAIRWAY: type_name = "NARROW_FAIRWAY"
+		print("[UNIQUE HOLE] Generating %s (Par %d, %d yards, %dx%d grid)" % [type_name, current_par, current_yardage, grid_width, grid_height])
+	
+	# Reset deck for new hole
+	if card_system:
+		card_system.initialize_starter_deck()
+	
+	_init_grid()
+	_generate_course_features()
+
+
+func _generate_unique_course() -> void:
+	"""Generate a course with a guaranteed unique hole type"""
+	# Randomly select par (3, 4, or 5)
+	var par_options = [3, 4, 5]
+	current_par = par_options[randi() % par_options.size()]
+	
+	# Get config for this par
+	var config = PAR_CONFIG[current_par]
+	
+	# Calculate yardage within the par's range
+	current_yardage = config.min_yards + randi() % (config.max_yards - config.min_yards + 1)
+	
+	# Convert yardage to grid height (length of hole)
+	grid_height = int(current_yardage / YARDS_PER_CELL)
+	
+	# ============================================================
+	# FORCE A UNIQUE HOLE TYPE (guaranteed)
+	# ============================================================
+	var available_types: Array = []
+	
+	if current_par >= 4:
+		# Par 4/5 can have true doglegs
+		available_types.append(UniqueHoleType.TRUE_DOGLEG)
+	if current_par == 3:
+		# Par 3 can have full island green
+		available_types.append(UniqueHoleType.ISLAND_GREEN)
+	
+	# S-curves and narrow fairways work for all pars
+	available_types.append(UniqueHoleType.S_CURVE)
+	available_types.append(UniqueHoleType.NARROW_FAIRWAY)
+	
+	# Always pick a unique type
+	current_unique_type = available_types[randi() % available_types.size()]
+	
+	# Decide dogleg type BEFORE setting width
+	# For TRUE_DOGLEG unique type, force a dogleg direction
+	if current_unique_type == UniqueHoleType.TRUE_DOGLEG:
+		# Force a left or right dogleg for true dogleg holes
+		current_dogleg_type = 1 + randi() % 2  # 1 or 2
+	elif current_unique_type == UniqueHoleType.S_CURVE:
+		# S-curves need extra width but use their own path logic
+		current_dogleg_type = 3  # Mark as straight, S-curve handles its own path
+	else:
+		current_dogleg_type = randi() % 4
+	
+	# Set width based on par - unique holes ignore normal restrictions
+	var base_width = config.min_width + randi() % (config.max_width - config.min_width + 1)
+	if current_unique_type == UniqueHoleType.TRUE_DOGLEG:
+		# True doglegs need massive width for the horizontal section (20+ tiles)
+		grid_width = 45 + randi() % 10  # 45-54 tiles wide
+	elif current_unique_type == UniqueHoleType.S_CURVE:
+		# S-curves need extra width for dramatic curves
+		grid_width = 40 + randi() % 10  # 40-49 tiles wide
+	elif current_dogleg_type < 3:
+		var dogleg_extra_width = 6 + randi() % 8
+		grid_width = base_width + dogleg_extra_width
+	elif current_unique_type == UniqueHoleType.ISLAND_GREEN:
+		grid_width = max(base_width, 14)
+	else:
+		grid_width = base_width
+	
+	# Log unique hole type
+	if current_unique_type != UniqueHoleType.NONE:
+		var type_name = ""
+		match current_unique_type:
+			UniqueHoleType.TRUE_DOGLEG: type_name = "TRUE_DOGLEG"
+			UniqueHoleType.ISLAND_GREEN: type_name = "ISLAND_GREEN"
+			UniqueHoleType.S_CURVE: type_name = "S_CURVE"
+			UniqueHoleType.NARROW_FAIRWAY: type_name = "NARROW_FAIRWAY"
+		print("[UNIQUE HOLE] Generating %s (Par %d, %d yards, %dx%d grid)" % [type_name, current_par, current_yardage, grid_width, grid_height])
 	
 	# Reset deck for new hole
 	if card_system:
@@ -4683,73 +4821,92 @@ func _generate_course_features() -> void:
 
 	# ============================================================
 	# STEP 2: Carve fairway (path from tee to green)
+	# Handle unique hole types differently
 	# ============================================================
 	
-	var green_fairway_gap = 1 + randi() % 2
-	var fairway_end_row = green_center_row - green_radius + green_fairway_gap
-	var fairway_start_row = tee_row + 2
-	var start_row = min(fairway_start_row, fairway_end_row)
-	var end_row = max(fairway_start_row, fairway_end_row)
-
-	# Use pre-determined dogleg type from _generate_course()
-	var control_col = tee_col
-	if current_dogleg_type == 0:
-		# Random dogleg - can curve either direction
-		var dogleg_offset0 = int((randf() - 0.5) * grid_width * 1.6)
-		control_col = clamp(tee_col + dogleg_offset0, 1, grid_width - 2)
-	elif current_dogleg_type == 1:
-		# Dogleg left
-		control_col = 1
-	elif current_dogleg_type == 2:
-		# Dogleg right
-		control_col = grid_width - 2
-	else:
-		# Mostly straight (type 3) - slight variation
-		var dogleg_offset3 = int((randf() - 0.5) * grid_width * 0.8)
-		control_col = clamp(tee_col + dogleg_offset3, 1, grid_width - 2)
-
-	var num_segments = abs(end_row - start_row)
-	var path_points: Array = []
-	for i in range(num_segments + 1):
-		var t = float(i) / num_segments
-		var px = int((1.0 - t) * (1.0 - t) * tee_col \
-			+ 2.0 * (1.0 - t) * t * control_col \
-			+ t * t * green_center_col)
-		var py = int(lerp(tee_row, fairway_end_row, t))
-		path_points.append(Vector2(px, py))
-
 	# Store fairway cells for later reference (water should avoid these)
 	var fairway_cells: Dictionary = {}
 	
-	var min_fw_width = 3.0
-	var max_fw_width = 10.0
-	for i in range(path_points.size()):
-		var t2 = float(i) / float(path_points.size() - 1)
-		var fw_width = lerp(min_fw_width, max_fw_width, pow(sin(t2 * PI), 1.5))
-		var half_width = int(fw_width / 2.0)
-		var center = path_points[i]
-		for dcol in range(-half_width, half_width + 1):
-			for drow in range(-half_width, half_width + 1):
-				if dcol * dcol + drow * drow <= half_width * half_width:
-					var fx = int(center.x + dcol)
-					var fy = int(center.y + drow)
-					if fx > 0 and fx < grid_width - 1 and fy > 0 and fy < grid_height - 1:
-						var is_adjacent_to_green = _is_adjacent_to_type(fx, fy, SurfaceType.GREEN)
-						var is_adjacent_to_tee = _is_adjacent_to_type(fx, fy, SurfaceType.TEE)
-						var surf_here = get_cell(fx, fy)
-						if surf_here != SurfaceType.GREEN \
-						and surf_here != SurfaceType.TEE \
-						and not is_adjacent_to_green \
-						and not is_adjacent_to_tee:
-							set_cell(fx, fy, SurfaceType.FAIRWAY)
-							fairway_cells[Vector2i(fx, fy)] = true
+	# Check for special unique hole types that override standard fairway generation
+	if current_unique_type == UniqueHoleType.ISLAND_GREEN:
+		# Full island green - mostly water with small tee area and green island
+		fairway_cells = _generate_island_green_hole(tee_col, tee_row, green_center_col, green_center_row, green_radius)
+	elif current_unique_type == UniqueHoleType.TRUE_DOGLEG:
+		# True 90-degree dogleg with trees at corner
+		fairway_cells = _generate_true_dogleg_hole(tee_col, tee_row, green_center_col, green_center_row, green_radius)
+	elif current_unique_type == UniqueHoleType.S_CURVE:
+		# S-shaped fairway
+		fairway_cells = _generate_s_curve_hole(tee_col, tee_row, green_center_col, green_center_row, green_radius)
+	else:
+		# Standard fairway generation (also used as base for NARROW_FAIRWAY)
+		var green_fairway_gap = 1 + randi() % 2
+		var fairway_end_row = green_center_row - green_radius + green_fairway_gap
+		var fairway_start_row = tee_row + 2
+		var start_row = min(fairway_start_row, fairway_end_row)
+		var end_row = max(fairway_start_row, fairway_end_row)
+
+		# Use pre-determined dogleg type from _generate_course()
+		var control_col = tee_col
+		if current_dogleg_type == 0:
+			# Random dogleg - can curve either direction
+			var dogleg_offset0 = int((randf() - 0.5) * grid_width * 1.6)
+			control_col = clamp(tee_col + dogleg_offset0, 1, grid_width - 2)
+		elif current_dogleg_type == 1:
+			# Dogleg left
+			control_col = 1
+		elif current_dogleg_type == 2:
+			# Dogleg right
+			control_col = grid_width - 2
+		else:
+			# Mostly straight (type 3) - slight variation
+			var dogleg_offset3 = int((randf() - 0.5) * grid_width * 0.8)
+			control_col = clamp(tee_col + dogleg_offset3, 1, grid_width - 2)
+
+		var num_segments = abs(end_row - start_row)
+		var path_points: Array = []
+		for i in range(num_segments + 1):
+			var t = float(i) / num_segments
+			var px = int((1.0 - t) * (1.0 - t) * tee_col \
+				+ 2.0 * (1.0 - t) * t * control_col \
+				+ t * t * green_center_col)
+			var py = int(lerp(tee_row, fairway_end_row, t))
+			path_points.append(Vector2(px, py))
+
+		# Apply standard fairway width along path
+		var min_fw_width = 3.0
+		var max_fw_width = 10.0
+		for i in range(path_points.size()):
+			var t2 = float(i) / float(path_points.size() - 1)
+			var fw_width = lerp(min_fw_width, max_fw_width, pow(sin(t2 * PI), 1.5))
+			var half_width = int(fw_width / 2.0)
+			var center = path_points[i]
+			for dcol in range(-half_width, half_width + 1):
+				for drow in range(-half_width, half_width + 1):
+					if dcol * dcol + drow * drow <= half_width * half_width:
+						var fx = int(center.x + dcol)
+						var fy = int(center.y + drow)
+						if fx > 0 and fx < grid_width - 1 and fy > 0 and fy < grid_height - 1:
+							var is_adjacent_to_green = _is_adjacent_to_type(fx, fy, SurfaceType.GREEN)
+							var is_adjacent_to_tee = _is_adjacent_to_type(fx, fy, SurfaceType.TEE)
+							var surf_here = get_cell(fx, fy)
+							if surf_here != SurfaceType.GREEN \
+							and surf_here != SurfaceType.TEE \
+							and not is_adjacent_to_green \
+							and not is_adjacent_to_tee:
+								set_cell(fx, fy, SurfaceType.FAIRWAY)
+								fairway_cells[Vector2i(fx, fy)] = true
+	
+	# Apply narrow fairway modifications if needed
+	if current_unique_type == UniqueHoleType.NARROW_FAIRWAY:
+		_apply_narrow_fairway_trees(fairway_cells)
 
 	# ============================================================
 	# STEP 3: Place water features AFTER tee/green/fairway exist
+	# Skip most water features for island green holes (they already have water set up)
 	# ============================================================
 	
 	# --- BODY OF WATER (edge feature that fills solidly from edge to playable area) ---
-	if randf() < 0.35:  # 35% chance of body of water
+	if current_unique_type != UniqueHoleType.ISLAND_GREEN and randf() < 0.35:  # 35% chance of body of water
 		var edge = randi() % 2  # 0=left, 1=right (sides only for better gameplay)
 		
 		# Vertical range for the body of water (almost full height)
@@ -4821,7 +4978,8 @@ func _generate_course_features() -> void:
 						set_cell(col, row, SurfaceType.ROUGH)
 
 	# --- POND WATER FEATURE (solid circular shape in rough areas) ---
-	if randf() < 0.7:  # 70% chance of pond
+	# Skip for island green holes
+	if current_unique_type != UniqueHoleType.ISLAND_GREEN and randf() < 0.7:  # 70% chance of pond
 		var pond_radius = 2 + randi() % 3  # 2-4 radius
 		var attempts = 0
 		var placed = false
@@ -4865,7 +5023,8 @@ func _generate_course_features() -> void:
 
 	# --- ISLAND GREEN FEATURE (10% chance) ---
 	# Surrounds the green with water, creating a dramatic approach
-	if randf() < 0.10:
+	# Skip if we already have a full island green unique hole
+	if current_unique_type != UniqueHoleType.ISLAND_GREEN and randf() < 0.10:
 		var island_green_cells: Array = []
 		for col in range(grid_width):
 			for row in range(grid_height):
@@ -5036,6 +5195,100 @@ func _generate_course_features() -> void:
 							placed = true
 					attempts += 1
 
+	# --- STRATEGIC FAIRWAY HAZARDS (trees and rough patches) ---
+	# Add occasional hazards on the fairway for strategic decision-making
+	
+	# Collect all fairway tiles that aren't near tee/green for hazard placement
+	var fairway_hazard_candidates: Array = []
+	for col in range(1, grid_width - 1):
+		for row in range(1, grid_height - 1):
+			if get_cell(col, row) == SurfaceType.FAIRWAY:
+				if not _is_adjacent_to_type(col, row, SurfaceType.TEE) \
+				and not _is_adjacent_to_type(col, row, SurfaceType.GREEN):
+					fairway_hazard_candidates.append(Vector2i(col, row))
+	
+	if fairway_hazard_candidates.size() > 0:
+		# 1. Large single tree on fairway (30% chance)
+		if randf() < 0.3:
+			var tree_pos = fairway_hazard_candidates[randi() % fairway_hazard_candidates.size()]
+			set_cell(tree_pos.x, tree_pos.y, SurfaceType.TREE)
+			# Remove this tile from candidates
+			fairway_hazard_candidates.erase(tree_pos)
+		
+		# 2. Small tree groupings (40% chance for 1-2 groupings)
+		if randf() < 0.4 and fairway_hazard_candidates.size() > 0:
+			var groupings = 1 + randi() % 2  # 1-2 groupings
+			for g in range(groupings):
+				if fairway_hazard_candidates.size() == 0:
+					break
+				var group_start = fairway_hazard_candidates[randi() % fairway_hazard_candidates.size()]
+				var group_size = 2 + randi() % 3  # 2-4 trees
+				var tree_tiles: Array = [group_start]
+				set_cell(group_start.x, group_start.y, SurfaceType.TREE)
+				fairway_hazard_candidates.erase(group_start)
+				
+				var tree_dirs = [
+					Vector2i(1, 0), Vector2i(-1, 0),
+					Vector2i(0, 1), Vector2i(0, -1),
+					Vector2i(1, 1), Vector2i(-1, -1)
+				]
+				
+				for t in range(1, group_size):
+					var placed_tree = false
+					var tries = 0
+					while not placed_tree and tries < 8:
+						var base = tree_tiles[randi() % tree_tiles.size()]
+						var dir = tree_dirs[randi() % tree_dirs.size()]
+						var nx = base.x + dir.x
+						var ny = base.y + dir.y
+						if nx > 0 and nx < grid_width - 1 and ny > 0 and ny < grid_height - 1:
+							if get_cell(nx, ny) == SurfaceType.FAIRWAY \
+							and not _is_adjacent_to_type(nx, ny, SurfaceType.TEE) \
+							and not _is_adjacent_to_type(nx, ny, SurfaceType.GREEN):
+								set_cell(nx, ny, SurfaceType.TREE)
+								tree_tiles.append(Vector2i(nx, ny))
+								var pos = Vector2i(nx, ny)
+								fairway_hazard_candidates.erase(pos)
+								placed_tree = true
+						tries += 1
+		
+		# 3. Rough patches on fairway (25% chance for 1-2 patches)
+		if randf() < 0.25 and fairway_hazard_candidates.size() > 0:
+			var patches = 1 + randi() % 2  # 1-2 patches
+			for p in range(patches):
+				if fairway_hazard_candidates.size() == 0:
+					break
+				var patch_start = fairway_hazard_candidates[randi() % fairway_hazard_candidates.size()]
+				var patch_size = 2 + randi() % 4  # 2-5 tiles
+				var rough_tiles: Array = [patch_start]
+				set_cell(patch_start.x, patch_start.y, SurfaceType.ROUGH)
+				fairway_hazard_candidates.erase(patch_start)
+				
+				var rough_dirs = [
+					Vector2i(1, 0), Vector2i(-1, 0),
+					Vector2i(0, 1), Vector2i(0, -1),
+					Vector2i(1, 1), Vector2i(-1, -1)
+				]
+				
+				for r in range(1, patch_size):
+					var placed_rough = false
+					var tries_r = 0
+					while not placed_rough and tries_r < 8:
+						var base_r = rough_tiles[randi() % rough_tiles.size()]
+						var dir_r = rough_dirs[randi() % rough_dirs.size()]
+						var nx_r = base_r.x + dir_r.x
+						var ny_r = base_r.y + dir_r.y
+						if nx_r > 0 and nx_r < grid_width - 1 and ny_r > 0 and ny_r < grid_height - 1:
+							if get_cell(nx_r, ny_r) == SurfaceType.FAIRWAY \
+							and not _is_adjacent_to_type(nx_r, ny_r, SurfaceType.TEE) \
+							and not _is_adjacent_to_type(nx_r, ny_r, SurfaceType.GREEN):
+								set_cell(nx_r, ny_r, SurfaceType.ROUGH)
+								rough_tiles.append(Vector2i(nx_r, ny_r))
+								var pos_r = Vector2i(nx_r, ny_r)
+								fairway_hazard_candidates.erase(pos_r)
+								placed_rough = true
+						tries_r += 1
+
 		# 3. Water clumps on fairway edges (ponds/streams)
 		var water_clump_chance = 0.02
 		var water_clump_attempts = int(grid_width * grid_height * water_clump_chance)
@@ -5134,9 +5387,9 @@ func _generate_course_features() -> void:
 			var deep_rough_threshold = 3.0 + noise_val * 1.5
 			
 			if is_edge or dist >= deep_rough_threshold:
-				# Further cells (5+) have chance to become trees for hole framing
-				var tree_threshold = 5.0 + noise_val * 2.0
-				if dist >= tree_threshold and randf() < 0.35:
+				# Further cells (4+) have chance to become trees for hole framing (more trees)
+				var tree_threshold = 4.0 + noise_val * 1.5
+				if dist >= tree_threshold and randf() < 0.45:
 					set_cell(col, row, SurfaceType.TREE)
 				else:
 					set_cell(col, row, SurfaceType.DEEP_ROUGH)
@@ -5152,6 +5405,374 @@ func _generate_course_features() -> void:
 	# Calculate elevation for each cell based on surface type and terrain noise
 	# This creates realistic golf course topography with mounds, depressions, etc.
 	_generate_elevation()
+
+
+# ============================================================================
+# UNIQUE HOLE GENERATION FUNCTIONS
+# ============================================================================
+
+func _generate_island_green_hole(tee_col: int, tee_row: int, green_col: int, green_row: int, green_radius: int) -> Dictionary:
+	"""Generate a full island green par 3 hole.
+	Features:
+	- Tee box with rough/deep rough around it
+	- Mostly water between tee and green
+	- Green island surrounded by a ring of rough/fringe
+	"""
+	var fairway_cells: Dictionary = {}
+	
+	# Create a small tee area with rough around it
+	for dcol in range(-3, 4):
+		for drow in range(-2, 4):
+			var col = tee_col + dcol
+			var row = tee_row + drow
+			if col >= 0 and col < grid_width and row >= 0 and row < grid_height:
+				var dist = sqrt(dcol * dcol + drow * drow)
+				if dist <= 1.5:
+					# Keep tee area clear
+					continue
+				elif dist <= 3:
+					set_cell(col, row, SurfaceType.ROUGH)
+				elif dist <= 4:
+					set_cell(col, row, SurfaceType.DEEP_ROUGH)
+	
+	# Fill most of the area between tee and green with water
+	for col in range(grid_width):
+		for row in range(grid_height):
+			var surf = get_cell(col, row)
+			if surf == SurfaceType.TEE or surf == SurfaceType.GREEN:
+				continue
+			
+			# Distance from tee area
+			var tee_dist = sqrt(pow(col - tee_col, 2) + pow(row - tee_row, 2))
+			# Distance from green
+			var green_dist = sqrt(pow(col - green_col, 2) + pow(row - green_row, 2))
+			
+			# Near tee - keep rough
+			if tee_dist <= 4:
+				continue
+			
+			# Near green - create fringe/rough ring
+			if green_dist <= green_radius + 2:
+				if green_dist > green_radius:
+					set_cell(col, row, SurfaceType.ROUGH)
+				continue
+			
+			# Everything else is water
+			set_cell(col, row, SurfaceType.WATER)
+	
+	return fairway_cells
+
+
+func _generate_true_dogleg_hole(tee_col: int, tee_row: int, green_col: int, green_row: int, green_radius: int) -> Dictionary:
+	"""Generate a true dogleg hole with rounded corner turn.
+	Features:
+	- Straight fairway for ~20 tiles (driver distance)
+	- Smooth rounded corner at the elbow (not sharp 90°)
+	- Trees placed at the inside of the corner to prevent cutting
+	- Horizontal fairway section (~20 tiles) leading to green
+	"""
+	var fairway_cells: Dictionary = {}
+	
+	# Determine dogleg direction (1 = left, 2 = right)
+	var dogleg_left = current_dogleg_type == 1
+	
+	# Calculate the elbow position (where the turn happens)
+	var vertical_distance = 18 + randi() % 5  # 18-22 tiles straight
+	var horizontal_distance = 18 + randi() % 5  # 18-22 tiles horizontal
+	var elbow_row = tee_row + vertical_distance
+	
+	# Elbow column - start in center
+	var elbow_col = tee_col
+	
+	# Green position for dogleg - place it at end of horizontal run
+	var actual_green_col: int
+	if dogleg_left:
+		actual_green_col = max(green_radius + 3, elbow_col - horizontal_distance)
+	else:
+		actual_green_col = min(grid_width - green_radius - 3, elbow_col + horizontal_distance)
+	
+	# Green row - at the end of horizontal section with a small approach
+	var actual_green_row = elbow_row + 5 + randi() % 3
+	
+	# First, clear the existing green and reposition it
+	for col in range(grid_width):
+		for row in range(grid_height):
+			if get_cell(col, row) == SurfaceType.GREEN:
+				set_cell(col, row, SurfaceType.ROUGH)
+	
+	# Place new green at dogleg position
+	for dcol in range(-green_radius, green_radius + 1):
+		for drow in range(-green_radius, green_radius + 1):
+			var dist = sqrt(dcol * dcol + drow * drow)
+			if dist <= green_radius:
+				var col = actual_green_col + dcol
+				var row = actual_green_row + drow
+				if col >= 1 and col < grid_width - 1 and row >= 1 and row < grid_height - 1:
+					set_cell(col, row, SurfaceType.GREEN)
+	
+	var fw_width = 4  # Consistent fairway width
+	
+	# Build the path with a rounded corner using bezier curve
+	var path_points: Array = []
+	
+	# Control points for the path:
+	# P0 = just past tee
+	# P1 = before the corner (still on vertical)
+	# P2 = at the corner (elbow)
+	# P3 = after the corner (on horizontal)
+	# P4 = end of horizontal (near green)
+	
+	var p0 = Vector2(elbow_col, tee_row + 2)
+	var p1 = Vector2(elbow_col, elbow_row - 5)  # Approach to corner
+	var corner_col = actual_green_col if dogleg_left else actual_green_col
+	var p2 = Vector2(elbow_col, elbow_row)  # The corner vertex
+	var p3 = Vector2(actual_green_col, elbow_row)  # After corner on horizontal
+	var p4 = Vector2(actual_green_col, actual_green_row - green_radius - 1)  # Approach to green
+	
+	# SEGMENT 1: Straight section from tee to before corner
+	var seg1_points = 15
+	for i in range(seg1_points + 1):
+		var t = float(i) / seg1_points
+		var px = lerp(p0.x, p1.x, t)
+		var py = lerp(p0.y, p1.y, t)
+		path_points.append(Vector2(int(px), int(py)))
+	
+	# SEGMENT 2: Rounded corner using quadratic bezier
+	# Corner goes from p1 through p2 (control point) to p3
+	var corner_radius = 8  # How many points for the curve
+	for i in range(corner_radius + 1):
+		var t = float(i) / corner_radius
+		var t2 = t * t
+		var mt = 1.0 - t
+		var mt2 = mt * mt
+		# Quadratic bezier: P = (1-t)²P1 + 2(1-t)tP2 + t²P3
+		var px = mt2 * p1.x + 2 * mt * t * p2.x + t2 * p3.x
+		var py = mt2 * p1.y + 2 * mt * t * p2.y + t2 * p3.y
+		path_points.append(Vector2(int(px), int(py)))
+	
+	# SEGMENT 3: Approach to green (from horizontal to green)
+	var seg3_points = 8
+	for i in range(seg3_points + 1):
+		var t = float(i) / seg3_points
+		var px = lerp(p3.x, p4.x, t)
+		var py = lerp(p3.y, p4.y, t)
+		path_points.append(Vector2(int(px), int(py)))
+	
+	# Carve fairway along the path
+	for i in range(path_points.size()):
+		var center = path_points[i]
+		for dcol in range(-fw_width, fw_width + 1):
+			for drow in range(-fw_width, fw_width + 1):
+				if dcol * dcol + drow * drow <= fw_width * fw_width:
+					var fx = int(center.x + dcol)
+					var fy = int(center.y + drow)
+					if fx > 0 and fx < grid_width - 1 and fy > 0 and fy < grid_height - 1:
+						var surf_here = get_cell(fx, fy)
+						if surf_here != SurfaceType.GREEN and surf_here != SurfaceType.TEE:
+							if not _is_adjacent_to_type(fx, fy, SurfaceType.GREEN) and not _is_adjacent_to_type(fx, fy, SurfaceType.TEE):
+								set_cell(fx, fy, SurfaceType.FAIRWAY)
+								fairway_cells[Vector2i(fx, fy)] = true
+	
+	# Place trees at the INSIDE corner to punish cutting the dogleg
+	var tree_corner_col: int
+	var tree_corner_row = elbow_row
+	if dogleg_left:
+		# Inside corner is to the right of the elbow
+		tree_corner_col = elbow_col + fw_width + 3
+	else:
+		# Inside corner is to the left of the elbow
+		tree_corner_col = elbow_col - fw_width - 3
+	
+	# Create a large cluster of trees at the corner
+	for dcol in range(-4, 5):
+		for drow in range(-5, 6):
+			var col = tree_corner_col + dcol
+			var row = tree_corner_row + drow
+			if col >= 1 and col < grid_width - 1 and row >= 1 and row < grid_height - 1:
+				var surf = get_cell(col, row)
+				if surf == SurfaceType.ROUGH or surf == SurfaceType.DEEP_ROUGH:
+					if randf() < 0.75:  # 75% tree density
+						set_cell(col, row, SurfaceType.TREE)
+	
+	return fairway_cells
+
+
+func _generate_s_curve_hole(tee_col: int, tee_row: int, green_col: int, green_row: int, green_radius: int) -> Dictionary:
+	"""Generate a dramatic S-shaped fairway hole.
+	Features:
+	- Fairway curves dramatically left then right (or right then left)
+	- Wide sweeping curves that are visually distinct
+	- Smooth rounded transitions
+	"""
+	var fairway_cells: Dictionary = {}
+	
+	# Decide S direction: true = left-then-right, false = right-then-left
+	var left_first = randf() < 0.5
+	
+	# Calculate control points for the S-curve with DRAMATIC offsets
+	var hole_length = green_row - tee_row
+	var quarter = hole_length / 4
+	
+	# First curve apex (1/4 of the way) - dramatic offset
+	var curve1_row = tee_row + quarter
+	var curve1_offset = 12 + randi() % 6  # 12-17 tiles offset (very dramatic)
+	var curve1_col = tee_col + (curve1_offset if left_first else -curve1_offset)
+	curve1_col = clamp(curve1_col, 6, grid_width - 7)
+	
+	# Second curve apex (3/4 of the way) - dramatic offset in opposite direction
+	var curve2_row = tee_row + 3 * quarter
+	var curve2_offset = 12 + randi() % 6  # 12-17 tiles offset
+	var curve2_col = tee_col + (-curve2_offset if left_first else curve2_offset)
+	curve2_col = clamp(curve2_col, 6, grid_width - 7)
+	
+	# Reposition green to align with the end of the S
+	for col in range(grid_width):
+		for row in range(grid_height):
+			if get_cell(col, row) == SurfaceType.GREEN:
+				set_cell(col, row, SurfaceType.ROUGH)
+	
+	# Place new green near the center (S should end near center)
+	var actual_green_col = tee_col  # S comes back to center
+	var actual_green_row = green_row
+	for dcol in range(-green_radius, green_radius + 1):
+		for drow in range(-green_radius, green_radius + 1):
+			var dist = sqrt(dcol * dcol + drow * drow)
+			if dist <= green_radius:
+				var col = actual_green_col + dcol
+				var row = actual_green_row + drow
+				if col >= 1 and col < grid_width - 1 and row >= 1 and row < grid_height - 1:
+					set_cell(col, row, SurfaceType.GREEN)
+	
+	# Build path points using cubic bezier for smooth S
+	var path_points: Array = []
+	var num_segments = hole_length * 2  # More points for smoother curve
+	
+	for i in range(num_segments + 1):
+		var t = float(i) / num_segments
+		var px: float
+		var py = lerp(float(tee_row + 2), float(actual_green_row - green_radius - 1), t)
+		
+		# S-curve using cubic bezier with 4 control points
+		# P0 = tee, P1 = curve1, P2 = curve2, P3 = green
+		var t2 = t * t
+		var t3 = t2 * t
+		var mt = 1.0 - t
+		var mt2 = mt * mt
+		var mt3 = mt2 * mt
+		
+		px = mt3 * tee_col + 3 * mt2 * t * curve1_col + 3 * mt * t2 * curve2_col + t3 * actual_green_col
+		path_points.append(Vector2(int(px), int(py)))
+	
+	# Carve fairway along the S-curve with consistent width
+	var fw_width = 4  # Consistent width for clean look
+	for i in range(path_points.size()):
+		var center = path_points[i]
+		
+		for dcol in range(-fw_width, fw_width + 1):
+			for drow in range(-fw_width, fw_width + 1):
+				if dcol * dcol + drow * drow <= fw_width * fw_width:
+					var fx = int(center.x + dcol)
+					var fy = int(center.y + drow)
+					if fx > 0 and fx < grid_width - 1 and fy > 0 and fy < grid_height - 1:
+						var is_adjacent_to_green = _is_adjacent_to_type(fx, fy, SurfaceType.GREEN)
+						var is_adjacent_to_tee = _is_adjacent_to_type(fx, fy, SurfaceType.TEE)
+						var surf_here = get_cell(fx, fy)
+						if surf_here != SurfaceType.GREEN and surf_here != SurfaceType.TEE \
+						and not is_adjacent_to_green and not is_adjacent_to_tee:
+							set_cell(fx, fy, SurfaceType.FAIRWAY)
+							fairway_cells[Vector2i(fx, fy)] = true
+	
+	return fairway_cells
+
+
+func _apply_narrow_fairway_trees(fairway_cells: Dictionary) -> void:
+	"""Add trees encroaching aggressively on the fairway to create very narrow (3-tile) choke points.
+	Called after standard fairway is generated.
+	"""
+	if fairway_cells.is_empty():
+		return
+	
+	# First, find the fairway width at each row
+	var row_fairway_cols: Dictionary = {}  # row -> Array of columns that are fairway
+	for cell in fairway_cells.keys():
+		if not row_fairway_cols.has(cell.y):
+			row_fairway_cols[cell.y] = []
+		row_fairway_cols[cell.y].append(cell.x)
+	
+	# Sort columns for each row
+	for row in row_fairway_cols.keys():
+		row_fairway_cols[row].sort()
+	
+	# Find rows to narrow (skip rows near tee and green)
+	var rows_to_narrow: Array = []
+	for row in row_fairway_cols.keys():
+		var cols = row_fairway_cols[row]
+		if cols.size() < 6:  # Need at least 6 wide to narrow to 3
+			continue
+		
+		# Check if this row is near tee or green
+		var near_tee = false
+		var near_green = false
+		for col in cols:
+			if _is_adjacent_to_type(col, row, SurfaceType.TEE):
+				near_tee = true
+			if _is_adjacent_to_type(col, row, SurfaceType.GREEN):
+				near_green = true
+		
+		if not near_tee and not near_green:
+			rows_to_narrow.append(row)
+	
+	if rows_to_narrow.is_empty():
+		return
+	
+	# Sort rows
+	rows_to_narrow.sort()
+	
+	# Create 4-6 choke points, evenly distributed
+	var num_chokes = 4 + randi() % 3  # 4-6 chokes
+	var spacing = rows_to_narrow.size() / (num_chokes + 1)
+	var choke_length = 4 + randi() % 3  # 4-6 rows long each choke
+	
+	for i in range(num_chokes):
+		var target_idx = int((i + 1) * spacing)
+		if target_idx >= rows_to_narrow.size():
+			continue
+		
+		var center_row = rows_to_narrow[target_idx]
+		
+		# Narrow this section of fairway to exactly 3 tiles wide
+		for drow in range(-choke_length / 2, choke_length / 2 + 1):
+			var row = center_row + drow
+			if not row_fairway_cols.has(row):
+				continue
+			
+			var cols = row_fairway_cols[row]
+			if cols.size() <= 3:
+				continue
+			
+			# Find the center of the fairway
+			var min_col = cols[0]
+			var max_col = cols[cols.size() - 1]
+			var center_col = (min_col + max_col) / 2
+			
+			# Keep only 3 tiles centered
+			var keep_min = center_col - 1
+			var keep_max = center_col + 1
+			
+			# Convert excess fairway to trees
+			for col in cols:
+				if col < keep_min or col > keep_max:
+					# Don't narrow at the very edge of the choke (taper effect)
+					var taper = abs(drow) / float(choke_length / 2 + 1)
+					if randf() > taper * 0.5:  # More likely to narrow in center
+						set_cell(col, row, SurfaceType.TREE)
+			
+			# Add extra trees just outside the choke for visual impact
+			for tree_col in [keep_min - 1, keep_min - 2, keep_max + 1, keep_max + 2]:
+				if tree_col >= 1 and tree_col < grid_width - 1:
+					var surf = get_cell(tree_col, row)
+					if surf == SurfaceType.ROUGH or surf == SurfaceType.DEEP_ROUGH:
+						set_cell(tree_col, row, SurfaceType.TREE)
 
 
 # Trim edges organically to create natural hole boundaries
@@ -5468,6 +6089,7 @@ func _generate_grid() -> void:
 		offsets[surf_type] = 0
 
 	var green_cells: Array = []
+	var fairway_cells: Array = []
 
 	for col in range(grid_width):
 		for row in range(grid_height):
@@ -5493,9 +6115,43 @@ func _generate_grid() -> void:
 
 			if surf == SurfaceType.GREEN:
 				green_cells.append(Vector2i(col, row))
+			elif surf == SurfaceType.FAIRWAY:
+				fairway_cells.append(Vector2i(col, row))
 
 	if green_cells.size() > 0:
-		var flag_cell = green_cells[randi() % green_cells.size()]
+		# Place pin with bias toward center of green (70% chance within inner half)
+		var flag_cell: Vector2i
+		if randf() < 0.7 and green_cells.size() >= 4:
+			# Find green center
+			var sum_col = 0
+			var sum_row = 0
+			for gc in green_cells:
+				sum_col += gc.x
+				sum_row += gc.y
+			var center_col = sum_col / green_cells.size()
+			var center_row = sum_row / green_cells.size()
+			
+			# Pick from tiles closer to center (within 40% of max distance)
+			var center_tiles = []
+			var max_dist = 0.0
+			for gc in green_cells:
+				var dist = sqrt(pow(gc.x - center_col, 2) + pow(gc.y - center_row, 2))
+				if dist > max_dist:
+					max_dist = dist
+			
+			for gc in green_cells:
+				var dist = sqrt(pow(gc.x - center_col, 2) + pow(gc.y - center_row, 2))
+				if dist <= max_dist * 0.5:  # Within inner 50% radius
+					center_tiles.append(gc)
+			
+			if center_tiles.size() > 0:
+				flag_cell = center_tiles[randi() % center_tiles.size()]
+			else:
+				flag_cell = green_cells[randi() % green_cells.size()]
+		else:
+			# 30% chance: anywhere on green
+			flag_cell = green_cells[randi() % green_cells.size()]
+		
 		flag_position = flag_cell  # Store flag position for gameplay logic
 		var flag_scene = FLAG
 		var flag_instance = flag_scene.instantiate()
@@ -5556,16 +6212,49 @@ func _generate_grid() -> void:
 				tree_instance.rotation.x = deg_to_rad(randf_range(-5.0, 5.0))
 				tree_instance.rotation.z = deg_to_rad(randf_range(-5.0, 5.0))
 				
-				# Random scale with height bias for tree variety
-				var base_scale = randf_range(0.6, 1.3)
+				# Random scale with height bias for tree variety (larger trees)
+				var base_scale = randf_range(1.5, 2.5)
 				var height_scale = base_scale * randf_range(0.9, 1.3)  # Trees can be taller
 				tree_instance.scale = Vector3(base_scale, height_scale, base_scale)
 				
 				# Apply random color variation to foliage (CSGSphere3D children)
 				_apply_random_tree_colors(tree_instance)
 				
+				# Add collision body so shots can hit trees
+				var collision_shape = CollisionShape3D.new()
+				var cylinder = CylinderShape3D.new()
+				cylinder.radius = 0.3 * base_scale  # Scale with tree size
+				cylinder.height = 3.0 * height_scale  # Trunk height
+				collision_shape.shape = cylinder
+				collision_shape.position = Vector3(0, cylinder.height / 2.0, 0)  # Center on trunk
+				
+				var static_body = StaticBody3D.new()
+				static_body.add_child(collision_shape)
+				tree_instance.add_child(static_body)
+				
 				tree_instance.add_to_group("trees")
 				add_child(tree_instance)
+	
+	# Spawn a coin on a random fairway tile
+	if fairway_cells.size() > 0:
+		var coin_cell = fairway_cells[randi() % fairway_cells.size()]
+		var coin_scene = load("res://scenes/coin.tscn")
+		var coin_instance = coin_scene.instantiate()
+		
+		var coin_col = coin_cell.x
+		var coin_row = coin_cell.y
+		var coin_x = coin_col * width * 1.5
+		var coin_z = coin_row * height + (coin_col % 2) * (height / 2.0)
+		var coin_y = get_elevation(coin_col, coin_row) + TILE_SURFACE_OFFSET + 0.5  # Slightly above surface
+		
+		# Wrap coin in a parent Node3D so animation doesn't override world position
+		var coin_holder = Node3D.new()
+		coin_holder.position = Vector3(coin_x, coin_y, coin_z)
+		coin_holder.add_child(coin_instance)
+		coin_holder.add_to_group("coins")
+		add_child(coin_holder)
+	else:
+		print("WARNING: No fairway tiles found for coin placement!")
 	
 	# Spawn foliage (grass patches, bushes, rocks, flowers) based on surface type
 	_spawn_foliage()
@@ -5871,6 +6560,42 @@ func _on_button_pressed() -> void:
 	)
 
 
+func _on_generate_unique_pressed() -> void:
+	"""Handle Generate Unique Hole button - forces a unique hole type"""
+	_play_transition_loading(func():
+		# Reset shot counter and club selection
+		if shot_manager and shot_manager.current_context:
+			shot_manager.current_context.shot_index = 0
+		current_club = ClubType.DRIVER
+		_update_club_button_visuals()
+		
+		# Reset card deck
+		if card_system:
+			card_system.initialize_starter_deck()
+		
+		# Reset target lock
+		target_locked = false
+		locked_cell = Vector2i(-1, -1)
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
+		curved_trajectory_mesh.visible = false
+		target_highlight_mesh.visible = false
+		_hide_all_aoe_highlights()
+		
+		# Cancel any in-progress shot
+		if shot_manager:
+			shot_manager.cancel_shot()
+		
+		_clear_course_nodes()
+		_generate_unique_course()  # Use unique course generator
+		_generate_grid()
+		_log_hole_info()
+		
+		# Start a fresh shot
+		_start_new_shot()
+	)
+
+
 # ============================================================================
 # SCREEN TRANSITION SYSTEM
 # ============================================================================
@@ -5912,10 +6637,11 @@ func _play_transition_out(duration: float = 1.5, show_loading: bool = false) -> 
 	tween.tween_method(
 		func(value: float):
 			material.set_shader_parameter("animation_progress", value)
-			# Fade loading message out immediately as transition starts
+			# Fade loading message faster - gone by 50% of transition
 			if loading_message and show_loading:
-				# Fade out from the start: progress 1.0->0 maps to opacity 1->0
-				loading_message.modulate.a = value,
+				# Map progress 1.0->0.5 to opacity 1->0, then stay at 0
+				var text_opacity = clamp((value - 0.5) * 2.0, 0.0, 1.0)
+				loading_message.modulate.a = text_opacity,
 		1.0,
 		0.0,
 		duration

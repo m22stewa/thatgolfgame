@@ -10,19 +10,21 @@ var direction_index: int = 0  # 0-7 for 8 cardinal/ordinal directions
 var speed_kmh: float = 0.0    # 0-40 km/h range
 var strength: int = 0          # 0-3 simplified strength range
 
-# Direction vectors and names (N, NE, E, SE, S, SW, W, NW)
+# Direction vectors and names - Rotated 90° clockwise to align with hole, then 180° to fix N/S
+# Hole runs W→E (left to right), so W points along fairway
+# Note: Y is negated because Godot 2D has Y+ pointing down
 const DIRECTIONS = [
-	Vector2(0, -1),   # 0: N
-	Vector2(1, -1),   # 1: NE
-	Vector2(1, 0),    # 2: E
-	Vector2(1, 1),    # 3: SE
-	Vector2(0, 1),    # 4: S
-	Vector2(-1, 1),   # 5: SW
-	Vector2(-1, 0),   # 6: W
-	Vector2(-1, -1)   # 7: NW
+	Vector2(-1, 0),   # 0: W (along hole direction)
+	Vector2(-1, -1),  # 1: SW
+	Vector2(0, -1),   # 2: S (right side of hole)
+	Vector2(1, -1),   # 3: SE
+	Vector2(1, 0),    # 4: E (against hole direction)
+	Vector2(1, 1),    # 5: NE
+	Vector2(0, 1),    # 6: N (left side of hole)
+	Vector2(-1, 1)    # 7: NW
 ]
 
-const DIRECTION_NAMES = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+const DIRECTION_NAMES = ["W", "SW", "S", "SE", "E", "NE", "N", "NW"]
 
 # Wind strength names for display
 const STRENGTH_NAMES = ["Calm", "Light", "Moderate", "Strong"]

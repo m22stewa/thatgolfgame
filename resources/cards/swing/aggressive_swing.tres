@@ -1,12 +1,18 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3 uid="uid://bwk2gm122l7l"]
+[gd_resource type="Resource" script_class="CardData" load_steps=7 format=3 uid="uid://bwk2gm122l7l"]
 
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_script"]
 [ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
+[ext_resource type="Script" uid="uid://cc77salcuxi12" path="res://scripts/cards/effects/effect_aoe_ring.gd" id="2_yx5rf"]
+[ext_resource type="Texture2D" uid="uid://duewygx8s6hr3" path="res://textures/icons/aoe-ring.png" id="3_i5fpn"]
 
 [sub_resource type="Resource" id="Resource_effect"]
 script = ExtResource("2_effect")
 target_stat = "roll_mod"
 value = 2.0
+
+[sub_resource type="Resource" id="Resource_uweg3"]
+script = ExtResource("2_yx5rf")
+metadata/_custom_type_script = "uid://cc77salcuxi12"
 
 [resource]
 script = ExtResource("1_script")
@@ -15,4 +21,5 @@ card_name = "Aggressive Swing"
 description = "+2 Roll (ball runs hot)"
 flavor_text = "Let it rip!"
 rarity = 1
-effects = Array[Resource]([SubResource("Resource_effect")])
+icon = ExtResource("3_i5fpn")
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_uweg3")])

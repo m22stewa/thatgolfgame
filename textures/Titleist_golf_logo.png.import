@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bov6wq8ariyu8"
 path.s3tc="res://.godot/imported/Titleist_golf_logo.png-da7b144f8247e2b07baf8f84f47da23a.s3tc.ctex"
+path.etc2="res://.godot/imported/Titleist_golf_logo.png-da7b144f8247e2b07baf8f84f47da23a.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://textures/Titleist_golf_logo.png"
-dest_files=["res://.godot/imported/Titleist_golf_logo.png-da7b144f8247e2b07baf8f84f47da23a.s3tc.ctex"]
+dest_files=["res://.godot/imported/Titleist_golf_logo.png-da7b144f8247e2b07baf8f84f47da23a.s3tc.ctex", "res://.godot/imported/Titleist_golf_logo.png-da7b144f8247e2b07baf8f84f47da23a.etc2.ctex"]
 
 [params]
 
