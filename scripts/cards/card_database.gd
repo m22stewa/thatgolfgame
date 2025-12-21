@@ -95,10 +95,9 @@ func _parse_card(json: Dictionary) -> CardData:
 	var type_str = json.get("card_type", "SHOT").to_upper()
 	match type_str:
 		"SHOT": card.card_type = CardData.CardType.SHOT
-		"PASSIVE": card.card_type = CardData.CardType.PASSIVE
-		"CONSUMABLE": card.card_type = CardData.CardType.CONSUMABLE
-		"JOKER": card.card_type = CardData.CardType.JOKER
-		"CLUB": card.card_type = CardData.CardType.CLUB
+		"NEGATIVE": card.card_type = CardData.CardType.NEGATIVE
+		"POSITIVE": card.card_type = CardData.CardType.POSITIVE
+		"NEUTRAL": card.card_type = CardData.CardType.NEUTRAL
 	
 	# Optional fields
 	card.target_club = json.get("target_club", "")

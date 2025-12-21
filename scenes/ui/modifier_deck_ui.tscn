@@ -1,0 +1,58 @@
+[gd_scene load_steps=6 format=3 uid="uid://dd63md0p2ctfq"]
+
+[ext_resource type="Script" uid="uid://cvbuktjvhpih1" path="res://scripts/ui/modifier_deck_ui.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://d3mfofn2loxgy" path="res://scenes/cards/modifier_deck_3d.tscn" id="2_modifier_deck_3d"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_modifier"]
+sky_top_color = Color(0.4, 0.5, 0.6, 1)
+sky_horizon_color = Color(0.6, 0.65, 0.7, 1)
+ground_bottom_color = Color(0.2, 0.2, 0.2, 1)
+ground_horizon_color = Color(0.4, 0.4, 0.4, 1)
+
+[sub_resource type="Sky" id="Sky_modifier"]
+sky_material = SubResource("ProceduralSkyMaterial_modifier")
+
+[sub_resource type="Environment" id="Environment_modifier"]
+background_mode = 2
+sky = SubResource("Sky_modifier")
+ambient_light_source = 3
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.5
+
+[node name="ModifierDeckUI" type="Control"]
+custom_minimum_size = Vector2(400, 300)
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_script")
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
+own_world_3d = true
+transparent_bg = true
+handle_input_locally = false
+physics_object_picking = true
+size = Vector2i(400, 300)
+render_target_update_mode = 4
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewportContainer/SubViewport"]
+environment = SubResource("Environment_modifier")
+
+[node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 0.996741, -0.08066872, 0, 0.08066872, 0.996741, 0, -2.1989598, 5.791115)
+current = true
+fov = 45.0
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 5, 5)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="ModifierDeck3D" parent="SubViewportContainer/SubViewport" instance=ExtResource("2_modifier_deck_3d")]

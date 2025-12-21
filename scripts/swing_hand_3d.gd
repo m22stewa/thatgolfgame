@@ -14,11 +14,6 @@ var deck_manager: DeckManager = null
 
 
 func _ready() -> void:
-	print("SwingHand3D _ready called")
-	print("  swing_hand: ", swing_hand)
-	print("  swing_slot: ", swing_slot)
-	print("  drag_controller: ", drag_controller)
-	
 	# Set up the swing hand with a fan layout
 	var fan_layout = FanCardLayout.new()
 	fan_layout.arc_angle_deg = 40.0
@@ -29,6 +24,10 @@ func _ready() -> void:
 	var pile_layout = PileCardLayout.new()
 	swing_slot.card_layout_strategy = pile_layout
 	
+	# Apply custom drag strategy that only allows one card
+	var slot_drag_strategy = SwingSlotDragStrategy.new()
+	swing_slot.drag_strategy = slot_drag_strategy
+	
 	# Connect signals
 	swing_hand.card_clicked.connect(_on_card_clicked)
 	swing_slot.card_clicked.connect(_on_card_clicked)
@@ -38,10 +37,6 @@ func _ready() -> void:
 	var viewport_camera = get_viewport().get_camera_3d()
 	if viewport_camera:
 		drag_controller._camera = viewport_camera
-		print("  Set DragController camera to SubViewport camera: ", viewport_camera)
-	
-	print("  SwingHand3D global_position: ", global_position)
-	print("  swing_hand global_position: ", swing_hand.global_position)
 
 
 func setup(manager: DeckManager) -> void:
@@ -64,7 +59,6 @@ func setup(manager: DeckManager) -> void:
 func refresh_hand() -> void:
 	"""Rebuild the hand display from deck manager"""
 	if not swing_hand:
-		print("SwingHand3D: swing_hand not ready yet!")
 		return
 		
 	# Clear existing cards
@@ -73,28 +67,26 @@ func refresh_hand() -> void:
 		card.queue_free()
 	
 	if not deck_manager:
-		print("SwingHand3D: No deck manager!")
 		return
 	
 	# Get swing cards from hand
 	var hand = deck_manager.get_hand()
-	print("SwingHand3D: Hand has ", hand.size(), " total cards")
 	
 	var shot_count = 0
 	for card_instance in hand:
+		# Only show SHOT type cards (swing cards from resources/cards/swing/)
 		if card_instance.data.card_type == CardData.CardType.SHOT:
-			shot_count += 1
-			_create_card(card_instance)
-	
-	print("SwingHand3D: Created ", shot_count, " SHOT cards in 3D hand")
+			# Additional check: make sure it's a swing card, not a modifier
+			# Swing cards typically have tempo_cost >= 1
+			if card_instance.data.tempo_cost > 0:
+				shot_count += 1
+				_create_card(card_instance)
 
 
 func _create_card(card_instance: CardInstance) -> void:
 	"""Create a SwingCard3D from a CardInstance"""
 	var card = SwingCard3DScene.instantiate()
 	card.name = card_instance.data.card_name
-	
-	print("  Instantiated card: ", card.name)
 	
 	# Set the card instance data (this updates texture and power label)
 	card.set_card_data(card_instance)
@@ -103,18 +95,13 @@ func _create_card(card_instance: CardInstance) -> void:
 	
 	# Store reference to card instance for later
 	card.set_meta("card_instance", card_instance)
-	
-	# Print position after adding to collection
-	await get_tree().process_frame
-	print("  Card ", card.name, " tempo: ", card_instance.data.tempo_cost, " at position: ", card.global_position)
 
 
 func _on_card_clicked(card: Card3D) -> void:
-	print("Swing card clicked: ", card.name)
+	pass
 
 
 func _on_card_moved(card: Card3D, from_collection: CardCollection3D, to_collection: CardCollection3D, from_index: int, to_index: int) -> void:
-	print("Card moved: ", card.name, " from ", from_collection.name, " to ", to_collection.name)
 	
 	# If card moved to swing slot, notify game that a swing card was played
 	if to_collection == swing_slot:
@@ -129,7 +116,6 @@ func _on_card_moved(card: Card3D, from_collection: CardCollection3D, to_collecti
 
 func _on_swing_card_played(card_instance: CardInstance) -> void:
 	"""Handle when a swing card is played"""
-	print("Swing card played: ", card_instance.data.card_name)
 	# Hide the drop zone visual when a card is in the slot
 	var dropzone_visual = swing_slot.get_node_or_null("DropZoneVisual")
 	if dropzone_visual:

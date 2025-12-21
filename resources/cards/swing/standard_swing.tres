@@ -1,8 +1,9 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=5 format=3 uid="uid://bp56qdgpioti4"]
+[gd_resource type="Resource" script_class="CardData" load_steps=6 format=3 uid="uid://bp56qdgpioti4"]
 
+[ext_resource type="Texture2D" uid="uid://b2krskhv4pcuv" path="res://textures/icons/ring.png" id="1_lrl7d"]
 [ext_resource type="Script" uid="uid://cc77salcuxi12" path="res://scripts/cards/effects/effect_aoe_ring.gd" id="1_mqvm2"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_script"]
-[ext_resource type="Texture2D" uid="uid://duewygx8s6hr3" path="res://textures/icons/aoe-ring.png" id="2_lrl7d"]
+[ext_resource type="Texture2D" uid="uid://cejjun8sfhh6i" path="res://textures/icons/straight.png" id="4_lrl7d"]
 
 [sub_resource type="Resource" id="Resource_j06ki"]
 script = ExtResource("1_mqvm2")
@@ -13,5 +14,7 @@ script = ExtResource("1_script")
 card_id = "standard_swing"
 card_name = "Standard Swing"
 description = "No modifiers. A clean, reliable shot."
-icon = ExtResource("2_lrl7d")
+shot_shape_icon = ExtResource("4_lrl7d")
+accuracy_icon = ExtResource("1_lrl7d")
+play_cost = 1
 effects = Array[Resource]([SubResource("Resource_j06ki")])

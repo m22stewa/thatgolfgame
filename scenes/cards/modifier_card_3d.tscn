@@ -1,0 +1,40 @@
+[gd_scene load_steps=3 format=3 uid="uid://ds3p56tko4lo7"]
+
+[ext_resource type="PackedScene" uid="uid://dxpc2iac0hjpw" path="res://addons/card_3d/scenes/card_3d.tscn" id="1_base_card"]
+[ext_resource type="Script" uid="uid://df34ydm27w7ja" path="res://scripts/cards/modifier_card_3d.gd" id="2_script"]
+
+[node name="ModifierCard3D" instance=ExtResource("1_base_card")]
+script = ExtResource("2_script")
+front_texture_path = "res://textures/Modifier Card.png"
+back_texture_path = "res://textures/Modifier Card Back.png"
+face_down = true
+
+[node name="TopLabel" type="Label3D" parent="CardMesh" index="2"]
+transform = Transform3D(-4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0, 1, 1.0060272, -0.00667727, 0.02)
+pixel_size = 0.01
+modulate = Color(0, 0, 0, 1)
+outline_modulate = Color(1, 1, 1, 1)
+text = "Top"
+font_size = 28
+outline_size = 0
+
+[node name="BottomLabel" type="Label3D" parent="CardMesh" index="3"]
+transform = Transform3D(-4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0, 1, -0.9295349, 0.028741479, 0.02)
+pixel_size = 0.01
+modulate = Color(0, 0, 0, 1)
+outline_modulate = Color(1, 1, 1, 1)
+text = "Bottom"
+font_size = 28
+outline_size = 0
+
+[node name="Icon1" type="Sprite3D" parent="CardMesh" index="4"]
+transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 1, 0, 0.8775213, 0.02)
+texture_filter = 1
+
+[node name="Icon2" type="Sprite3D" parent="CardMesh" index="5"]
+transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 1, 0, -0.89412737, 0.02)
+texture_filter = 1
+
+[node name="Icon3" type="Sprite3D" parent="CardMesh" index="6"]
+transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 1, 0, -0.0019820333, 0.02)
+texture_filter = 1

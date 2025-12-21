@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://cdby66rujphi3"]
+[gd_scene load_steps=20 format=3 uid="uid://cdby66rujphi3"]
 
 [ext_resource type="Script" uid="uid://bryby6cgtarmo" path="res://scripts/ui/main_ui.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="2_shot_ui"]
@@ -15,6 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/icons/left-click.png" id="13_chv3i"]
 [ext_resource type="Texture2D" uid="uid://meco8curw6dv" path="res://textures/icons/right-click.png" id="14_h2n7m"]
 [ext_resource type="Texture2D" uid="uid://qi0wkwo6234h" path="res://textures/icons/scroll.png" id="15_xfu30"]
+[ext_resource type="PackedScene" path="res://scenes/ui/modifier_deck_ui.tscn" id="16_chv3i"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_aa6wj"]
 shader = ExtResource("4_oi40j")
@@ -210,7 +211,6 @@ mouse_filter = 2
 bypass_card_selection = false
 
 [node name="WindWidget" parent="." instance=ExtResource("4_wind")]
-visible = false
 layout_mode = 0
 offset_left = 17.0
 offset_top = 16.0
@@ -218,7 +218,6 @@ offset_right = 117.0
 offset_bottom = 166.0
 
 [node name="LieView" parent="." instance=ExtResource("5_lie_view")]
-visible = false
 layout_mode = 0
 offset_left = 17.0
 offset_top = 194.0
@@ -275,7 +274,6 @@ text = "[color=white]Power: 100%[/color]
 fit_content = true
 
 [node name="HoleInfoLabel" type="Label" parent="."]
-visible = false
 layout_mode = 0
 offset_left = 1280.0
 offset_top = 230.0
@@ -284,32 +282,7 @@ offset_bottom = 310.0
 theme_override_font_sizes/font_size = 24
 text = "Hole Info"
 
-[node name="GenerateButton" type="Button" parent="."]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -234.0
-offset_top = 226.0
-offset_right = -28.675903
-offset_bottom = 270.251
-grow_horizontal = 0
-text = "Generate New Hole"
-
-[node name="GenerateUniqueButton" type="Button" parent="."]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -234.0
-offset_top = 275.0
-offset_right = -28.675903
-offset_bottom = 319.251
-grow_horizontal = 0
-text = "Generate Unique Hole"
-
 [node name="SwingMeter" parent="." instance=ExtResource("7_swing_meter")]
-visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 1.1390625
@@ -339,3 +312,35 @@ grow_horizontal = 0
 layout_mode = 1
 offset_left = -1130.0
 offset_top = -509.0
+grow_vertical = 2
+
+[node name="GenerateButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -234.0
+offset_top = 226.0
+offset_right = -28.675903
+offset_bottom = 270.251
+grow_horizontal = 0
+text = "Generate New Hole"
+
+[node name="GenerateUniqueButton" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -257.0
+offset_top = 275.0
+offset_right = -28.675903
+offset_bottom = 319.251
+grow_horizontal = 0
+text = "Generate Unique Hole"
+
+[node name="ModifierDeckUI" parent="." instance=ExtResource("16_chv3i")]
+layout_mode = 0
+offset_left = 1165.0
+offset_top = 230.0
+offset_right = 1565.0
+offset_bottom = 530.0

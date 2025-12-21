@@ -1,9 +1,10 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=9 format=3 uid="uid://d2asdu10f3r3t"]
+[gd_resource type="Resource" script_class="CardData" load_steps=10 format=3 uid="uid://d2asdu10f3r3t"]
 
+[ext_resource type="Texture2D" uid="uid://c52erdvgewo0h" path="res://textures/icons/line5.png" id="1_genht"]
 [ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="1_qxgvq"]
 [ext_resource type="Script" uid="uid://d0pjisuwlwg16" path="res://scripts/cards/effects/effect_aoe_perfect.gd" id="2_d006w"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_xsv1b"]
-[ext_resource type="Texture2D" uid="uid://wua2fis0mjlp" path="res://textures/icons/aoe.png" id="3_mw57m"]
+[ext_resource type="Texture2D" uid="uid://qpvh06b4lxqq" path="res://textures/icons/slice.png" id="5_74ywu"]
 
 [sub_resource type="Resource" id="Resource_effect"]
 script = ExtResource("1_qxgvq")
@@ -27,10 +28,9 @@ metadata/_custom_type_script = "uid://d0pjisuwlwg16"
 
 [resource]
 script = ExtResource("2_xsv1b")
-card_id = "god_mode"
-card_name = "God Mode"
-description = "Yah"
-flavor_text = "Y"
-rarity = 3
-icon = ExtResource("3_mw57m")
+card_id = "push"
+card_name = "Push"
+shot_shape_icon = ExtResource("5_74ywu")
+accuracy_icon = ExtResource("1_genht")
+tempo_cost = 2
 effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_fkfv6"), SubResource("Resource_3rqjw"), SubResource("Resource_tl2ks")])

@@ -1,16 +1,43 @@
-[gd_scene load_steps=2 format=3 uid="uid://swing_card_3d_custom"]
+[gd_scene load_steps=4 format=3 uid="uid://cs18ksukyi3ka"]
 
 [ext_resource type="PackedScene" uid="uid://dxpc2iac0hjpw" path="res://addons/card_3d/scenes/card_3d.tscn" id="1_base_card"]
-[ext_resource type="Script" path="res://scripts/cards/swing_card_3d.gd" id="2_script"]
+[ext_resource type="Script" uid="uid://b0yxaqh511fyu" path="res://scripts/cards/swing_card_3d.gd" id="2_script"]
+
+[sub_resource type="FontVariation" id="FontVariation_cewvt"]
+variation_opentype = {
+2003265652: 800
+}
 
 [node name="SwingCard3D" instance=ExtResource("1_base_card")]
 script = ExtResource("2_script")
+tempo_value = 1
+front_texture_path = ""
 
-[node name="TempoLabel" type="Label3D" parent="CardMesh"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8, 1.2, 0.01)
-pixel_size = 0.005
+[node name="TempoLabel" type="Label3D" parent="CardMesh" index="2"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.8035203, 1.3004961, 0.02)
+render_priority = -1
+modulate = Color(0, 0, 0, 1)
+outline_modulate = Color(1, 1, 1, 1)
 text = "1"
-font_size = 128
-outline_size = 8
-horizontal_alignment = 0
-vertical_alignment = 0
+font_size = 80
+outline_size = 0
+
+[node name="TitleLabel" type="Label3D" parent="CardMesh" index="3"]
+transform = Transform3D(-4.371139e-08, -1, 0, 1, -4.371139e-08, 0, 0, 0, 1, -0.7881751, -0.009176493, 0.02)
+render_priority = -1
+modulate = Color(0, 0, 0, 1)
+outline_modulate = Color(1, 1, 1, 1)
+text = "Card Title"
+font = SubResource("FontVariation_cewvt")
+font_size = 34
+outline_size = 0
+
+[node name="ShotShapeIcon" type="Sprite3D" parent="CardMesh" index="4"]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 1, -0.0018182993, 0.5172552, 0.02)
+pixel_size = 0.007
+texture_filter = 1
+
+[node name="AccuracyIcon" type="Sprite3D" parent="CardMesh" index="5"]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 1, -0.0010517836, -0.74466884, 0.02)
+pixel_size = 0.007
+texture_filter = 1

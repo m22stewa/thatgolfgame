@@ -13,7 +13,7 @@ class_name CardData
 
 # Card classification
 enum Rarity { COMMON, UNCOMMON, RARE, LEGENDARY }
-enum CardType { SHOT, PASSIVE, CONSUMABLE, JOKER, CLUB, ITEM }
+enum CardType { SHOT, NEGATIVE, POSITIVE, NEUTRAL, CLUB }
 
 # Shot shape for swing cards
 enum ShotShape { STRAIGHT, DRAW, FADE, BIG_DRAW, BIG_FADE }
@@ -27,6 +27,11 @@ enum AccuracyShape { SINGLE, HORIZONTAL_LINE, VERTICAL_LINE, RING }
 
 # Visual
 @export var icon: Texture2D = null             # Card art
+@export var shot_shape_icon: Texture2D = null  # Icon for shot shape (straight, draw, fade, etc)
+@export var accuracy_icon: Texture2D = null    # Icon for accuracy/AOE shape
+@export var modifier_icon_1: Texture2D = null  # Modifier card icon 1
+@export var modifier_icon_2: Texture2D = null  # Modifier card icon 2
+@export var modifier_icon_3: Texture2D = null  # Modifier card icon 3
 @export var color_tint: Color = Color.WHITE    # Card frame color
 
 # Cost/Requirements
@@ -74,9 +79,10 @@ func get_rarity_name() -> String:
 func get_type_name() -> String:
 	match card_type:
 		CardType.SHOT: return "Shot"
-		CardType.PASSIVE: return "Passive"
-		CardType.CONSUMABLE: return "Consumable"
-		CardType.JOKER: return "Joker"
+		CardType.NEGATIVE: return "Negative"
+		CardType.POSITIVE: return "Positive"
+		CardType.NEUTRAL: return "Neutral"
+		CardType.CLUB: return "Club"
 		_: return "Unknown"
 
 

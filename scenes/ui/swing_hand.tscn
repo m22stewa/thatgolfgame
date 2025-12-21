@@ -51,7 +51,7 @@ render_target_update_mode = 4
 environment = SubResource("Environment_cards")
 
 [node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
-transform = Transform3D(1, 0, 0, 0, 0.9659259, 0.25881898, 0, -0.25881898, 0.9659259, 0, 9.792814, 13.006404)
+transform = Transform3D(1, 0, 0, 0, 0.9998403, -0.017871285, 0, 0.017871285, 0.9998403, -0.002814293, 5.7247343, 14.046769)
 current = true
 fov = 60.0
 

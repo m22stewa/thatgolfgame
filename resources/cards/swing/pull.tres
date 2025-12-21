@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=8 format=3 uid="uid://bwk2gm122l7l"]
+
+[ext_resource type="Texture2D" uid="uid://c52erdvgewo0h" path="res://textures/icons/line5.png" id="1_76fr3"]
+[ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_cpst7"]
+[ext_resource type="Script" uid="uid://cc77salcuxi12" path="res://scripts/cards/effects/effect_aoe_ring.gd" id="3_4eh8k"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="4_54g2h"]
+[ext_resource type="Texture2D" uid="uid://cuqxgu5vyrm6b" path="res://textures/icons/hook.png" id="5_54gro"]
+
+[sub_resource type="Resource" id="Resource_effect"]
+script = ExtResource("2_cpst7")
+target_stat = "roll_mod"
+value = 2.0
+
+[sub_resource type="Resource" id="Resource_uweg3"]
+script = ExtResource("3_4eh8k")
+metadata/_custom_type_script = "uid://cc77salcuxi12"
+
+[resource]
+script = ExtResource("4_54g2h")
+card_id = "pull"
+card_name = "Pull"
+rarity = 1
+shot_shape_icon = ExtResource("5_54gro")
+accuracy_icon = ExtResource("1_76fr3")
+tempo_cost = 2
+effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_uweg3")])

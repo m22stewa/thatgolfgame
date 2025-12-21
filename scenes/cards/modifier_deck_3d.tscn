@@ -1,0 +1,33 @@
+[gd_scene load_steps=6 format=3 uid="uid://d3mfofn2loxgy"]
+
+[ext_resource type="Script" uid="uid://d1ggd8xs26moj" path="res://scripts/cards/modifier_deck_3d.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://d1uvcisduvvj" path="res://addons/card_3d/scenes/card_collection_3d.tscn" id="2_collection"]
+[ext_resource type="Script" uid="uid://bgkontnk0cnl" path="res://addons/card_3d/scripts/drag_controller.gd" id="3_drag_script"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_placeholder"]
+size = Vector2(2.5, 3.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_placeholder"]
+albedo_color = Color(0.3, 0.3, 0.4, 0.5)
+
+[node name="ModifierDeck3D" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="DeckPlaceholder" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0)
+mesh = SubResource("PlaneMesh_placeholder")
+surface_material_override/0 = SubResource("StandardMaterial3D_placeholder")
+
+[node name="DrawnPlaceholder" type="MeshInstance3D" parent="."]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, -3.0254517, 0)
+mesh = SubResource("PlaneMesh_placeholder")
+surface_material_override/0 = SubResource("StandardMaterial3D_placeholder")
+
+[node name="DragController" type="Node3D" parent="."]
+script = ExtResource("3_drag_script")
+
+[node name="Deck" parent="DragController" instance=ExtResource("2_collection")]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0)
+
+[node name="DrawnCard" parent="DragController" instance=ExtResource("2_collection")]
+transform = Transform3D(0, -1, 0, 1, 0, 0, 0, 0, 1, 0, -3.0254517, 0)

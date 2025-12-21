@@ -68,9 +68,9 @@ const RARITY_COLORS = {
 # Card type background colors
 const TYPE_COLORS = {
 	CardData.CardType.SHOT: Color(0.3, 0.5, 0.3),
-	CardData.CardType.PASSIVE: Color(0.3, 0.3, 0.5),
-	CardData.CardType.CONSUMABLE: Color(0.5, 0.3, 0.3),
-	CardData.CardType.JOKER: Color(0.5, 0.4, 0.2)
+	CardData.CardType.NEGATIVE: Color(0.5, 0.3, 0.3),
+	CardData.CardType.POSITIVE: Color(0.3, 0.5, 0.3),
+	CardData.CardType.NEUTRAL: Color(0.3, 0.3, 0.5)
 }
 
 

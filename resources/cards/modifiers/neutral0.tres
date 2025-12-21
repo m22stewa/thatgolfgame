@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=2 format=3 uid="uid://kkwufxpa5f4q"]
+
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_jx5fa"]
+
+[resource]
+script = ExtResource("2_jx5fa")
+card_id = "neutral0"
+card_name = "Neutral"
+card_type = 3

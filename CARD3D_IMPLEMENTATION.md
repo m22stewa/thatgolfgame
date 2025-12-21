@@ -97,10 +97,12 @@ See `scripts/card_3d_demo.gd` for a working example that demonstrates:
 4. Integrate with your existing card data system (CardInstance, DeckManager)
 
 ## Old UI System (Removed)
-The following files were part of the previous 2D UI system and are no longer used:
-- `scenes/ui/swing_hand.tscn` - Can be deleted
-- `scenes/ui/swing_card_slot.tscn` - Can be deleted
-- `scenes/ui/swing_card_ui.tscn` - Can be deleted
-- `scripts/ui/swing_hand.gd` - Can be deleted
-- `scripts/ui/swing_card_slot.gd` - Can be deleted
-- `scripts/ui/swing_card_ui.gd` - Can be deleted
+The following files were part of the previous 2D UI system and have been deleted:
+- ~~`scenes/ui/swing_card_slot.tscn`~~ - DELETED
+- ~~`scenes/ui/swing_card_ui.tscn`~~ - DELETED
+- ~~`scripts/ui/swing_card_slot.gd`~~ - DELETED
+- ~~`scripts/ui/swing_card_ui.gd`~~ - DELETED
+
+**Kept and Updated:**
+- `scenes/ui/swing_hand.tscn` - Now wraps the 3D hand in a SubViewport
+- `scripts/ui/swing_hand.gd` - Simplified to be a wrapper for SwingHand3D

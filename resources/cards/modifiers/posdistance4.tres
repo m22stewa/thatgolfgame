@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=3 format=3 uid="uid://dlyk2j4hlcpjn"]
+
+[ext_resource type="Texture2D" uid="uid://cympyppoala6n" path="res://textures/icons/posdistance.png" id="1_6x7h5"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_via6y"]
+
+[resource]
+script = ExtResource("2_via6y")
+card_id = "posdistance4"
+card_name = "Negative Distance +4"
+card_type = 2
+modifier_icon_2 = ExtResource("1_6x7h5")

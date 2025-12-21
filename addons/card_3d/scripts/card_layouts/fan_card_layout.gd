@@ -63,9 +63,9 @@ func calculate_card_rotation_by_index(num_cards: int, index: int) -> Vector3:
 
 func _get_arc_position(x, y, i) -> Vector3:
 	if direction == FanDirection.NORMAL:
-		return Vector3(x, y, 0.001 * i)
+		return Vector3(x, y, 0.1 * i)
 
-	return Vector3(x, -y, 0.001 * i)
+	return Vector3(x, -y, 0.1 * i)
 
 
 func _get_rotation_quat(angle) -> Quaternion:

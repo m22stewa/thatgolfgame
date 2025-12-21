@@ -1,7 +1,6 @@
-[gd_scene load_steps=4 format=3 uid="uid://cshotpanel1"]
+[gd_scene load_steps=3 format=3 uid="uid://cshotpanel1"]
 
 [ext_resource type="Script" uid="uid://cshotpanelscript1" path="res://scripts/ui/shot_panel.gd" id="1_script"]
-[ext_resource type="PackedScene" uid="uid://c7swing_slot1" path="res://scenes/ui/swing_card_slot.tscn" id="2_swing_slot"]
 [ext_resource type="PackedScene" uid="uid://c8j2k3l4m5n6" path="res://scenes/ui/deck_widget.tscn" id="3_deck_widget"]
 
 [node name="ShotPanel" type="Control"]
@@ -18,9 +17,6 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 20
 alignment = 1
-
-[node name="SwingCardSlot" parent="HBoxContainer" instance=ExtResource("2_swing_slot")]
-layout_mode = 2
 
 [node name="ModifierDeck" parent="HBoxContainer" instance=ExtResource("3_deck_widget")]
 custom_minimum_size = Vector2(160, 200)

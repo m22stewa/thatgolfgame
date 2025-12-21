@@ -8,4 +8,4 @@ script = ExtResource("1_script")
 deck_id = "starter_deck"
 display_name = "Starter Deck"
 description = "Basic starter deck"
-card_ids = Array[String](["clean_strike", "clean_strike", "clean_strike", "clean_strike", "controlled_aim", "controlled_aim", "slightly_short", "slightly_short", "slightly_short", "way_short", "solid_contact", "power_drive", "wind_reader", "lucky_bounce"])
+card_ids = Array[String](["neutral0", "neutral0", "neutral0", "neutral0", "neutral0", "neutral0", "posdistance1", "posdistance1", "posdistance1", "posdistance1", "posdistance2", "posdistance2", "negdistance1", "negdistance1", "negdistance1", "negdistance1", "negdistance2", "negdistance2"])

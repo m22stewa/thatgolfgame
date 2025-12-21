@@ -2117,14 +2117,26 @@ func _init_card_system() -> void:
 	card_system.club_deck_definition = club_deck
 	card_system.initialize_starter_deck()
 	
-	# Connect swing hand 3D to deck manager (now in UI SubViewport)
+	# Connect swing hand 3D to club_deck_manager (contains swing cards from swing_deck.tres)
 	var swing_hand_3d = get_node_or_null("/root/GOLF/Control/MainUI/SwingHand/SubViewportContainer/SubViewport/SwingHand3D")
 	if swing_hand_3d:
-		print("SwingHand3D found, setting up with deck_manager")
-		swing_hand_3d.setup(deck_manager)
-		print("Hand has ", deck_manager.get_hand().size(), " cards")
+		print("SwingHand3D found, setting up with club_deck_manager (swing cards)")
+		swing_hand_3d.setup(card_system.club_deck_manager)
+		# Draw initial hand of swing cards
+		for i in range(5):
+			card_system.club_deck_manager.draw_card()
+		print("Swing hand has ", card_system.club_deck_manager.get_hand().size(), " cards")
 	else:
 		print("SwingHand3D not found!")
+	
+	# Connect modifier deck 3D to deck_manager (contains modifier cards from starter_deck.tres)
+	var modifier_deck_ui = get_node_or_null("/root/GOLF/Control/MainUI/ModifierDeckUI")
+	if modifier_deck_ui:
+		print("ModifierDeckUI found, setting up with deck_manager (modifier cards)")
+		modifier_deck_ui.setup(card_system.deck_manager)
+		print("Modifier deck has ", card_system.deck_manager.get_all_deck_cards().size(), " cards")
+	else:
+		print("ModifierDeckUI not found!")
 
 	
 	# Register wind modifier (always active when wind is present)

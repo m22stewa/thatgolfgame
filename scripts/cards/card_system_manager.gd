@@ -22,7 +22,7 @@ var club_deck_view: DeckView3D = null
 var deck_widget: Control = null  # Modifier deck widget
 var club_deck_widget: Control = null  # Swing deck widget (legacy)
 var swing_hand: SwingHand = null  # Fanned hand display for swing cards
-var swing_card_slot: SwingCardSlot = null  # Drop zone for playing swing card
+# Swing card slot is now handled by SwingHand3D (3D card system)
 var items_bar: ItemsBar = null  # Item slots display
 
 # Signals for external systems
@@ -326,9 +326,7 @@ func _setup_deck_ui() -> void:
 	if main_ui.get("swing_hand") and main_ui.swing_hand:
 		_setup_swing_hand(main_ui.swing_hand)
 	
-	# Setup SwingCardSlot (drop zone for playing swing card)
-	if main_ui.get("swing_card_slot") and main_ui.swing_card_slot:
-		_setup_swing_card_slot(main_ui.swing_card_slot)
+	# Swing card slot is now part of SwingHand3D (3D card system)
 	
 	# Setup ItemsBar
 	if main_ui.get("items_bar") and main_ui.items_bar:
@@ -362,16 +360,7 @@ func _setup_swing_hand(hand: SwingHand) -> void:
 	print("[CardSystem] SwingHand setup complete")
 
 
-func _setup_swing_card_slot(slot: SwingCardSlot) -> void:
-	"""Setup the swing card drop zone"""
-	print("[CardSystem] Setting up SwingCardSlot")
-	swing_card_slot = slot
-	
-	# Connect slot signals
-	if not swing_card_slot.card_dropped.is_connected(_on_swing_slot_card_dropped):
-		swing_card_slot.card_dropped.connect(_on_swing_slot_card_dropped)
-	
-	print("[CardSystem] SwingCardSlot setup complete")
+# _setup_swing_card_slot removed - swing cards now handled by SwingHand3D
 
 
 func _setup_modifier_deck(widget: DeckWidget) -> void:

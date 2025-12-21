@@ -285,7 +285,7 @@ func _register_common_cards() -> void:
 	
 	# === DISTANCE TRACKER ===
 	var dist_tracker = CardData.create("distance_tracker", "Distance Tracker", CardData.Rarity.COMMON)
-	dist_tracker.card_type = CardData.CardType.PASSIVE
+	dist_tracker.card_type = CardData.CardType.POSITIVE
 	dist_tracker.description = "Earn chips for every cell traveled."
 	
 	var dt_effect = EffectDistanceBonus.new()
@@ -356,7 +356,7 @@ func _register_uncommon_cards() -> void:
 	
 	# === ROLL MASTER ===
 	var roll_master = CardData.create("roll_master", "Roll Master", CardData.Rarity.UNCOMMON)
-	roll_master.card_type = CardData.CardType.PASSIVE
+	roll_master.card_type = CardData.CardType.POSITIVE
 	roll_master.description = "Ball rolls further after landing."
 	
 	var rm_effect = EffectRollModifier.new()
@@ -368,7 +368,7 @@ func _register_uncommon_cards() -> void:
 	
 	# === GREEN READER ===
 	var green_reader = CardData.create("green_reader", "Green Reader", CardData.Rarity.UNCOMMON)
-	green_reader.card_type = CardData.CardType.PASSIVE
+	green_reader.card_type = CardData.CardType.POSITIVE
 	green_reader.description = "Big bonus when landing on the green."
 	
 	var gr_effect = EffectTerrainBonus.new()
@@ -396,7 +396,7 @@ func _register_uncommon_cards() -> void:
 func _register_rare_cards() -> void:
 	# === EAGLE EYE ===
 	var eagle_eye = CardData.create("eagle_eye", "Eagle Eye", CardData.Rarity.RARE)
-	eagle_eye.card_type = CardData.CardType.PASSIVE
+	eagle_eye.card_type = CardData.CardType.POSITIVE
 	eagle_eye.description = "Massive bonus for precision short shots."
 	eagle_eye.flavor_text = "\"See the line, be the ball.\""
 	
@@ -423,7 +423,7 @@ func _register_rare_cards() -> void:
 	
 	# === PRESSURE PLAYER ===
 	var pressure = CardData.create("pressure_player", "Pressure Player", CardData.Rarity.RARE)
-	pressure.card_type = CardData.CardType.JOKER
+	pressure.card_type = CardData.CardType.NEUTRAL
 	pressure.description = "+3 Mult. Jokers are always active!"
 	pressure.flavor_text = "\"I live for the clutch.\""
 	
@@ -434,7 +434,7 @@ func _register_rare_cards() -> void:
 	
 	# === WIDE BERTH ===
 	var wide_berth = CardData.create("wide_berth", "Wide Berth", CardData.Rarity.RARE)
-	wide_berth.card_type = CardData.CardType.PASSIVE
+	wide_berth.card_type = CardData.CardType.POSITIVE
 	wide_berth.description = "Greatly expands landing zone."
 	
 	var wb_aoe = EffectAOEExpand.new()
@@ -488,7 +488,7 @@ func _register_legendary_cards() -> void:
 	
 	# === THE MULLIGAN ===
 	var mulligan = CardData.create("the_mulligan", "The Mulligan", CardData.Rarity.LEGENDARY)
-	mulligan.card_type = CardData.CardType.JOKER
+	mulligan.card_type = CardData.CardType.NEUTRAL
 	mulligan.description = "+50 Chips, +2 Mult on every shot."
 	mulligan.flavor_text = "\"Everyone deserves a second chance.\""
 	
@@ -505,7 +505,7 @@ func _register_legendary_cards() -> void:
 func _register_consumables() -> void:
 	# === LUCKY BALL ===
 	var lucky_ball = CardData.create("lucky_ball", "Lucky Ball", CardData.Rarity.UNCOMMON)
-	lucky_ball.card_type = CardData.CardType.CONSUMABLE
+	lucky_ball.card_type = CardData.CardType.POSITIVE
 	lucky_ball.description = "One-time +3 Mult boost."
 	lucky_ball.max_uses = 1
 	
@@ -516,7 +516,7 @@ func _register_consumables() -> void:
 	
 	# === CHIP SHOT ===
 	var chip_shot = CardData.create("chip_shot_consumable", "Chip Shot", CardData.Rarity.COMMON)
-	chip_shot.card_type = CardData.CardType.CONSUMABLE
+	chip_shot.card_type = CardData.CardType.POSITIVE
 	chip_shot.description = "One-time +40 Chips."
 	chip_shot.max_uses = 1
 	
