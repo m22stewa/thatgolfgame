@@ -213,12 +213,21 @@ func _compute_aoe() -> void:
 	"""Phase 4: Compute AOE tiles from aim position"""
 	current_context.aoe_tiles.clear()
 	
+	# Effective spread is AOE radius (shape-driven) plus accuracy_mod (stat-driven).
+	var effective_radius := maxi(0, current_context.aoe_radius + current_context.accuracy_mod)
+	
+	# Provide a direction vector so line-based AOE patterns can orient correctly.
+	var shot_direction := Vector2i.ZERO
+	if current_context.start_tile.x >= 0 and current_context.aim_tile.x >= 0:
+		shot_direction = current_context.aim_tile - current_context.start_tile
+	
 	if aoe_system and aoe_system.has_method("compute_aoe"):
 		current_context.aoe_tiles = aoe_system.compute_aoe(
 			current_context.aim_tile,
-			current_context.aoe_radius,
+			effective_radius,
 			current_context.aoe_shape,
-			hole_controller
+			hole_controller,
+			shot_direction
 		)
 	else:
 		# Fallback: use hole_controller's existing AOE methods
@@ -244,8 +253,15 @@ func _compute_aoe() -> void:
 
 func _apply_modifiers_on_aoe() -> void:
 	"""Phase 5: Let modifiers adjust AOE shape/tiles"""
+	var before_radius := current_context.aoe_radius
+	var before_shape := current_context.aoe_shape
 	if modifier_manager and modifier_manager.has_method("apply_on_aoe"):
 		modifier_manager.apply_on_aoe(current_context)
+	
+	# Some effects (e.g. perfect accuracy) may change aoe_radius/shape at this phase.
+	# Recompute AOE tiles so visuals + landing reflect the updated context.
+	if current_context.aoe_radius != before_radius or current_context.aoe_shape != before_shape:
+		_compute_aoe()
 	
 	modifiers_applied_on_aoe.emit(current_context)
 
@@ -256,11 +272,67 @@ func _resolve_landing_tile() -> void:
 	# Calculate the target with curve applied (from cards + wind)
 	var target_tile = _calculate_curved_target()
 	
-	# Apply accuracy spread - determines which tile in AOE the ball lands on
-	# Higher accuracy_mod = more AOE rings = more random landing
-	current_context.landing_tile = _calculate_accuracy_landing(target_tile)
+	# Compute dynamic landing AOE around the (possibly curved) target.
+	var effective_radius := maxi(0, current_context.aoe_radius + current_context.accuracy_mod)
+	var shot_direction := Vector2i.ZERO
+	if current_context.start_tile.x >= 0 and target_tile.x >= 0:
+		shot_direction = target_tile - current_context.start_tile
+	
+	var landing_aoe_tiles: Array[Vector2i] = []
+	if aoe_system and aoe_system.has_method("compute_aoe"):
+		landing_aoe_tiles = aoe_system.compute_aoe(
+			target_tile,
+			effective_radius,
+			current_context.aoe_shape,
+			hole_controller,
+			shot_direction
+		)
+	else:
+		landing_aoe_tiles = [target_tile]
+	
+	# Store for downstream systems (debug/visualization/tools).
+	current_context.aoe_tiles = landing_aoe_tiles
+	
+	# Default: weighted toward center, but respects whatever shape produced.
+	current_context.landing_tile = _select_landing_tile_from_aoe(target_tile, landing_aoe_tiles)
 	
 	landing_resolved.emit(current_context)
+
+
+func _select_landing_tile_from_aoe(center_tile: Vector2i, aoe_tiles: Array[Vector2i]) -> Vector2i:
+	if aoe_tiles.is_empty():
+		return center_tile
+	if aoe_tiles.size() == 1:
+		return aoe_tiles[0]
+	
+	# If weights are already present, honor them.
+	if current_context.aoe_weights.size() > 0:
+		return _weighted_tile_selection()
+	
+	# Otherwise: bias toward center using an approximate distance metric.
+	var total_weight := 0.0
+	var weights: Array[float] = []
+	weights.resize(aoe_tiles.size())
+	for i in range(aoe_tiles.size()):
+		var tile := aoe_tiles[i]
+		var d := _approx_tile_distance(center_tile, tile)
+		var w := 1.0 / (1.0 + float(d))
+		weights[i] = w
+		total_weight += w
+	
+	var roll := randf() * total_weight
+	var cumulative := 0.0
+	for i in range(aoe_tiles.size()):
+		cumulative += weights[i]
+		if roll <= cumulative:
+			return aoe_tiles[i]
+	
+	return center_tile
+
+
+func _approx_tile_distance(a: Vector2i, b: Vector2i) -> int:
+	# Cheap metric for weighting; does not need perfect hex distance.
+	return maxi(abs(a.x - b.x), abs(a.y - b.y))
 
 
 func _calculate_curved_target() -> Vector2i:
@@ -320,72 +392,6 @@ func _calculate_curved_target() -> Vector2i:
 		final_y = clampi(final_y, 0, hole_controller.get_grid_height() - 1)
 	
 	return Vector2i(final_x, final_y)
-
-
-func _calculate_accuracy_landing(target_tile: Vector2i) -> Vector2i:
-	"""Calculate final landing based on accuracy_mod.
-	accuracy_mod is an int representing AOE rings (0 = perfect, higher = worse).
-	Ball lands randomly within the AOE rings around the target tile."""
-	var accuracy_rings = current_context.accuracy_mod
-	
-	# Perfect accuracy (0 rings) = land exactly on target
-	if accuracy_rings <= 0:
-		return target_tile
-	
-	# Build AOE tiles around the target tile
-	var possible_tiles: Array[Vector2i] = [target_tile]
-	var ring_start_indices: Array[int] = [0]  # Track where each ring starts
-	
-	if hole_controller and hole_controller.has_method("get_adjacent_cells"):
-		# Add ring 1 neighbors if accuracy_mod >= 1
-		if accuracy_rings >= 1:
-			ring_start_indices.append(possible_tiles.size())
-			var ring1 = hole_controller.get_adjacent_cells(target_tile.x, target_tile.y)
-			possible_tiles.append_array(ring1)
-		
-		# Add ring 2 if accuracy_mod >= 2
-		if accuracy_rings >= 2 and hole_controller.has_method("get_outer_ring_cells"):
-			ring_start_indices.append(possible_tiles.size())
-			var ring2 = hole_controller.get_outer_ring_cells(target_tile.x, target_tile.y)
-			possible_tiles.append_array(ring2)
-	
-	# Weight tiles - center is most likely, outer rings less likely
-	var weights: Dictionary = {}
-	
-	# Center tile gets weight based on how many rings there are
-	# More rings = less likely to hit center
-	var center_weight = 10.0 / float(accuracy_rings + 1)
-	weights[target_tile] = center_weight
-	
-	# Ring 1 tiles get moderate weight
-	if ring_start_indices.size() > 1:
-		var ring1_weight = 3.0 / float(accuracy_rings)
-		var ring1_start = ring_start_indices[1]
-		var ring1_end = ring_start_indices[2] if ring_start_indices.size() > 2 else possible_tiles.size()
-		for i in range(ring1_start, ring1_end):
-			weights[possible_tiles[i]] = ring1_weight
-	
-	# Ring 2 tiles get lower weight
-	if ring_start_indices.size() > 2:
-		var ring2_weight = 1.0
-		for i in range(ring_start_indices[2], possible_tiles.size()):
-			weights[possible_tiles[i]] = ring2_weight
-	
-	# Weighted random selection
-	var total_weight = 0.0
-	for tile in possible_tiles:
-		total_weight += weights.get(tile, 0.1)
-	
-	var roll = randf() * total_weight
-	var cumulative = 0.0
-	
-	for tile in possible_tiles:
-		cumulative += weights.get(tile, 0.1)
-		if roll <= cumulative:
-			return tile
-	
-	# Fallback
-	return target_tile
 
 
 func _weighted_tile_selection() -> Vector2i:

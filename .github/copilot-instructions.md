@@ -32,6 +32,12 @@
 - **Adding Scripts:** Place new `.gd` files in `scripts/` or `scenes/` as appropriate.
 - **Addon Registration:** Addons are under `assets/`; register via Godot Editor if not already enabled.
 
+## Scene-Driven Editing Preference
+- Prefer scene-driven setup for visuals and content whenever feasible (textures, materials, meshes, node layout, label placement, visibility defaults).
+- Avoid applying/overriding presentation details in code unless it is truly dynamic (e.g., runtime animations, procedural generation, data-driven text updates).
+- When code needs to support visuals, treat it as a fallback: only set textures/materials if the scene did not already define them.
+- Goal: maximize the ability to open a `.tscn` and visually verify the result without running gameplay logic.
+
 ## Project Conventions & Patterns
 - Scripts use `.gd` extension and are attached to nodes/scenes.
 - Scene structure: `main.tscn` is the entry point; UI and logic are connected via signals.

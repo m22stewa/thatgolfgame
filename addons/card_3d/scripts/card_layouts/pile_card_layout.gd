@@ -3,19 +3,20 @@ extends CardLayout
 
 
 @export var pile_y_offset: float = 0
+@export var pile_z_offset: float = 0.01
 
 
 func calculate_card_positions(num_cards: int) -> Array[Vector3]:
 	var positions: Array[Vector3] = []
 
 	for i in range(num_cards):
-		positions.append(Vector3(0,(num_cards - i) * (-pile_y_offset),.01 * i))
+		positions.append(Vector3(0, (num_cards - i) * (-pile_y_offset), pile_z_offset * i))
 
 	return positions
 
 
 func calculate_card_position_by_index(_num_cards: int, index: int) -> Vector3:
-	return Vector3(0,0,.01 * index)
+	return Vector3(0, 0, pile_z_offset * index)
 
 
 func calculate_card_rotations(num_cards: int) -> Array[Vector3]:

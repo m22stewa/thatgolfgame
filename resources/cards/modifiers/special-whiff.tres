@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=3 format=3 uid="uid://b630jw1huj3jj"]
+
+[ext_resource type="Texture2D" uid="uid://bbsxwdh7oxsrk" path="res://textures/WHIFF.png" id="1_skarm"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_w2owc"]
+
+[resource]
+script = ExtResource("2_w2owc")
+card_id = "whiff"
+card_name = "Whiff"
+flavor_text = "SHUFFLE"
+card_type = 5
+modifier_icon_3 = ExtResource("1_skarm")

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=3 format=3 uid="uid://x8td0tvgniwr"]
+
+[ext_resource type="Texture2D" uid="uid://qpvh06b4lxqq" path="res://textures/icons/slice.png" id="1_yeeqb"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_cmm0c"]
+
+[resource]
+script = ExtResource("2_cmm0c")
+card_id = "slice"
+card_name = "Slice"
+description = "SLICE!"
+flavor_text = "SHUFFLE"
+card_type = 5
+modifier_icon_3 = ExtResource("1_yeeqb")

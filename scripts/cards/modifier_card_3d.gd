@@ -14,24 +14,18 @@ var card_instance: CardInstance = null:
 		if is_inside_tree():
 			_apply_front_texture()
 
-@export var back_texture_path: String = "res://textures/Modifier Card Back.png":
-	set(path):
-		back_texture_path = path
-		if is_inside_tree():
-			_apply_back_texture()
-
 
 func _ready() -> void:
 	# Start face down
 	face_down = true
 	call_deferred("_setup_visuals")
 	call_deferred("_update_visuals")
+	call_deferred("_update_label_visibility")
 
 
 func _setup_visuals() -> void:
 	"""Set up the card textures and configure labels/icons for proper depth testing"""
 	_apply_front_texture()
-	_apply_back_texture()
 	
 	# Configure labels for proper depth testing (same as swing cards)
 	if has_node("CardMesh/TopLabel"):
@@ -67,22 +61,6 @@ func _apply_front_texture() -> void:
 		$CardMesh/CardFrontMesh.set_surface_override_material(0, mat)
 
 
-func _apply_back_texture() -> void:
-	"""Apply the back texture to the card mesh"""
-	if not back_texture_path or not is_inside_tree():
-		return
-	if not has_node("CardMesh/CardBackMesh"):
-		return
-	
-	var texture = load(back_texture_path)
-	if texture:
-		var mat = StandardMaterial3D.new()
-		mat.albedo_texture = texture
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		$CardMesh/CardBackMesh.set_surface_override_material(0, mat)
-
-
 func _update_visuals() -> void:
 	"""Update card visuals from card_instance data"""
 	if not card_instance or not is_inside_tree():
@@ -98,6 +76,8 @@ func _update_visuals() -> void:
 			front_texture_path = "res://textures/cards/modifier-deck-positive.png"
 		CardData.CardType.NEUTRAL:
 			front_texture_path = "res://textures/cards/modifier-deck-neutral.png"
+		CardData.CardType.SPECIAL:
+			front_texture_path = "res://textures/cards/modifier-deck-special.png"
 		_:  # SHOT or any other
 			front_texture_path = "res://textures/cards/modifier-deck-neutral.png"
 	_apply_front_texture()
@@ -114,21 +94,21 @@ func _update_visuals() -> void:
 	if has_node("CardMesh/Icon1"):
 		if card_data.modifier_icon_1:
 			$CardMesh/Icon1.texture = card_data.modifier_icon_1
-			$CardMesh/Icon1.visible = true
+			$CardMesh/Icon1.visible = not face_down
 		else:
 			$CardMesh/Icon1.visible = false
 	
 	if has_node("CardMesh/Icon2"):
 		if card_data.modifier_icon_2:
 			$CardMesh/Icon2.texture = card_data.modifier_icon_2
-			$CardMesh/Icon2.visible = true
+			$CardMesh/Icon2.visible = not face_down
 		else:
 			$CardMesh/Icon2.visible = false
 	
 	if has_node("CardMesh/Icon3"):
 		if card_data.modifier_icon_3:
 			$CardMesh/Icon3.texture = card_data.modifier_icon_3
-			$CardMesh/Icon3.visible = true
+			$CardMesh/Icon3.visible = not face_down
 		else:
 			$CardMesh/Icon3.visible = false
 
@@ -141,8 +121,30 @@ func set_card_data(instance: CardInstance) -> void:
 func flip_face_up() -> void:
 	"""Flip the card to show the front"""
 	face_down = false
+	_update_label_visibility()
 
 
 func flip_face_down() -> void:
 	"""Flip the card to show the back"""
 	face_down = true
+	_update_label_visibility()
+
+
+func _update_label_visibility() -> void:
+	"""Hide labels and icons when face down"""
+	var visible = not face_down
+	
+	if has_node("CardMesh/TopLabel"):
+		$CardMesh/TopLabel.visible = visible
+	
+	if has_node("CardMesh/BottomLabel"):
+		$CardMesh/BottomLabel.visible = visible
+	
+	if has_node("CardMesh/Icon1"):
+		$CardMesh/Icon1.visible = visible and card_instance and card_instance.data.modifier_icon_1
+	
+	if has_node("CardMesh/Icon2"):
+		$CardMesh/Icon2.visible = visible and card_instance and card_instance.data.modifier_icon_2
+	
+	if has_node("CardMesh/Icon3"):
+		$CardMesh/Icon3.visible = visible and card_instance and card_instance.data.modifier_icon_3

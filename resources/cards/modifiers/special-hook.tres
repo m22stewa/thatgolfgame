@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="CardData" load_steps=3 format=3 uid="uid://dpvxdsvlb6xwx"]
+
+[ext_resource type="Texture2D" uid="uid://cuqxgu5vyrm6b" path="res://textures/icons/hook.png" id="1_8a2aw"]
+[ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_gw5fm"]
+
+[resource]
+script = ExtResource("2_gw5fm")
+card_id = "hook"
+card_name = "Hook"
+description = "HOOK!"
+flavor_text = "SHUFFLE"
+card_type = 5
+modifier_icon_3 = ExtResource("1_8a2aw")

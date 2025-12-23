@@ -1,6 +1,7 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=3 format=3 uid="uid://cjk03v3ryokby"]
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3 uid="uid://cjk03v3ryokby"]
 
 [ext_resource type="Texture2D" uid="uid://g4l23nip5i3j" path="res://textures/icons/negdistance.png" id="1_ltu5d"]
+[ext_resource type="Texture2D" uid="uid://dp45x1r72ocdb" path="res://textures/icons/-2.png" id="1_rygy6"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_rygy6"]
 
 [resource]
@@ -8,4 +9,5 @@ script = ExtResource("2_rygy6")
 card_id = "negdistance2"
 card_name = "Negative Distance -2"
 card_type = 1
+modifier_icon_1 = ExtResource("1_rygy6")
 modifier_icon_2 = ExtResource("1_ltu5d")

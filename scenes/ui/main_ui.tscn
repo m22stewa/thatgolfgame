@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3 uid="uid://cdby66rujphi3"]
+[gd_scene load_steps=21 format=3 uid="uid://cdby66rujphi3"]
 
 [ext_resource type="Script" uid="uid://bryby6cgtarmo" path="res://scripts/ui/main_ui.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://dg56vg8jbsg1a" path="res://scenes/ui/shot_ui.tscn" id="2_shot_ui"]
@@ -15,7 +15,8 @@
 [ext_resource type="Texture2D" uid="uid://bug18inwfvt57" path="res://textures/icons/left-click.png" id="13_chv3i"]
 [ext_resource type="Texture2D" uid="uid://meco8curw6dv" path="res://textures/icons/right-click.png" id="14_h2n7m"]
 [ext_resource type="Texture2D" uid="uid://qi0wkwo6234h" path="res://textures/icons/scroll.png" id="15_xfu30"]
-[ext_resource type="PackedScene" path="res://scenes/ui/modifier_deck_ui.tscn" id="16_chv3i"]
+[ext_resource type="PackedScene" uid="uid://dd63md0p2ctfq" path="res://scenes/ui/modifier_deck_ui.tscn" id="16_chv3i"]
+[ext_resource type="PackedScene" uid="uid://bpu5t0r0qhhcc" path="res://scenes/ui/spin_meter.tscn" id="17_h2n7m"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_aa6wj"]
 shader = ExtResource("4_oi40j")
@@ -205,11 +206,6 @@ layout_mode = 1
 offset_left = -1118.0
 offset_top = -667.0
 
-[node name="ShotUI" parent="." instance=ExtResource("2_shot_ui")]
-layout_mode = 1
-mouse_filter = 2
-bypass_card_selection = false
-
 [node name="WindWidget" parent="." instance=ExtResource("4_wind")]
 layout_mode = 0
 offset_left = 17.0
@@ -314,6 +310,11 @@ offset_left = -1130.0
 offset_top = -509.0
 grow_vertical = 2
 
+[node name="ShotUI" parent="." instance=ExtResource("2_shot_ui")]
+layout_mode = 1
+mouse_filter = 2
+bypass_card_selection = false
+
 [node name="GenerateButton" type="Button" parent="."]
 layout_mode = 1
 anchors_preset = 1
@@ -340,7 +341,21 @@ text = "Generate Unique Hole"
 
 [node name="ModifierDeckUI" parent="." instance=ExtResource("16_chv3i")]
 layout_mode = 0
-offset_left = 1165.0
-offset_top = 230.0
-offset_right = 1565.0
-offset_bottom = 530.0
+offset_left = 1081.0
+offset_top = 238.0
+offset_right = 1481.0
+offset_bottom = 538.0
+
+[node name="SpinMeter" parent="." instance=ExtResource("17_h2n7m")]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.772
+anchor_top = 0.22800002
+anchor_right = 0.878
+anchor_bottom = 0.57500005
+offset_left = 0.76000977
+offset_top = -14.240021
+offset_right = -0.09326172
+offset_bottom = -14.000061
+metadata/_edit_use_anchors_ = true

@@ -5,6 +5,9 @@ extends Node3D
 
 const SwingCard3DScene = preload("res://scenes/cards/swing_card_3d.tscn")
 
+signal card_played(card: CardInstance)
+signal card_unplayed(card: CardInstance)
+
 @onready var swing_hand: CardCollection3D = $DragController/SwingHand
 @onready var swing_slot: CardCollection3D = $DragController/SwingSlot
 @onready var drag_controller = $DragController
@@ -108,9 +111,13 @@ func _on_card_moved(card: Card3D, from_collection: CardCollection3D, to_collecti
 		var card_instance = card.get_meta("card_instance") as CardInstance
 		if card_instance:
 			_on_swing_card_played(card_instance)
+			card_played.emit(card_instance)
 	
 	# If card moved away from swing slot, show the drop zone again
 	if from_collection == swing_slot and to_collection != swing_slot:
+		var card_instance = card.get_meta("card_instance") as CardInstance
+		if card_instance:
+			card_unplayed.emit(card_instance)
 		_show_drop_zone()
 
 

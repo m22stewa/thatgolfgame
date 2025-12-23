@@ -20,11 +20,18 @@ func _ready() -> void:
 	print("  deck_collection: ", deck_collection)
 	print("  drawn_collection: ", drawn_collection)
 	
+	# Disable dragging completely by setting impossible threshold
+	var drag_controller = $DragController
+	if drag_controller:
+		drag_controller.card_drag_threshold = 999999.0  # Make drag impossible to trigger
+	
 	# Set up pile layout for both collections
 	var pile_layout = PileCardLayout.new()
+	pile_layout.pile_z_offset = 0.03
 	deck_collection.card_layout_strategy = pile_layout
 	
 	var drawn_pile_layout = PileCardLayout.new()
+	drawn_pile_layout.pile_z_offset = 0.03
 	drawn_collection.card_layout_strategy = drawn_pile_layout
 	
 	# Disable hover and dragging on deck
@@ -77,6 +84,9 @@ func _populate_deck() -> void:
 	var deck_cards = deck_manager.get_all_deck_cards()
 	print("  Deck has ", deck_cards.size(), " cards")
 	
+	# Shuffle the cards
+	deck_cards.shuffle()
+	
 	# Create a visual card for each one (face down)
 	var card_count = 0
 	for card_instance in deck_cards:
@@ -108,7 +118,7 @@ func _on_deck_card_selected(_card: Card3D) -> void:
 	# Add to drawn pile and set position (same as solitaire)
 	drawn_collection.append_card(drawn_card)
 	drawn_card.global_position = card_global_position
-	drawn_card.face_down = false
+	drawn_card.flip_face_up()  # Use flip method instead of setting face_down directly
 	
 	current_drawn_card = drawn_card
 	

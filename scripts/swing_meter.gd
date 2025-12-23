@@ -63,8 +63,8 @@ var track_width: float = 400.0
 
 
 func _ready() -> void:
-	# Hide by default
-	visible = false
+	# Always visible (no gating)
+	visible = true
 	
 	# Calculate accuracy zone boundaries from zero point
 	accuracy_zone_start = zero_point - accuracy_zone_width / 2.0
@@ -446,9 +446,11 @@ func show_meter(speed_multiplier: float = 1.0) -> void:
 
 
 func hide_meter() -> void:
-	"""Hide the swing meter"""
-	visible = false
+	"""Reset the swing meter.
+	Kept visible so it always shows on-screen."""
+	visible = true
 	current_state = State.IDLE
+	_reset_meter()
 
 
 func cancel_swing() -> void:

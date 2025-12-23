@@ -1,15 +1,10 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=9 format=3 uid="uid://dd1ayis6jjmm6"]
+[gd_resource type="Resource" script_class="CardData" load_steps=8 format=3 uid="uid://dd1ayis6jjmm6"]
 
 [ext_resource type="Texture2D" uid="uid://cnfqi5vojej0w" path="res://textures/icons/line.png" id="1_qonrd"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_script"]
 [ext_resource type="Script" uid="uid://bh3lhh80sb3ps" path="res://scripts/cards/effects/effect_simple_stat.gd" id="2_effect"]
 [ext_resource type="Script" uid="uid://c7oc5wpjuw1g8" path="res://scripts/cards/effects/effect_aoe_line_horizontal.gd" id="2_qwbkn"]
 [ext_resource type="Texture2D" uid="uid://4xjspk5n74ie" path="res://textures/icons/fade.png" id="5_ek33i"]
-
-[sub_resource type="Resource" id="Resource_effect"]
-script = ExtResource("2_effect")
-value = -1
-set_mode = true
 
 [sub_resource type="Resource" id="Resource_dhdy5"]
 script = ExtResource("2_effect")
@@ -20,6 +15,7 @@ metadata/_custom_type_script = "uid://bh3lhh80sb3ps"
 
 [sub_resource type="Resource" id="Resource_ek33i"]
 script = ExtResource("2_qwbkn")
+line_distance = 3
 metadata/_custom_type_script = "uid://c7oc5wpjuw1g8"
 
 [resource]
@@ -30,4 +26,4 @@ description = "Fade, less distance"
 rarity = 2
 shot_shape_icon = ExtResource("5_ek33i")
 accuracy_icon = ExtResource("1_qonrd")
-effects = Array[Resource]([SubResource("Resource_effect"), SubResource("Resource_dhdy5"), SubResource("Resource_ek33i")])
+effects = Array[Resource]([SubResource("Resource_dhdy5"), SubResource("Resource_ek33i")])

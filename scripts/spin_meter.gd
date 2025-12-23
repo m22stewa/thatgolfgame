@@ -37,9 +37,9 @@ var is_disabled: bool = true
 
 
 func _ready() -> void:
-	# Hide meter panel initially
+	# Keep meter panel always visible
 	if meter_panel:
-		meter_panel.visible = false
+		meter_panel.visible = true
 	
 	# Connect ball button signals
 	if ball_button:
@@ -94,9 +94,7 @@ func start_oscillation() -> void:
 	# Range: 2.0 (slowest for driver) to 5.0 (fastest for wedges)
 	current_speed = lerp(4.5, 2.0, club_difficulty)
 	
-	# Show the meter panel
-	if meter_panel:
-		meter_panel.visible = true
+	# Meter panel stays visible; oscillation just animates the marker
 	
 	update_meter_display()
 
@@ -109,9 +107,7 @@ func stop_oscillation() -> void:
 	# Calculate spin value from position (-1.0 to 1.0 → -3 to +3)
 	var spin_value = int(round(oscillation_position * 3.0))
 	
-	# Hide meter panel
-	if meter_panel:
-		meter_panel.visible = false
+	# Meter panel stays visible
 	
 	# Emit the confirmed spin value
 	spin_confirmed.emit(spin_value)
@@ -123,8 +119,7 @@ func cancel() -> void:
 	is_active = false
 	oscillation_position = 0.0
 	
-	if meter_panel:
-		meter_panel.visible = false
+	# Meter panel stays visible
 	
 	cancelled.emit()
 

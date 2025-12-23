@@ -356,6 +356,8 @@ func _setup_swing_hand(hand: SwingHand) -> void:
 		swing_hand.card_selected.connect(_on_swing_hand_card_selected)
 	if not swing_hand.card_played.is_connected(_on_swing_hand_card_played):
 		swing_hand.card_played.connect(_on_swing_hand_card_played)
+	if swing_hand.has_signal("card_unplayed") and not swing_hand.card_unplayed.is_connected(_on_swing_hand_card_unplayed):
+		swing_hand.card_unplayed.connect(_on_swing_hand_card_unplayed)
 	
 	print("[CardSystem] SwingHand setup complete")
 
@@ -400,15 +402,17 @@ func _on_swing_slot_card_dropped(card: CardInstance) -> void:
 	if not card:
 		return
 	
-	if selected_club_card != null:
-		print("[CardSystem] Already have a swing card selected, ignoring")
+	# Allow replacing the currently selected swing card.
+	if selected_club_card != null and selected_club_card != card:
+		_clear_selected_swing_card()
+	elif selected_club_card == card:
 		return
 	
 	print("[CardSystem] Swing card played to slot: %s" % card.data.card_name)
 	selected_club_card = card
 	
-	# Mark card as used in the deck manager
-	club_deck_manager.play_card(card)
+	# Do NOT consume the card yet; the player may put it back or swap it.
+	# The card is consumed when the shot starts.
 	
 	# Apply card as modifier (shot modifier, not club selection)
 	if card.data.target_club and not card.data.target_club.is_empty():
@@ -424,8 +428,54 @@ func _on_swing_slot_card_dropped(card: CardInstance) -> void:
 		shot_ui.set_swing_card_selected(true)
 	
 	# Refresh hand display
-	if swing_hand:
-		swing_hand.refresh_hand()
+	# Note: Do not refresh/rebuild the hand here; the card was moved visually into the slot,
+	# but the deck state hasn't changed yet. Rebuilding would re-add it to the hand.
+
+
+func _on_swing_hand_card_unplayed(card: CardInstance) -> void:
+	"""Handler when a swing card is removed from the swing slot (put back in hand)."""
+	if not card:
+		return
+	if selected_club_card != card:
+		return
+	
+	_clear_selected_swing_card()
+	
+	# Notify UI and refresh AOE visuals.
+	if shot_ui:
+		shot_ui.set_swing_card_selected(false)
+	_refresh_aoe_display()
+
+
+func _clear_selected_swing_card() -> void:
+	"""Clear the currently selected swing card and remove its modifier effects."""
+	if selected_club_card == null:
+		return
+	
+	# Remove matching card modifier (only one swing card allowed).
+	var to_remove: Array = []
+	for card_mod in active_card_modifiers:
+		if card_mod is CardModifier and card_mod.card == selected_club_card:
+			to_remove.append(card_mod)
+	for card_mod in to_remove:
+		if modifier_manager:
+			modifier_manager.remove_modifier(card_mod)
+		active_card_modifiers.erase(card_mod)
+	
+	selected_club_card = null
+	club_selection_locked = false
+
+	# Reset preview context fields and re-apply remaining modifiers (lie, etc.).
+	if shot_manager and shot_manager.current_context and modifier_manager:
+		var ctx := shot_manager.current_context
+		ctx.distance_mod = 0
+		ctx.accuracy_mod = 0
+		ctx.roll_mod = 0
+		ctx.curve_strength = 0.0
+		ctx.wind_curve = 0
+		ctx.aoe_radius = 0
+		ctx.aoe_shape = "circle"
+		modifier_manager.apply_before_aim(ctx)
 
 
 func _setup_combined_deck_mode(widget: DeckWidget) -> void:
@@ -604,12 +654,18 @@ func _on_shot_started(context: ShotContext) -> void:
 	# will call modifier_manager.apply_before_aim() which handles all modifiers including cards.
 	# The card modifiers are already registered with modifier_manager.
 	print("[CardSystem] Shot started - %d active card modifiers registered with modifier_manager" % active_card_modifiers.size())
+	
+	# Consume the selected swing card now that the shot is committed.
+	if selected_club_card != null and club_deck_manager:
+		club_deck_manager.play_card(selected_club_card)
+		club_selection_locked = true
 
 
 func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot finishes"""
 	# Clear active modifiers
 	_clear_active_modifiers()
+	selected_club_card = null
 	
 	# Dim played cards at end of shot
 	dim_played_cards()
@@ -630,6 +686,8 @@ func _on_shot_completed(context: ShotContext) -> void:
 	
 	# Unlock club selection for next shot
 	club_selection_locked = false
+	if shot_ui:
+		shot_ui.set_swing_card_selected(false)
 	
 	# Refresh AOE and trajectory display to reset visuals
 	_refresh_aoe_display()

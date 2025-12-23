@@ -70,7 +70,8 @@ const TYPE_COLORS = {
 	CardData.CardType.SHOT: Color(0.3, 0.5, 0.3),
 	CardData.CardType.NEGATIVE: Color(0.5, 0.3, 0.3),
 	CardData.CardType.POSITIVE: Color(0.3, 0.5, 0.3),
-	CardData.CardType.NEUTRAL: Color(0.3, 0.3, 0.5)
+	CardData.CardType.NEUTRAL: Color(0.3, 0.3, 0.5),
+	CardData.CardType.SPECIAL: Color(0.3, 0.3, 0.5)
 }
 
 

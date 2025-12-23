@@ -363,21 +363,21 @@ func _get_cone_neighbors(tile: Vector2i, direction: int, hole_controller: Node3D
 # --- Line-based AOE patterns (card-driven) ---
 
 func compute_line_vertical_aoe(center: Vector2i, distance: int, hole_controller: Node3D, shot_direction: Vector2i) -> Array[Vector2i]:
-	"""Compute a line AOE along the shot direction.
-	   +distance tiles forward (toward hole), center, +distance tiles backward (toward tee).
-	   This represents short/long variance in the shot."""
+	"""Compute a vertical line AOE (grid-aligned).
+	   This intentionally does NOT orient to shot direction; it always uses Up/Down.
+	   +distance tiles up, center, +distance tiles down."""
 	var tiles: Array[Vector2i] = []
 	
 	# Always include center
 	if _is_valid_tile(center, hole_controller):
 		tiles.append(center)
 	
-	if distance <= 0 or shot_direction == Vector2i.ZERO:
+	if distance <= 0:
 		return tiles
 	
-	# Calculate the hex direction index from shot_direction
-	var forward_dir = _vector_to_hex_direction(shot_direction)
-	var backward_dir = (forward_dir + 3) % 6  # Opposite direction
+	# Fixed grid directions: 0=Up, 3=Down
+	var forward_dir := 0
+	var backward_dir := 3
 	
 	# Add tiles forward (toward hole)
 	var current = center
@@ -403,23 +403,23 @@ func compute_line_vertical_aoe(center: Vector2i, distance: int, hole_controller:
 
 
 func compute_line_horizontal_aoe(center: Vector2i, distance: int, hole_controller: Node3D, shot_direction: Vector2i) -> Array[Vector2i]:
-	"""Compute a line AOE perpendicular to the shot direction.
-	   +distance tiles left, center, +distance tiles right.
-	   This represents draw/fade variance in the shot."""
+	"""Compute a horizontal line AOE (grid-aligned).
+	   This intentionally does NOT orient to shot direction; it always uses the same
+	   left/right directions on the hex grid.
+	   +distance tiles left, center, +distance tiles right."""
 	var tiles: Array[Vector2i] = []
 	
 	# Always include center
 	if _is_valid_tile(center, hole_controller):
 		tiles.append(center)
 	
-	if distance <= 0 or shot_direction == Vector2i.ZERO:
+	if distance <= 0:
 		return tiles
 	
-	# Calculate the hex direction index from shot_direction
-	var forward_dir = _vector_to_hex_direction(shot_direction)
-	# Perpendicular directions: +2 and -2 from forward (or +1/-1 depending on hex layout)
-	var left_dir = (forward_dir + 5) % 6   # Counter-clockwise
-	var right_dir = (forward_dir + 1) % 6  # Clockwise
+	# Fixed grid directions for "horizontal": 5=Up-Left, 1=Up-Right
+	# (This yields a consistent left/right visual line in this project's offset grid.)
+	var left_dir := 5
+	var right_dir := 1
 	
 	# Add tiles to the left (draw side)
 	var current = center

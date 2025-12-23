@@ -26,7 +26,8 @@ const ShotNumberScene = preload("res://scenes/ui/shot_number.tscn")
 @onready var target_terrain: Label = %TargetTerrain
 @onready var target_distance: Label = %TargetDistance
 
-@onready var spin_meter: SpinMeter = %SpinMeter  # Spin meter to confirm shot and set spin
+var spin_meter: SpinMeter = null  # Spin meter to confirm shot and set spin (found in parent/main_ui)
+var _spin_meter_retry_queued: bool = false
 @onready var score_popup: PanelContainer = $ScorePopup
 
 # Shot prerequisite tracking
@@ -137,11 +138,8 @@ func _ready() -> void:
 	score_popup.visible = false
 	hole_complete_popup.visible = false
 	
-	# Setup spin meter (starts disabled, enabled when prerequisites met)
-	if spin_meter:
-		spin_meter.visible = true
-		spin_meter.set_disabled(true)
-		spin_meter.spin_confirmed.connect(_on_spin_confirmed)
+	# Find and wire the spin meter (it may live in the parent MainUI scene)
+	_setup_spin_meter()
 	
 	# Connect button signals
 	next_button.pressed.connect(_on_next_hole_pressed)
@@ -156,6 +154,43 @@ func _ready() -> void:
 	
 	# Initial UI state
 	update_club_display()
+
+
+func _setup_spin_meter() -> void:
+	"""Find an existing SpinMeter in the parent (MainUI) and connect its signals.
+	We keep this scene-driven: the meter is placed in a .tscn, and ShotUI only wires it."""
+	# Try to find a uniquely-named node inside this scene first (for compatibility)
+	spin_meter = get_node_or_null("%SpinMeter") as SpinMeter
+	
+	# Prefer the meter instance the user placed in MainUI
+	if not spin_meter:
+		var parent := get_parent()
+		if parent:
+			# Unique-name lookup must be done from the owning scene (MainUI), not from inside ShotUI's instanced scene.
+			spin_meter = parent.get_node_or_null("%SpinMeter") as SpinMeter
+			if not spin_meter:
+				spin_meter = parent.get_node_or_null("SpinMeter") as SpinMeter
+			if not spin_meter:
+				spin_meter = parent.get_node_or_null("SpinMeterPanel/SpinMeter") as SpinMeter
+			if not spin_meter:
+				spin_meter = parent.find_child("SpinMeter", true, false) as SpinMeter
+
+	if not spin_meter:
+		# One deferred retry helps if ShotUI _ready runs before MainUI finished instancing children.
+		if not _spin_meter_retry_queued:
+			_spin_meter_retry_queued = true
+			call_deferred("_setup_spin_meter")
+			return
+		push_warning("[ShotUI] SpinMeter not found. Ensure MainUI has a SpinMeter node (unique name %SpinMeter or node name SpinMeter).")
+		return
+	
+	spin_meter.visible = true
+	spin_meter.set_disabled(true)
+	if not spin_meter.spin_confirmed.is_connected(_on_spin_confirmed):
+		spin_meter.spin_confirmed.connect(_on_spin_confirmed)
+	if spin_meter.has_signal("cancelled") and not spin_meter.cancelled.is_connected(_on_swing_cancelled):
+		# Treat cancel as backing out of the shot confirmation flow
+		spin_meter.cancelled.connect(_on_swing_cancelled)
 
 
 func _setup_swing_meter() -> void:
@@ -247,17 +282,13 @@ func set_modifier_drawn(drawn: bool) -> void:
 
 
 func _update_swing_button_state() -> void:
-	"""Enable spin meter only when all prerequisites are met"""
-	var all_ready = tile_selected and swing_card_selected and modifier_drawn
-	
-	# Debug output
-	print("[ShotUI] Prerequisites: tile=%s, swing_card=%s, modifier=%s -> all_ready=%s" % [tile_selected, swing_card_selected, modifier_drawn, all_ready])
-	
+	"""Enable spin meter.
+	The game no longer requires tile/swing/modifier prerequisites to take a shot."""
 	if spin_meter:
-		spin_meter.set_disabled(not all_ready)
-		print("[ShotUI] SpinMeter disabled = %s" % (not all_ready))
+		spin_meter.set_disabled(false)
 	else:
-		push_error("[ShotUI] spin_meter is null!")
+		# Spin meter may not be ready yet; _setup_spin_meter() does a deferred retry.
+		return
 
 
 func _on_spin_confirmed(spin_value: int) -> void:

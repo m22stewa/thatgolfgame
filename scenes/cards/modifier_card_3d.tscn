@@ -1,13 +1,22 @@
-[gd_scene load_steps=3 format=3 uid="uid://ds3p56tko4lo7"]
+[gd_scene load_steps=5 format=3 uid="uid://ds3p56tko4lo7"]
 
 [ext_resource type="PackedScene" uid="uid://dxpc2iac0hjpw" path="res://addons/card_3d/scenes/card_3d.tscn" id="1_base_card"]
 [ext_resource type="Script" uid="uid://df34ydm27w7ja" path="res://scripts/cards/modifier_card_3d.gd" id="2_script"]
+[ext_resource type="Texture2D" uid="uid://us41h8sv4h6s" path="res://textures/cards/modifier-deck-back.png" id="3_u4ws4"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_3dkkv"]
+transparency = 4
+cull_mode = 2
+shading_mode = 0
+albedo_texture = ExtResource("3_u4ws4")
 
 [node name="ModifierCard3D" instance=ExtResource("1_base_card")]
 script = ExtResource("2_script")
 front_texture_path = "res://textures/Modifier Card.png"
-back_texture_path = "res://textures/Modifier Card Back.png"
 face_down = true
+
+[node name="CardBackMesh" parent="CardMesh" index="0"]
+material_override = SubResource("StandardMaterial3D_3dkkv")
 
 [node name="TopLabel" type="Label3D" parent="CardMesh" index="2"]
 transform = Transform3D(-4.371139e-08, 1, 0, -1, -4.371139e-08, 0, 0, 0, 1, 1.0060272, -0.00667727, 0.02)
@@ -28,13 +37,16 @@ font_size = 28
 outline_size = 0
 
 [node name="Icon1" type="Sprite3D" parent="CardMesh" index="4"]
-transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 1, 0, 0.8775213, 0.02)
+transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 0.3, 0, 0.8381858, 0.43967772)
+pixel_size = 0.02
 texture_filter = 1
 
 [node name="Icon2" type="Sprite3D" parent="CardMesh" index="5"]
-transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 1, 0, -0.89412737, 0.02)
+transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 0.3, 0, -0.66725284, 0.7099414)
+pixel_size = 0.02
 texture_filter = 1
 
 [node name="Icon3" type="Sprite3D" parent="CardMesh" index="6"]
-transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 1, 0, -0.0019820333, 0.02)
+transform = Transform3D(-1.3113417e-08, 0.3, 0, -0.3, -1.3113417e-08, 0, 0, 0, 0.3, -0.100572586, -0.0019820333, 0.02)
+pixel_size = 0.03
 texture_filter = 1

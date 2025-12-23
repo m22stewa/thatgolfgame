@@ -1,5 +1,6 @@
-[gd_resource type="Resource" script_class="CardData" load_steps=3 format=3 uid="uid://dcaevlpv1s4q2"]
+[gd_resource type="Resource" script_class="CardData" load_steps=4 format=3 uid="uid://dcaevlpv1s4q2"]
 
+[ext_resource type="Texture2D" uid="uid://da3dihfhvqm0h" path="res://textures/icons/+1.png" id="1_be8wk"]
 [ext_resource type="Texture2D" uid="uid://cympyppoala6n" path="res://textures/icons/posdistance.png" id="1_r5eqr"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="2_be8wk"]
 
@@ -8,4 +9,5 @@ script = ExtResource("2_be8wk")
 card_id = "posdistance1"
 card_name = "Positive Distance +1"
 card_type = 2
+modifier_icon_1 = ExtResource("1_be8wk")
 modifier_icon_2 = ExtResource("1_r5eqr")

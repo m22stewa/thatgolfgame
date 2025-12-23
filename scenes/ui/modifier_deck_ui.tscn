@@ -23,13 +23,17 @@ ambient_light_energy = 0.5
 custom_minimum_size = Vector2(400, 300)
 layout_mode = 3
 anchors_preset = 0
+offset_right = 490.0
+offset_bottom = 393.0
 script = ExtResource("1_script")
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="."]
 layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
+anchors_preset = -1
+anchor_right = 1.212
+anchor_bottom = 1.2210001
+offset_right = 0.11999512
+offset_bottom = 0.14697266
 grow_horizontal = 2
 grow_vertical = 2
 stretch = true
@@ -39,19 +43,19 @@ own_world_3d = true
 transparent_bg = true
 handle_input_locally = false
 physics_object_picking = true
-size = Vector2i(400, 300)
+size = Vector2i(594, 480)
 render_target_update_mode = 4
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewportContainer/SubViewport"]
 environment = SubResource("Environment_modifier")
 
 [node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
-transform = Transform3D(1, 0, 0, 0, 0.996741, -0.08066872, 0, 0.08066872, 0.996741, 0, -2.1989598, 5.791115)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.4410826, 7.139)
 current = true
 fov = 45.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewportContainer/SubViewport"]
-transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 5, 5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.5, 10)
 light_energy = 1.2
 shadow_enabled = true
 

@@ -1654,12 +1654,19 @@ func _update_aoe_for_cell(cell: Vector2i) -> void:
 	
 	_hide_all_aoe_highlights()
 	
-	# AOE is now card-driven only - default to 0 (single tile, no spread)
-	var aoe_radius = 0
-	var aoe_shape = "single"
+	# Only show multi-tile AOE after a swing card has been played/selected.
+	# Before that, the only highlight should be the single target tile.
+	if not (card_system and card_system.selected_club_card != null):
+		return
+	
+	# AOE is card-driven only - default to 0 (single tile, no spread)
+	var aoe_radius := 0
+	var aoe_shape := "single"
 	
 	# Get AOE settings from shot context (set by cards)
 	if shot_manager and shot_manager.current_context:
+		# Combine base AOE (from AOE effects) with accuracy_mod (from stat effects).
+		# Negative accuracy_mod tightens the spread; positive expands it.
 		aoe_radius = maxi(0, shot_manager.current_context.aoe_radius + shot_manager.current_context.accuracy_mod)
 		aoe_shape = shot_manager.current_context.aoe_shape
 	
@@ -2122,6 +2129,12 @@ func _init_card_system() -> void:
 	if swing_hand_3d:
 		print("SwingHand3D found, setting up with club_deck_manager (swing cards)")
 		swing_hand_3d.setup(card_system.club_deck_manager)
+		# IMPORTANT: SwingHand3D is wired directly here (not via the SwingHand Control wrapper),
+		# so we must forward slot play/unplay events to CardSystemManager for dynamic AOE.
+		if swing_hand_3d.has_signal("card_played") and not swing_hand_3d.card_played.is_connected(card_system._on_swing_slot_card_dropped):
+			swing_hand_3d.card_played.connect(card_system._on_swing_slot_card_dropped)
+		if swing_hand_3d.has_signal("card_unplayed") and not swing_hand_3d.card_unplayed.is_connected(card_system._on_swing_hand_card_unplayed):
+			swing_hand_3d.card_unplayed.connect(card_system._on_swing_hand_card_unplayed)
 		# Draw initial hand of swing cards
 		for i in range(5):
 			card_system.club_deck_manager.draw_card()

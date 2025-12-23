@@ -13,7 +13,7 @@ class_name CardData
 
 # Card classification
 enum Rarity { COMMON, UNCOMMON, RARE, LEGENDARY }
-enum CardType { SHOT, NEGATIVE, POSITIVE, NEUTRAL, CLUB }
+enum CardType { SHOT, NEGATIVE, POSITIVE, NEUTRAL, CLUB, SPECIAL }
 
 # Shot shape for swing cards
 enum ShotShape { STRAIGHT, DRAW, FADE, BIG_DRAW, BIG_FADE }
@@ -83,6 +83,7 @@ func get_type_name() -> String:
 		CardType.POSITIVE: return "Positive"
 		CardType.NEUTRAL: return "Neutral"
 		CardType.CLUB: return "Club"
+		CardType.SPECIAL: return "Special"
 		_: return "Unknown"
 
 
