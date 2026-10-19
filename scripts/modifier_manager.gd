@@ -74,9 +74,12 @@ func apply_before_aim(context: ShotContext) -> void:
 	for modifier in modifiers:
 		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
 		print("[ModifierManager]   - Modifier: %s" % mod_name)
+		var before := _capture_context_state(context)
 		if modifier.has_method("apply_before_aim"):
 			print("[ModifierManager]     Applying before_aim for: %s" % mod_name)
 			modifier.apply_before_aim(context)
+		var after := _capture_context_state(context)
+		_try_record_debug_delta("before_aim", mod_name, before, after)
 
 
 func apply_on_aoe(context: ShotContext) -> void:
@@ -84,16 +87,23 @@ func apply_on_aoe(context: ShotContext) -> void:
 	print("[ModifierManager] apply_on_aoe - Active modifiers: %d" % modifiers.size())
 	for modifier in modifiers:
 		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
+		var before := _capture_context_state(context)
 		if modifier.has_method("apply_on_aoe"):
 			print("[ModifierManager]   Applying on_aoe for: %s" % mod_name)
 			modifier.apply_on_aoe(context)
+		var after := _capture_context_state(context)
+		_try_record_debug_delta("on_aoe", mod_name, before, after)
 
 
 func apply_on_landing(context: ShotContext) -> void:
 	"""Called after landing tile resolved - modifiers can react to landing"""
 	for modifier in modifiers:
+		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
+		var before := _capture_context_state(context)
 		if modifier.has_method("apply_on_landing"):
 			modifier.apply_on_landing(context)
+		var after := _capture_context_state(context)
+		_try_record_debug_delta("on_landing", mod_name, before, after)
 
 
 func apply_on_scoring(context: ShotContext) -> void:
@@ -101,16 +111,85 @@ func apply_on_scoring(context: ShotContext) -> void:
 	print("[ModifierManager] apply_on_scoring - Active modifiers: %d" % modifiers.size())
 	for modifier in modifiers:
 		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
+		var before := _capture_context_state(context)
 		if modifier.has_method("apply_on_scoring"):
 			print("[ModifierManager]   Applying on_scoring for: %s" % mod_name)
 			modifier.apply_on_scoring(context)
+		var after := _capture_context_state(context)
+		_try_record_debug_delta("on_scoring", mod_name, before, after)
 
 
 func apply_after_shot(context: ShotContext) -> void:
 	"""Called after shot complete - modifiers can update state/tiles"""
 	for modifier in modifiers:
+		var mod_name = modifier.get("modifier_name") if modifier.get("modifier_name") else str(modifier)
+		var before := _capture_context_state(context)
 		if modifier.has_method("apply_after_shot"):
 			modifier.apply_after_shot(context)
+		var after := _capture_context_state(context)
+		_try_record_debug_delta("after_shot", mod_name, before, after)
+
+
+func _capture_context_state(context: ShotContext) -> Dictionary:
+	if context == null:
+		return {}
+	return {
+		"distance_mod": context.distance_mod,
+		"accuracy_mod": context.accuracy_mod,
+		"roll_mod": context.roll_mod,
+		"wind_curve": context.wind_curve,
+		"aoe_radius": context.aoe_radius,
+		"aoe_shape": context.aoe_shape,
+		"curve_strength": context.curve_strength,
+		"curve_profile": context.curve_profile,
+		"max_bounces": context.max_bounces,
+		"chips": context.chips,
+		"base_chips": context.base_chips,
+		"mult": context.mult,
+		"final_score": context.final_score,
+		"metadata": context.metadata.duplicate(true),
+	}
+
+
+func _try_record_debug_delta(phase: String, modifier_name: String, before: Dictionary, after: Dictionary) -> void:
+	var dbg := get_tree().get_first_node_in_group("debug_overlay") if get_tree() else null
+	if dbg == null:
+		return
+	if not dbg.has_method("record_modifier_delta"):
+		return
+	var delta := _diff_context_state(before, after)
+	if delta.is_empty():
+		return
+	dbg.record_modifier_delta(phase, modifier_name, delta)
+
+
+func _diff_context_state(before: Dictionary, after: Dictionary) -> Dictionary:
+	var delta: Dictionary = {}
+	for k in after.keys():
+		if not before.has(k):
+			delta[k] = {"from": null, "to": after[k]}
+			continue
+		if k == "metadata":
+			var md_delta := _diff_metadata(before[k], after[k])
+			if not md_delta.is_empty():
+				delta[k] = md_delta
+			continue
+		if before[k] != after[k]:
+			delta[k] = {"from": before[k], "to": after[k]}
+	return delta
+
+
+func _diff_metadata(before_md: Dictionary, after_md: Dictionary) -> Dictionary:
+	var md_delta: Dictionary = {}
+	for k in after_md.keys():
+		if not before_md.has(k):
+			md_delta[str(k)] = {"from": null, "to": after_md[k]}
+		elif before_md[k] != after_md[k]:
+			md_delta[str(k)] = {"from": before_md[k], "to": after_md[k]}
+	for k in before_md.keys():
+		if not after_md.has(k):
+			md_delta[str(k)] = {"from": before_md[k], "to": null}
+	return md_delta
 
 
 # --- Helper Methods ---

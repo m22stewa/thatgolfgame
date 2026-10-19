@@ -188,6 +188,7 @@ func calculate_lie(hex_grid: Node, tile: Vector2i) -> Dictionary:
 func apply_lie_to_shot(context: ShotContext, lie_info: Dictionary) -> void:
 	if context == null or lie_info.is_empty():
 		return
+	var before := _capture_context_state(context)
 	
 	# Set the additive modifier fields on the context
 	context.distance_mod += lie_info.get("distance_mod", 0)
@@ -213,6 +214,68 @@ func apply_lie_to_shot(context: ShotContext, lie_info: Dictionary) -> void:
 	context.set_start_terrain(lie_info.get("display_name", "Unknown"))
 	
 	lie_modifiers_applied.emit(context, lie_info)
+	var after := _capture_context_state(context)
+	_try_record_debug_delta("lie", "Lie: %s" % str(lie_info.get("display_name", "Unknown")), before, after)
+
+
+func _capture_context_state(context: ShotContext) -> Dictionary:
+	if context == null:
+		return {}
+	return {
+		"distance_mod": context.distance_mod,
+		"accuracy_mod": context.accuracy_mod,
+		"roll_mod": context.roll_mod,
+		"wind_curve": context.wind_curve,
+		"aoe_radius": context.aoe_radius,
+		"aoe_shape": context.aoe_shape,
+		"curve_strength": context.curve_strength,
+		"curve_profile": context.curve_profile,
+		"max_bounces": context.max_bounces,
+		"chips": context.chips,
+		"base_chips": context.base_chips,
+		"mult": context.mult,
+		"final_score": context.final_score,
+		"metadata": context.metadata.duplicate(true),
+	}
+
+
+func _try_record_debug_delta(phase: String, name: String, before: Dictionary, after: Dictionary) -> void:
+	var dbg := get_tree().get_first_node_in_group("debug_overlay") if get_tree() else null
+	if dbg == null or not dbg.has_method("record_modifier_delta"):
+		return
+	var delta := _diff_context_state(before, after)
+	if delta.is_empty():
+		return
+	dbg.record_modifier_delta(phase, name, delta)
+
+
+func _diff_context_state(before: Dictionary, after: Dictionary) -> Dictionary:
+	var delta: Dictionary = {}
+	for k in after.keys():
+		if not before.has(k):
+			delta[k] = {"from": null, "to": after[k]}
+			continue
+		if k == "metadata":
+			var md_delta := _diff_metadata(before[k], after[k])
+			if not md_delta.is_empty():
+				delta[k] = md_delta
+			continue
+		if before[k] != after[k]:
+			delta[k] = {"from": before[k], "to": after[k]}
+	return delta
+
+
+func _diff_metadata(before_md: Dictionary, after_md: Dictionary) -> Dictionary:
+	var md_delta: Dictionary = {}
+	for k in after_md.keys():
+		if not before_md.has(k):
+			md_delta[str(k)] = {"from": null, "to": after_md[k]}
+		elif before_md[k] != after_md[k]:
+			md_delta[str(k)] = {"from": before_md[k], "to": after_md[k]}
+	for k in before_md.keys():
+		if not after_md.has(k):
+			md_delta[str(k)] = {"from": before_md[k], "to": null}
+	return md_delta
 
 
 ## Get a formatted string for debug display

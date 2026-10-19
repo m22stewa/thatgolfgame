@@ -2099,6 +2099,13 @@ func _init_shot_system() -> void:
 
 func _init_card_system() -> void:
 	"""Initialize the card/deck system"""
+	# Defensive fallback: allow scenes to omit/override exported decks without breaking the UI.
+	# (If a scene sets these exports to null, the hand would appear empty.)
+	if starter_deck == null:
+		starter_deck = load("res://resources/decks/starter_deck.tres") as DeckDefinition
+	if club_deck == null:
+		club_deck = load("res://resources/decks/swing_deck.tres") as DeckDefinition
+
 	# Create card library (holds all card definitions)
 	card_library = CardLibrary.new()
 	card_library.name = "CardLibrary"
@@ -2129,15 +2136,15 @@ func _init_card_system() -> void:
 	if swing_hand_3d:
 		print("SwingHand3D found, setting up with club_deck_manager (swing cards)")
 		swing_hand_3d.setup(card_system.club_deck_manager)
+		# Provide a direct reference so CardSystemManager can lock/clear the slot.
+		if card_system.has_method("set_swing_hand_3d"):
+			card_system.set_swing_hand_3d(swing_hand_3d)
 		# IMPORTANT: SwingHand3D is wired directly here (not via the SwingHand Control wrapper),
 		# so we must forward slot play/unplay events to CardSystemManager for dynamic AOE.
 		if swing_hand_3d.has_signal("card_played") and not swing_hand_3d.card_played.is_connected(card_system._on_swing_slot_card_dropped):
 			swing_hand_3d.card_played.connect(card_system._on_swing_slot_card_dropped)
 		if swing_hand_3d.has_signal("card_unplayed") and not swing_hand_3d.card_unplayed.is_connected(card_system._on_swing_hand_card_unplayed):
 			swing_hand_3d.card_unplayed.connect(card_system._on_swing_hand_card_unplayed)
-		# Draw initial hand of swing cards
-		for i in range(5):
-			card_system.club_deck_manager.draw_card()
 		print("Swing hand has ", card_system.club_deck_manager.get_hand().size(), " cards")
 	else:
 		print("SwingHand3D not found!")
@@ -3062,8 +3069,8 @@ func _regenerate_hole() -> void:
 	current_club = -1  # Reset club selection
 	
 	# Reset card deck for new hole
-	if card_system:
-		card_system.initialize_starter_deck()
+	if card_system and card_system.has_method("reset_swing_deck_for_new_hole"):
+		card_system.reset_swing_deck_for_new_hole()
 	
 	# Reset target lock
 	target_locked = false
@@ -3566,35 +3573,43 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 	# Get animation speed multiplier
 	var speed_mult = shot_manager.get_animation_speed() if shot_manager else 1.0
 	
-	# Get curve amount from shot context (if available)
-	var curve_amount: float = 0.0
-	var curve_type: String = "draw"
+	# Determine curve profile from shot context (if available)
+	var curve_type: String = ""
+	var curve_amount_world: float = 0.0
 	if shot_manager and shot_manager.current_context:
-		# Curve comes from cards (curve_strength) and wind (wind_curve)
-		curve_amount = shot_manager.current_context.curve_strength
-		curve_amount += float(shot_manager.current_context.wind_curve)
+		var ctx: ShotContext = shot_manager.current_context
+		curve_type = _get_effective_curve_profile_from_context(ctx)
 		
-		# Determine curve type based on direction
-		if curve_amount < 0:
-			curve_type = "draw"  # Hook/Draw curves left
-		else:
-			curve_type = "fade"  # Slice/Fade curves right
+		# Derive a world-space curve amount by comparing the actual carry end (end_pos)
+		# to the carry end that would occur with distance-only targeting (no curve/wind).
+		# This makes the arc match the actual shot offset, rather than an arbitrary scale.
+		var start_tile := ctx.start_tile
+		var aim_tile := ctx.aim_tile
+		if start_tile.x >= 0 and aim_tile.x >= 0:
+			var num_bounces = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).roll
+			var uncurved_target_tile := _calculate_uncurved_target_tile(start_tile, aim_tile, ctx.distance_mod)
+			var uncurved_carry_tile := _get_carry_position(start_tile, uncurved_target_tile, num_bounces)
+			var uncurved_carry_pos := get_tile_surface_position(uncurved_carry_tile)
+			curve_amount_world = _compute_lateral_offset_world(start_pos, uncurved_carry_pos, end_pos)
+		
+		if curve_type == "":
+			curve_type = "draw" if curve_amount_world < 0.0 else "fade"
 	
 	# Calculate flight parameters based on distance
 	var distance = start_pos.distance_to(end_pos)
 	var flight_duration = clamp(distance * 0.08, 0.5, 2.5) / speed_mult
 	
-	# Peak height based on distance and club arc height
-	var peak_height = clamp(trajectory_height * 1.5, 2.0, 15.0)
+	# Peak height based on distance and club arc height.
+	# Keep club differences visible while letting longer shots arc slightly higher.
+	var peak_height = clamp((trajectory_height * 1.25) + (distance * 0.05), 2.0, 18.0)
 	
 	# Add extra height if going uphill
 	var height_diff = end_pos.y - start_pos.y
 	if height_diff > 0:
 		peak_height += height_diff * 0.5
 	
-	# Scale curve by distance - longer shots curve more visibly
-	# Each unit of curve = roughly 0.5 world units of lateral movement at peak
-	var scaled_curve = curve_amount * distance * 0.15
+	# Use the derived world-space curve amount directly.
+	var scaled_curve = curve_amount_world
 	
 	# Calculate spin direction (ball spins in direction of travel, with tilt for curve)
 	var travel_dir = (end_pos - start_pos).normalized()
@@ -3603,8 +3618,10 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 		spin_axis = Vector3.RIGHT
 	
 	# Tilt spin axis based on curve (adds sidespin appearance)
-	if abs(curve_amount) > 0.1:
-		var tilt_amount = curve_amount * 0.3  # Subtle tilt
+	if abs(curve_amount_world) > 0.1:
+		# Convert world-space lateral offset into a small, stable tilt.
+		var tilt_norm: float = float(curve_amount_world) / max(distance, 0.001)
+		var tilt_amount: float = clamp(tilt_norm, -1.0, 1.0) * 0.4
 		spin_axis = spin_axis.rotated(travel_dir, tilt_amount)
 	
 	# Start ball spin animation (slower, more realistic)
@@ -3786,18 +3803,18 @@ func _calculate_curved_arc_position(start: Vector3, end: Vector3, t: float, peak
 	# Early in flight: ball is closer to the straight-to-original-aim line
 	# Late in flight: ball curves toward the actual end position
 	
-	# Curve profile: starts straight, accelerates curve in second half
-	# Using smoothstep-like curve for natural acceleration
+	# Curve progress: controls how quickly the ball "commits" to the curved end.
+	# Hook/Slice should feel more late-breaking than Draw/Fade.
 	var curve_progress: float
-	if curve_type == "push" or curve_type == "pull":
-		# Push/Pull: Linear curve from start
+	if curve_type == "push" or curve_type == "pull" or curve_type == "wind":
 		curve_progress = t
 	else:
-		# Draw/Fade/Hook/Slice: Slow start, fast finish
-		# This makes the ball appear to start straight then curve hard
 		curve_progress = t * t * (3.0 - 2.0 * t)  # Smoothstep
-		# Make it even more back-loaded for dramatic curve
-		curve_progress = pow(curve_progress, 0.7)  # Bias toward end
+		match curve_type:
+			"hook", "slice":
+				curve_progress = pow(curve_progress, 1.8)  # Later break
+			_:
+				curve_progress = pow(curve_progress, 1.0)  # Default
 	
 	# The "straight line" aim point (where ball would go without curve)
 	# This is offset from the end by the negative of the curve amount
@@ -4071,57 +4088,45 @@ func _update_trajectory(target_pos: Vector3) -> void:
 	
 	var start_pos = golf_ball.position
 	var end_pos = target_pos
+	var aim_tile := world_to_grid(target_pos)
 	
-	# Check if there's any curve from cards or wind
-	var pre_curve: float = 0.0
-	var distance_mod: int = 0
-	if shot_manager and shot_manager.current_context:
-		pre_curve = shot_manager.current_context.curve_strength + float(shot_manager.current_context.wind_curve)
-		distance_mod = shot_manager.current_context.distance_mod
-	
-	# Draw the aim trajectory (base trajectory to aimed tile)
-	if abs(pre_curve) > 0.1:
-		# Show curved trajectory preview if cards add curve
-		var distance = start_pos.distance_to(end_pos)
-		var scaled_curve = pre_curve * distance * 0.15
-		_draw_trajectory_arc_curved(trajectory_mesh, start_pos, end_pos, scaled_curve, Color(1.0, 1.0, 1.0, 0.8))
-	else:
-		# Straight trajectory
-		_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, Color(1.0, 1.0, 1.0, 0.8))
+	# Draw the raw aim trajectory (player intent)
+	_draw_trajectory_arc(trajectory_mesh, start_pos, end_pos, Color(1.0, 1.0, 1.0, 0.6))
 	trajectory_mesh.visible = true
 	
-	# Draw modifier trajectory if distance modifier is active
-	if distance_mod != 0:
-		# Calculate modified end position (extend or shorten the trajectory)
-		var direction = (end_pos - start_pos).normalized()
-		direction.y = 0  # Keep horizontal direction only
-		if direction.length() > 0.001:
-			direction = direction.normalized()
-		else:
-			direction = Vector3.FORWARD
+	# Draw predicted trajectory (mods + curve + wind) on modifier mesh
+	var predicted_pos := Vector3.ZERO
+	var distance_mod: int = 0
+	var curve_amount_world: float = 0.0
+	var curve_type: String = ""
+	if shot_manager and shot_manager.current_context:
+		var ctx: ShotContext = shot_manager.current_context
+		distance_mod = ctx.distance_mod
+		curve_type = _get_effective_curve_profile_from_context(ctx)
 		
-		# Each tile is roughly TILE_SIZE * 1.5 in world units (hex spacing)
-		var tile_world_size = TILE_SIZE * 1.5
-		var mod_offset = float(distance_mod) * tile_world_size
-		var mod_end_pos = end_pos + direction * mod_offset
-		# Get elevation at modified position using world_to_grid
-		var mod_tile = world_to_grid(mod_end_pos)
-		mod_end_pos.y = get_elevation(mod_tile.x, mod_tile.y)
-		
-		# Choose color based on modifier direction
+		var start_tile := world_to_grid(start_pos)
+		if start_tile.x >= 0 and aim_tile.x >= 0:
+			var uncurved_tile := _calculate_uncurved_target_tile(start_tile, aim_tile, distance_mod)
+			var predicted_tile := _calculate_predicted_target_tile(start_tile, aim_tile, distance_mod, ctx.curve_strength, ctx.wind_curve, curve_type)
+			var uncurved_pos := get_tile_surface_position(uncurved_tile)
+			predicted_pos = get_tile_surface_position(predicted_tile)
+			curve_amount_world = _compute_lateral_offset_world(start_pos, uncurved_pos, predicted_pos)
+			if curve_type == "":
+				curve_type = "draw" if curve_amount_world < 0.0 else "fade"
+	
+	if predicted_pos != Vector3.ZERO and (abs(distance_mod) > 0 or abs(curve_amount_world) > 0.3):
 		var mod_color: Color
 		if distance_mod > 0:
-			mod_color = Color(0.2, 1.0, 0.2, 0.7)  # Green for + distance
+			mod_color = Color(0.2, 1.0, 0.2, 0.75)  # Green for + distance
+		elif distance_mod < 0:
+			mod_color = Color(1.0, 0.2, 0.2, 0.75)  # Red for - distance
 		else:
-			mod_color = Color(1.0, 0.2, 0.2, 0.7)  # Red for - distance
+			mod_color = Color(0.6, 0.8, 1.0, 0.7)   # Blue-ish when curve/wind only
 		
-		# Draw the modifier arc with curve if applicable
-		if abs(pre_curve) > 0.1:
-			var distance = start_pos.distance_to(mod_end_pos)
-			var scaled_curve = pre_curve * distance * 0.15
-			_draw_trajectory_arc_curved(modifier_trajectory_mesh, start_pos, mod_end_pos, scaled_curve, mod_color)
+		if abs(curve_amount_world) > 0.3:
+			_draw_trajectory_arc_curved(modifier_trajectory_mesh, start_pos, predicted_pos, curve_amount_world, mod_color)
 		else:
-			_draw_trajectory_arc(modifier_trajectory_mesh, start_pos, mod_end_pos, mod_color)
+			_draw_trajectory_arc(modifier_trajectory_mesh, start_pos, predicted_pos, mod_color)
 		modifier_trajectory_mesh.visible = true
 	else:
 		modifier_trajectory_mesh.visible = false
@@ -4129,8 +4134,77 @@ func _update_trajectory(target_pos: Vector3) -> void:
 	# Curved trajectory mesh not used anymore
 	curved_trajectory_mesh.visible = false
 	
-	# Draw shadow line on ground
-	_draw_trajectory_shadow(start_pos, end_pos, abs(pre_curve) > 0.1)
+	# Draw shadow line on ground (prefer predicted path when shown)
+	var shadow_end: Vector3 = predicted_pos if modifier_trajectory_mesh.visible else end_pos
+	_draw_trajectory_shadow(start_pos, shadow_end, modifier_trajectory_mesh.visible and abs(curve_amount_world) > 0.3)
+
+
+func _get_effective_curve_profile_from_context(ctx: ShotContext) -> String:
+	if ctx == null:
+		return ""
+	if ctx.curve_profile != "":
+		return ctx.curve_profile
+	if abs(ctx.curve_strength) < 0.01:
+		return ""
+	return "draw" if ctx.curve_strength < 0.0 else "fade"
+
+
+func _calculate_uncurved_target_tile(start_tile: Vector2i, aim_tile: Vector2i, distance_mod: int) -> Vector2i:
+	# Distance-only adjustment along shot direction.
+	var dir_x = float(aim_tile.x - start_tile.x)
+	var dir_y = float(aim_tile.y - start_tile.y)
+	var length = sqrt(dir_x * dir_x + dir_y * dir_y)
+	if length < 0.1:
+		return aim_tile
+	var norm_x = dir_x / length
+	var norm_y = dir_y / length
+	var target_x = float(aim_tile.x) + (norm_x * float(distance_mod))
+	var target_y = float(aim_tile.y) + (norm_y * float(distance_mod))
+	var final_x = int(round(target_x))
+	var final_y = int(round(target_y))
+	final_x = clampi(final_x, 0, grid_width - 1)
+	final_y = clampi(final_y, 0, grid_height - 1)
+	return Vector2i(final_x, final_y)
+
+
+func _calculate_predicted_target_tile(start_tile: Vector2i, aim_tile: Vector2i, distance_mod: int, curve_strength: float, wind_curve: int, curve_profile: String) -> Vector2i:
+	var uncurved := _calculate_uncurved_target_tile(start_tile, aim_tile, distance_mod)
+	
+	var dir_x = float(aim_tile.x - start_tile.x)
+	var dir_y = float(aim_tile.y - start_tile.y)
+	var length = sqrt(dir_x * dir_x + dir_y * dir_y)
+	if length < 0.1:
+		return uncurved
+	var norm_x = dir_x / length
+	var norm_y = dir_y / length
+	
+	var perp_x = -norm_y
+	var perp_y = norm_x
+	
+	var endpoint_mult := 1.0
+	if curve_profile == "hook" or curve_profile == "slice":
+		endpoint_mult = 1.75
+	
+	var total_curve := (curve_strength * endpoint_mult) + float(wind_curve)
+	var target_x = float(uncurved.x) + (perp_x * total_curve)
+	var target_y = float(uncurved.y) + (perp_y * total_curve)
+	
+	var final_x = clampi(int(round(target_x)), 0, grid_width - 1)
+	var final_y = clampi(int(round(target_y)), 0, grid_height - 1)
+	return Vector2i(final_x, final_y)
+
+
+func _compute_lateral_offset_world(start_pos: Vector3, uncurved_end_pos: Vector3, curved_end_pos: Vector3) -> float:
+	# Returns signed lateral offset in world units, relative to the start->uncurved direction.
+	var dir = Vector3(uncurved_end_pos.x - start_pos.x, 0, uncurved_end_pos.z - start_pos.z)
+	if dir.length() < 0.001:
+		dir = Vector3(curved_end_pos.x - start_pos.x, 0, curved_end_pos.z - start_pos.z)
+	if dir.length() < 0.001:
+		return 0.0
+	dir = dir.normalized()
+	var perp = Vector3(-dir.z, 0, dir.x)  # right of travel direction
+	var delta = Vector3(curved_end_pos.x - uncurved_end_pos.x, 0, curved_end_pos.z - uncurved_end_pos.z)
+	return delta.dot(perp)
 
 
 func _draw_trajectory_arc(mesh: MeshInstance3D, start_pos: Vector3, end_pos: Vector3, color: Color) -> void:
@@ -4728,8 +4802,8 @@ func _generate_course() -> void:
 		print("[UNIQUE HOLE] Generating %s (Par %d, %d yards, %dx%d grid)" % [type_name, current_par, current_yardage, grid_width, grid_height])
 	
 	# Reset deck for new hole
-	if card_system:
-		card_system.initialize_starter_deck()
+	if card_system and card_system.has_method("reset_swing_deck_for_new_hole"):
+		card_system.reset_swing_deck_for_new_hole()
 	
 	_init_grid()
 	_generate_course_features()
@@ -4807,8 +4881,8 @@ func _generate_unique_course() -> void:
 		print("[UNIQUE HOLE] Generating %s (Par %d, %d yards, %dx%d grid)" % [type_name, current_par, current_yardage, grid_width, grid_height])
 	
 	# Reset deck for new hole
-	if card_system:
-		card_system.initialize_starter_deck()
+	if card_system and card_system.has_method("reset_swing_deck_for_new_hole"):
+		card_system.reset_swing_deck_for_new_hole()
 	
 	_init_grid()
 	_generate_course_features()
@@ -6665,8 +6739,8 @@ func _on_button_pressed() -> void:
 		_update_club_button_visuals()
 		
 		# Reset card deck
-		if card_system:
-			card_system.initialize_starter_deck()
+		if card_system and card_system.has_method("reset_swing_deck_for_new_hole"):
+			card_system.reset_swing_deck_for_new_hole()
 		
 		# Reset target lock
 		target_locked = false
@@ -6701,8 +6775,8 @@ func _on_generate_unique_pressed() -> void:
 		_update_club_button_visuals()
 		
 		# Reset card deck
-		if card_system:
-			card_system.initialize_starter_deck()
+		if card_system and card_system.has_method("reset_swing_deck_for_new_hole"):
+			card_system.reset_swing_deck_for_new_hole()
 		
 		# Reset target lock
 		target_locked = false

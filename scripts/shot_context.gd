@@ -39,6 +39,7 @@ var elevation_influence: float = 1.0          # How much elevation affects roll
 
 # Curve for shaped shots (from cards)
 var curve_strength: float = 0.0               # How much ball curves mid-flight (from cards)
+var curve_profile: String = ""                # "draw","fade","hook","slice"; empty = auto from sign
 var did_curve: bool = false                   # Whether ball curved this shot
 
 # Scoring
@@ -75,6 +76,7 @@ func reset() -> void:
 	roll_distance = 0
 	elevation_influence = 1.0
 	curve_strength = 0.0
+	curve_profile = ""
 	did_curve = false
 	base_chips = 0
 	chips = 0

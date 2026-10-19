@@ -684,11 +684,30 @@ func _on_swing_completed_with_spin(spin_value: int) -> void:
 	
 	# Apply spin value to roll_mod AFTER shot started (modifiers already applied)
 	if shot_manager.current_context:
-		shot_manager.current_context.roll_mod += spin_value
-		print("[ShotUI] Applied spin to roll_mod, new value: %d" % shot_manager.current_context.roll_mod)
+		var ctx := shot_manager.current_context
+		var before := {"roll_mod": ctx.roll_mod, "metadata": ctx.metadata.duplicate(true)}
+		ctx.roll_mod += spin_value
+		print("[ShotUI] Applied spin to roll_mod, new value: %d" % ctx.roll_mod)
+		var after := {"roll_mod": ctx.roll_mod, "metadata": ctx.metadata.duplicate(true)}
+		_try_record_debug_delta("ui_spin", "SpinMeter", before, after)
 	
 	# Now confirm the shot
 	shot_manager.confirm_shot()
+
+
+func _try_record_debug_delta(phase: String, name: String, before: Dictionary, after: Dictionary) -> void:
+	var dbg := get_tree().get_first_node_in_group("debug_overlay") if get_tree() else null
+	if dbg == null or not dbg.has_method("record_modifier_delta"):
+		return
+	var delta: Dictionary = {}
+	for k in after.keys():
+		if not before.has(k):
+			delta[k] = {"from": null, "to": after[k]}
+		elif before[k] != after[k]:
+			delta[k] = {"from": before[k], "to": after[k]}
+	if delta.is_empty():
+		return
+	dbg.record_modifier_delta(phase, name, delta)
 
 
 func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> void:

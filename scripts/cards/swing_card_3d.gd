@@ -29,11 +29,24 @@ func _apply_front_texture() -> void:
 	
 	var texture = load(front_texture_path)
 	if texture:
-		var mat = StandardMaterial3D.new()
+		var front_mesh: MeshInstance3D = $CardMesh/CardFrontMesh
+		var base_mat: Material = front_mesh.material_override
+		if base_mat == null:
+			base_mat = front_mesh.get_surface_override_material(0)
+		
+		var mat: StandardMaterial3D
+		if base_mat is StandardMaterial3D:
+			mat = (base_mat as StandardMaterial3D).duplicate()
+		else:
+			mat = StandardMaterial3D.new()
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+			mat.alpha_scissor_threshold = 0.5
+			mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_OFF
+		
 		mat.albedo_texture = texture
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # Show both sides
-		$CardMesh/CardFrontMesh.set_surface_override_material(0, mat)
+		front_mesh.set_surface_override_material(0, mat)
 
 
 func _ready() -> void:
@@ -54,7 +67,8 @@ func _setup_visuals() -> void:
 	# Set back texture (darker version) with depth prepass
 	var back_mat = StandardMaterial3D.new()
 	back_mat.albedo_color = Color(0.2, 0.3, 0.5)
-	back_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+	back_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+	back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	if has_node("CardMesh/CardBackMesh"):
 		$CardMesh/CardBackMesh.set_surface_override_material(0, back_mat)
 	

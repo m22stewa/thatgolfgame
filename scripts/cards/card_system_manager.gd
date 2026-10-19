@@ -23,6 +23,9 @@ var deck_widget: Control = null  # Modifier deck widget
 var club_deck_widget: Control = null  # Swing deck widget (legacy)
 var swing_hand: SwingHand = null  # Fanned hand display for swing cards
 # Swing card slot is now handled by SwingHand3D (3D card system)
+
+# Optional direct reference to SwingHand3D for slot locking and hole resets.
+var swing_hand_3d: Node = null
 var items_bar: ItemsBar = null  # Item slots display
 
 # Signals for external systems
@@ -657,6 +660,12 @@ func _on_shot_started(context: ShotContext) -> void:
 	
 	# Consume the selected swing card now that the shot is committed.
 	if selected_club_card != null and club_deck_manager:
+		# Lock the card in the slot so it can't be picked up after this shot.
+		if swing_hand_3d:
+			if swing_hand_3d.has_method("set_slot_accepts_new_cards"):
+				swing_hand_3d.set_slot_accepts_new_cards(false)
+			if swing_hand_3d.has_method("lock_card_instance"):
+				swing_hand_3d.lock_card_instance(selected_club_card)
 		club_deck_manager.play_card(selected_club_card)
 		club_selection_locked = true
 
@@ -686,6 +695,8 @@ func _on_shot_completed(context: ShotContext) -> void:
 	
 	# Unlock club selection for next shot
 	club_selection_locked = false
+	if swing_hand_3d and swing_hand_3d.has_method("set_slot_accepts_new_cards"):
+		swing_hand_3d.set_slot_accepts_new_cards(true)
 	if shot_ui:
 		shot_ui.set_swing_card_selected(false)
 	
@@ -720,6 +731,35 @@ func undim_all_cards() -> void:
 		deck_view.undim_all_cards()
 	if club_deck_view:
 		club_deck_view.undim_all_cards()
+
+
+func set_swing_hand_3d(node: Node) -> void:
+	"""Provide a direct reference to SwingHand3D (HexGrid wires SwingHand3D directly)."""
+	swing_hand_3d = node
+
+
+func reset_swing_deck_for_new_hole() -> void:
+	"""Reset only the swing (club) deck for a new hole; does not touch modifier deck."""
+	# Clear any in-progress selection/modifiers from the previous hole.
+	_clear_active_modifiers()
+	selected_club_card = null
+	club_selection_locked = false
+
+	# Reset the swing deck to full availability (draw + discard + active -> draw).
+	if club_deck_manager:
+		club_deck_manager.clear_active_cards()
+		club_deck_manager.shuffle_discard_into_deck()
+		club_deck_manager.hand_changed.emit()
+
+	# Clear the visual slot stack of locked cards.
+	if swing_hand_3d:
+		if swing_hand_3d.has_method("clear_swing_slot"):
+			swing_hand_3d.clear_swing_slot()
+		if swing_hand_3d.has_method("set_slot_accepts_new_cards"):
+			swing_hand_3d.set_slot_accepts_new_cards(true)
+
+	# Restore visuals for the new hole (no deck state changes).
+	undim_all_cards()
 
 
 # --- Event Handlers ---

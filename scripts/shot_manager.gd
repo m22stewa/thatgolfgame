@@ -369,7 +369,10 @@ func _calculate_curved_target() -> Vector2i:
 		])
 	
 	# Apply curve (perpendicular to shot direction)
-	var total_curve = current_context.curve_strength + float(current_context.wind_curve)
+	# Hook/Slice should finish more offline than Draw/Fade at same curve_strength.
+	var profile := _get_effective_curve_profile(current_context)
+	var curve_endpoint_mult := _curve_endpoint_multiplier(profile)
+	var total_curve = (current_context.curve_strength * curve_endpoint_mult) + float(current_context.wind_curve)
 	if abs(total_curve) >= 0.1:
 		# Perpendicular vector (rotated 90 degrees)
 		var perp_x = -norm_y
@@ -392,6 +395,24 @@ func _calculate_curved_target() -> Vector2i:
 		final_y = clampi(final_y, 0, hole_controller.get_grid_height() - 1)
 	
 	return Vector2i(final_x, final_y)
+
+
+func _get_effective_curve_profile(context: ShotContext) -> String:
+	if context == null:
+		return ""
+	if context.curve_profile != "":
+		return context.curve_profile
+	if abs(context.curve_strength) < 0.01:
+		return ""
+	return "draw" if context.curve_strength < 0.0 else "fade"
+
+
+func _curve_endpoint_multiplier(profile: String) -> float:
+	match profile:
+		"hook", "slice":
+			return 1.75
+		_:
+			return 1.0
 
 
 func _weighted_tile_selection() -> Vector2i:

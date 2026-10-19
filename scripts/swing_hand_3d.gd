@@ -15,6 +15,9 @@ signal card_unplayed(card: CardInstance)
 # Reference to deck manager
 var deck_manager: DeckManager = null
 
+# When false, SwingSlotDragStrategy will reject inserting new cards.
+var slot_accepts_new_cards: bool = true
+
 
 func _ready() -> void:
 	# Set up the swing hand with a fan layout
@@ -25,6 +28,10 @@ func _ready() -> void:
 	
 	# Set up the swing slot with a pile layout (single card)
 	var pile_layout = PileCardLayout.new()
+	# Cards have Sprite3D/Label3D elements that protrude above the card face (e.g. z=0.02).
+	# If the pile spacing is smaller than that, older icons can end up in front of the newer card face.
+	# Keep the offset comfortably above the protrusion so the newest card fully occludes older visuals.
+	pile_layout.pile_z_offset = 0.05
 	swing_slot.card_layout_strategy = pile_layout
 	
 	# Apply custom drag strategy that only allows one card
@@ -56,6 +63,14 @@ func setup(manager: DeckManager) -> void:
 		else:
 			await ready
 			refresh_hand()
+
+
+func can_accept_new_slot_card() -> bool:
+	return slot_accepts_new_cards
+
+
+func set_slot_accepts_new_cards(value: bool) -> void:
+	slot_accepts_new_cards = value
 
 
 
@@ -143,7 +158,36 @@ func _on_hand_changed() -> void:
 
 func get_selected_swing_card() -> CardInstance:
 	"""Get the card currently in the swing slot"""
-	if swing_slot.cards.size() > 0:
-		var card = swing_slot.cards[0]
-		return card.get_meta("card_instance") as CardInstance
+	# Return the top-most unlocked card (the current shot card).
+	for i in range(swing_slot.cards.size() - 1, -1, -1):
+		var card = swing_slot.cards[i]
+		if card and (not card.has_meta("locked") or not bool(card.get_meta("locked"))):
+			return card.get_meta("card_instance") as CardInstance
 	return null
+
+
+func lock_card_instance(card_instance: CardInstance) -> void:
+	"""Mark a slot card as locked so it cannot be picked up."""
+	if card_instance == null:
+		return
+	for i in range(swing_slot.cards.size() - 1, -1, -1):
+		var card = swing_slot.cards[i]
+		if card and card.get_meta("card_instance") == card_instance:
+			card.set_meta("locked", true)
+			# Reduce hover affordance to hint it's locked.
+			if "hover_scale_factor" in card:
+				card.hover_scale_factor = 1.0
+			if "hover_pos_move" in card:
+				card.hover_pos_move = Vector3.ZERO
+			card.remove_hovered()
+			return
+
+
+func clear_swing_slot() -> void:
+	"""Remove all cards from the slot (used when starting a new hole)."""
+	if not swing_slot:
+		return
+	var existing_cards = swing_slot.remove_all()
+	for card in existing_cards:
+		card.queue_free()
+	_show_drop_zone()

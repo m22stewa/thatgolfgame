@@ -1,4 +1,4 @@
-[gd_scene load_steps=51 format=3 uid="uid://i0lqex70w705"]
+[gd_scene load_steps=52 format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
@@ -13,6 +13,7 @@
 [ext_resource type="FontFile" uid="uid://csixfh5trj68q" path="res://theme/Unbounded-VariableFont_wght.ttf" id="9_pyvcl"]
 [ext_resource type="PackedScene" uid="uid://brd1rbth2tvmv" path="res://scenes/rolling-ball.tscn" id="10_fkwjp"]
 [ext_resource type="Shader" uid="uid://b4a5pybeu403q" path="res://scripts/ice.gdshader" id="10_jfa70"]
+[ext_resource type="PackedScene" path="res://scenes/ui/debug_overlay.tscn" id="11_debug_overlay"]
 
 [sub_resource type="Gradient" id="Gradient_81eei"]
 
@@ -289,6 +290,8 @@ grow_vertical = 2
 
 [node name="MainUI" parent="Control" instance=ExtResource("5_main_ui")]
 layout_mode = 1
+
+[node name="DebugOverlay" parent="Control" instance=ExtResource("11_debug_overlay")]
 
 [node name="CanvasLayer" type="CanvasLayer" parent="Control"]
 
