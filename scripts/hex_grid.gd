@@ -221,8 +221,8 @@ var FLOWER_MODELS: Array[PackedScene] = [
 	preload("res://models/features/Flower_bush_white1.fbx"),
 ]
 
-@onready var holelabel: Label = %Label
-@onready var thefloor: CSGBox3D = %floor
+var holelabel: Label = null
+var thefloor: CSGBox3D = null
 @onready var water_effect: ColorRect = %"shoteffects-water"
 
 # Track previous tile for water penalty

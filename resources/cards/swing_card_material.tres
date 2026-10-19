@@ -1,4 +1,6 @@
-[gd_resource type="StandardMaterial3D" format=3]
+[gd_resource type="StandardMaterial3D" load_steps=2 format=3]
+
+[ext_resource type="Texture2D" uid="uid://cr6dwpty8q6vb" path="res://scenes/ui/Swing Card.png" id="1_swing"]
 
 [resource]
-albedo_texture = ExtResource("res://textures/Swing Card.png")
+albedo_texture = ExtResource("1_swing")

@@ -3,8 +3,8 @@ class_name MainUI
 
 @onready var shot_ui: Control = $ShotUI
 @onready var combined_deck_widget: DeckWidget = $DeckWidget  # Combined view (modifier only now)
-@onready var modifier_deck_widget: DeckWidget = $ModifierDeckWidget  # Standalone modifier deck
-@onready var items_bar: ItemsBar = $ItemsBar  # Item slots
+@onready var modifier_deck_widget: DeckWidget = get_node_or_null("ModifierDeckWidget")  # Standalone modifier deck (optional)
+@onready var items_bar: ItemsBar = get_node_or_null("ItemsBar")  # Item slots (optional)
 @onready var wind_widget: Control = $WindWidget
 @onready var lie_view: Control = $LieView
 @onready var hole_info_label: Label = $HoleInfoLabel

@@ -18,6 +18,9 @@ var card_instance: CardInstance = null:
 func _ready() -> void:
 	# Start face down
 	face_down = true
+	# Apply the front material immediately so CardFrontMesh surface 0 always has a
+	# material before the first frame renders (prevents "Parameter material is null").
+	_apply_front_texture()
 	call_deferred("_setup_visuals")
 	call_deferred("_update_visuals")
 	call_deferred("_update_label_visibility")
@@ -53,25 +56,25 @@ func _apply_front_texture() -> void:
 		return
 	
 	var texture = load(front_texture_path)
+	var front_mesh: MeshInstance3D = $CardMesh/CardFrontMesh
+	# Build a fresh StandardMaterial3D rather than duplicating an existing one.
+	# Duplicated materials can leave the rendering server with a null material RID
+	# at query time ("Parameter material is null"); a freshly constructed material
+	# avoids that while keeping the same visual result.
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	mat.alpha_scissor_threshold = 0.5
+	mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_OFF
+	
 	if texture:
-		var front_mesh: MeshInstance3D = $CardMesh/CardFrontMesh
-		var base_mat: Material = front_mesh.material_override
-		if base_mat == null:
-			base_mat = front_mesh.get_surface_override_material(0)
-		
-		var mat: StandardMaterial3D
-		if base_mat is StandardMaterial3D:
-			mat = (base_mat as StandardMaterial3D).duplicate()
-		else:
-			mat = StandardMaterial3D.new()
-			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-			mat.alpha_scissor_threshold = 0.5
-			mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_OFF
-		
 		mat.albedo_texture = texture
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		front_mesh.set_surface_override_material(0, mat)
+	else:
+		# Missing texture: fall back to a visible solid color so the card still renders
+		mat.albedo_texture = null
+		mat.albedo_color = Color(0.6, 0.6, 0.6)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	front_mesh.set_surface_override_material(0, mat)
 
 
 func _update_visuals() -> void:

@@ -80,3 +80,6 @@ shape = SubResource("BoxShape3D_l2xf6")
 
 [node name="SlotAnchor" type="Marker3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, 0, 1.0864367)
+
+[node name="DiscardAnchor" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, -4.0, 0, 0)

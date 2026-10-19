@@ -6,9 +6,15 @@
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_har4p"]
 transparency = 2
+cull_mode = 2
+shading_mode = 0
 alpha_scissor_threshold = 0.5
 alpha_antialiasing_mode = 0
 albedo_texture = ExtResource("3_pfbsn")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_back"]
+shading_mode = 0
+albedo_color = Color(0.2, 0.3, 0.5, 1)
 
 [sub_resource type="FontVariation" id="FontVariation_cewvt"]
 variation_opentype = {
@@ -19,6 +25,9 @@ variation_opentype = {
 script = ExtResource("2_script")
 tempo_value = 1
 front_texture_path = ""
+
+[node name="CardBackMesh" parent="CardMesh" index="0"]
+material_override = SubResource("StandardMaterial3D_back")
 
 [node name="CardFrontMesh" parent="CardMesh" index="1"]
 material_override = SubResource("StandardMaterial3D_har4p")

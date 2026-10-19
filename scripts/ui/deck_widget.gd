@@ -16,6 +16,13 @@ signal swing_request_club_selection()
 signal modifier_request_club_selection()
 
 func _ready() -> void:
+	# Skip setup in the editor: this is a @tool widget, but the child
+	# CombinedDeckView/DeckView3D scripts are not @tool, so their signals are not
+	# attached to the instance in-editor. Wiring them would raise a script error.
+	# This has no runtime effect — setup runs normally when the game is played.
+	if Engine.is_editor_hint():
+		return
+	
 	# Find the internal views and SubViewport
 	sub_viewport = get_node_or_null("SubViewport")
 	

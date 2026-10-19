@@ -28,25 +28,28 @@ func _apply_front_texture() -> void:
 		return
 	
 	var texture = load(front_texture_path)
-	if texture:
-		var front_mesh: MeshInstance3D = $CardMesh/CardFrontMesh
-		var base_mat: Material = front_mesh.material_override
-		if base_mat == null:
-			base_mat = front_mesh.get_surface_override_material(0)
-		
-		var mat: StandardMaterial3D
-		if base_mat is StandardMaterial3D:
-			mat = (base_mat as StandardMaterial3D).duplicate()
-		else:
-			mat = StandardMaterial3D.new()
-			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-			mat.alpha_scissor_threshold = 0.5
-			mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_OFF
-		
-		mat.albedo_texture = texture
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # Show both sides
-		front_mesh.set_surface_override_material(0, mat)
+	if not texture:
+		return
+	var front_mesh: MeshInstance3D = $CardMesh/CardFrontMesh
+	# The front mesh already carries a StandardMaterial3D as its material_override
+	# (set in swing_card_3d.tscn). Update that material's albedo_texture in place
+	# rather than assigning a new surface-override material: swapping in a new
+	# material RID at runtime makes the (headless/dummy) rendering server query a
+	# not-yet-registered material and log "Parameter material is null". Updating the
+	# existing material avoids that while producing the same visual result.
+	var existing := front_mesh.material_override
+	if existing is StandardMaterial3D:
+		(existing as StandardMaterial3D).albedo_texture = texture
+		return
+	# Fallback (no override present): build a fresh material and assign it.
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	mat.alpha_scissor_threshold = 0.5
+	mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_OFF
+	mat.albedo_texture = texture
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED  # Show both sides
+	front_mesh.material_override = mat
 
 
 func _ready() -> void:
@@ -64,13 +67,8 @@ func _setup_visuals() -> void:
 	front_texture_path = "res://textures/Swing Card.png"
 	_apply_front_texture()
 	
-	# Set back texture (darker version) with depth prepass
-	var back_mat = StandardMaterial3D.new()
-	back_mat.albedo_color = Color(0.2, 0.3, 0.5)
-	back_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
-	back_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	if has_node("CardMesh/CardBackMesh"):
-		$CardMesh/CardBackMesh.set_surface_override_material(0, back_mat)
+	# Back-face material is assigned in the scene (CardBackMesh.material_override)
+	# so the surface always has a material before the first frame renders.
 	
 	# Configure labels for proper depth testing
 	if has_node("CardMesh/TempoLabel"):
