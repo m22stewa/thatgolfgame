@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b7artpasscapture01"]
+
+[ext_resource type="Script" path="res://scripts/tests/capture_course.gd" id="1_capcourse"]
+
+[node name="CaptureCourse" type="Node3D"]
+script = ExtResource("1_capcourse")
