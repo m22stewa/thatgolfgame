@@ -1,0 +1,62 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "MEDIUM",
+      "title": "Reward chips computed from aim_tile, not board-resolved landing_tile",
+      "where": "Section 9 (Board-resolution ordering), Section 11; scripts/shot_manager.gd _compute_scoring + scripts/shot_context.gd get_shot_distance",
+      "problem": "Section 9 claims scoring sees the fully board-resolved landing, but base_chips = get_shot_distance()*5 and get_shot_distance uses aim_tile (the aimed center), not landing_tile. Variance and roll-out do not affect the chip magnitude.",
+      "fix": "Pin the basis: either add get_landing_distance()/change _compute_scoring to use landing_tile - start_tile, or amend Section 9/11 to state chips are computed from the aimed center and only landing terrain adjusts score."
+    },
+    {
+      "id": 2,
+      "severity": "MEDIUM",
+      "title": "Roll/tree/water walk has no carry-path to inspect; reconstruction unspecified",
+      "where": "Sections 4.2, 6, 9 (apply_board_resolution); scripts/shot_manager.gd _simulate_ball_path",
+      "problem": "Roll-out, tree-block and water-stop rules inspect intermediate carry/roll hexes, but _simulate_ball_path produces only [start, landing] and no ShotContext field holds the carry line. apply_board_resolution must reconstruct the walk itself, which the design never specifies (incl. per-step parity).",
+      "fix": "Specify the walk: step AOESystem._get_neighbor_in_direction(tile, ctx.aim_dir, tile.x % 2 == 1) roll times from the drawn landing hex, recomputing parity each step, stopping before WATER/out-of-bounds and (non-Punch/Stinger) before TREE."
+    },
+    {
+      "id": 3,
+      "severity": "MEDIUM",
+      "title": "Fast-path trigger should be footprint_built flag only; F3 causal explanation imprecise",
+      "where": "Section 2.5 / Finding 3; scripts/shot_manager.gd _resolve_landing_tile + _select_landing_tile_from_aoe",
+      "problem": "_select_landing_tile_from_aoe already honors aoe_weights; the real bug is that compute_aoe(target_tile,...) re-keys aoe_tiles so builder weight keys go stale (not a missing branch). Also, gating the fast path on aoe_weights.size()>0 as equivalent to footprint_built is unsafe (stale weights across phases).",
+      "fix": "Correct the causal note to 'tile set re-keyed so weight keys no longer match', and gate the fast path on metadata['footprint_built'] ALONE (reset() clears it via metadata.clear())."
+    },
+    {
+      "id": 4,
+      "severity": "MEDIUM",
+      "title": "Band vs legacy CLUB_STATS.distance relationship undefined and inconsistent (Driver desync)",
+      "where": "Section 3; scripts/hex_grid.gd CLUB_STATS + ~10 .distance call sites",
+      "problem": "band_min/band_max are added without a stated relationship to the existing distance key that ~10 legacy call sites still read. The relationship differs per club (Driver band_center 24 vs distance 22; 3-Wood distance=band_max; 6-Iron distance above band_max), which desyncs legacy range-preview/reachability from the footprint builder.",
+      "fix": "State an invariant, e.g. band_center == distance per club (and update distance where the table diverges), or explicitly mark the divergent legacy readers as cosmetic-only."
+    },
+    {
+      "id": 5,
+      "severity": "MEDIUM",
+      "title": "path_tiles is a 2-tile stub; carry-path terrain scoring the design implies does not happen",
+      "where": "Sections 9, 11; scripts/shot_manager.gd _simulate_ball_path (TODO stub)",
+      "problem": "path_tiles is literally [start, landing] with a TODO; statements implying mid-flight/carry terrain affects the reward score are false. Only start + final landing terrain are scored.",
+      "fix": "Scope it explicitly: 'first playable scores only start terrain and the board-resolved landing terrain; _simulate_ball_path stays a 2-tile stub; per-hex path scoring is out of scope.'"
+    },
+    {
+      "id": 6,
+      "severity": "NIT",
+      "title": "Wind '+ = right of shot' sign asserted, not derived from DIRECTIONS + hex perp",
+      "where": "Section 4.1; scripts/wind_system.gd calculate_wind_curve / DIRECTIONS",
+      "problem": "The claim that positive cross = right of the shot depends on the 2D DIRECTIONS convention (Y+ down) and the hex perp orientation, which are never tied together; the two could silently mirror.",
+      "fix": "Define perp(fwd) by hex index ((d+2)%6 for +, (d+4)%6 for -) and add a harness assertion that a known crosswind shifts the center to the expected side."
+    },
+    {
+      "id": 7,
+      "severity": "NIT",
+      "title": "R4 conflates 2D SwingHand with the SwingHand3D SubViewport chain",
+      "where": "Section 10 R4, Section 16; scenes/ui/main_ui.tscn (SwingHand = swing_hand.tscn) vs hex_grid._init_card_system absolute SwingHand3D path",
+      "problem": "SwingHand (2D swing_hand.tscn / scripts/cards/swing_hand.gd) and the SwingHand3D SubViewport (scripts/swing_hand_3d.gd) are distinct but listed loosely together in the retirement summary.",
+      "fix": "List the two retirements separately (2D SwingHand node/script; SwingHand3D SubViewport chain by its absolute path), keeping the 'grep for references first' guard."
+    }
+  ],
+  "reviewDoc": "/Users/m22stewa/Documents/Godot/Golf/.worktrees/gameloop/.agents/tasks/design-review.md"
+}
