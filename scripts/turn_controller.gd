@@ -1,0 +1,392 @@
+extends Node
+class_name TurnController
+
+## TurnController - Builds the shot "footprint" (weighted landing disk) from the
+## current plan (club + modifier cards + aim) and drives the board-resolution
+## roll/tree/water walk after the ball lands.
+##
+## FEAT-002 creates and unit-proves this controller via the headless harness.
+## FEAT-003 wires it into the live loop. The builder preserves the pinned
+## resolutions:
+##   R#1 - reward chips come from the AIMED CENTER (ctx.aim_tile = footprint
+##         center) via ShotContext.get_shot_distance(); landing terrain is
+##         scored on the board-resolved hex.
+##   R#2 - apply_board_resolution reconstructs the roll line itself, stopping
+##         before OOB / WATER, and (for non-Punch/non-Stinger) before TREE.
+##   R#3 - build_footprint sets metadata["footprint_built"]=true so the
+##         ShotManager fast-path selects over the builder's aoe_tiles/weights.
+##   R#5 - perp(fwd) for dominant hex direction d uses hex direction (d+2)%6 for
+##         +shift and (d+4)%6 for -shift.
+
+# --- Collaborators (assigned by the loop / harness) ---
+var shot_manager: ShotManager = null
+var card_system = null                 # CardSystemManager (optional in harness)
+var aoe_system: AOESystem = null
+var wind_system: WindSystem = null
+var lie_system: LieSystem = null
+var hole_context: HoleContext = null
+var hex_grid: Node3D = null            # Hole controller (get_cell/get_tile_surface_position/...)
+
+# --- Tuning constants ---
+const MIN_WEIGHT: float = 0.05
+const BAND_MAX_SLACK: int = 2          # along-axis may exceed band_max by this much
+
+# Surface enum (matches hex_grid.gd SurfaceType)
+const SURF_TEE := 0
+const SURF_FAIRWAY := 1
+const SURF_ROUGH := 2
+const SURF_DEEP_ROUGH := 3
+const SURF_GREEN := 4
+const SURF_SAND := 5
+const SURF_WATER := 6
+const SURF_TREE := 7
+const SURF_FLAG := 8
+
+# Terrain landing-weight multipliers (footprint builder only; does NOT touch
+# AOESystem.calculate_weights_by_terrain).
+const TERRAIN_FACTOR := {
+	SURF_TEE: 1.15,
+	SURF_FAIRWAY: 1.15,
+	SURF_GREEN: 1.25,
+	SURF_ROUGH: 0.90,
+	SURF_DEEP_ROUGH: 0.75,
+	SURF_SAND: 0.60,
+	SURF_TREE: 0.45,
+	SURF_WATER: 0.50,
+	SURF_FLAG: 1.40,
+}
+
+# The club currently played this turn (ClubType int). Set by the loop/harness
+# before rebuild().
+var played_club: int = -1
+# World reference to the ball tile for this turn (shot start tile).
+var ball_tile: Vector2i = Vector2i(-1, -1)
+
+
+# --- Public API ---
+
+func begin_turn() -> void:
+	"""Start the ShotManager shot for this turn from the ball tile, then build."""
+	if shot_manager == null or hex_grid == null:
+		return
+	var ball_node: Node3D = hex_grid.get("golf_ball")
+	shot_manager.start_shot(ball_node, ball_tile)
+	rebuild()
+
+
+func set_aim_dir(dir: int) -> void:
+	"""Set the dominant hex aim direction (0..5) and rebuild the footprint."""
+	var ctx := _ctx()
+	if ctx == null:
+		return
+	ctx.aim_dir = ((dir % 6) + 6) % 6
+	rebuild()
+
+
+func rebuild() -> void:
+	"""Re-run the reset -> lie -> club band -> modifiers -> project -> build
+	contract. Invoked on every plan change (club / modifier / aim)."""
+	var ctx := _ctx()
+	if ctx == null:
+		return
+
+	var saved_aim_dir := ctx.aim_dir
+	var saved_start := ctx.start_tile
+	var saved_ball := ctx.ball
+	var saved_hole := ctx.hole
+	var saved_shot_index := ctx.shot_index
+
+	ctx.reset()
+	ctx.aim_dir = saved_aim_dir
+	ctx.start_tile = saved_start
+	ctx.ball = saved_ball
+	ctx.hole = saved_hole
+	ctx.shot_index = saved_shot_index
+
+	# 1. Lie (writes distance_mod/roll_mod/spread_mod/chips/mult + allowed_clubs)
+	if lie_system != null and ctx.start_tile.x >= 0 and hex_grid != null:
+		var lie_info := lie_system.calculate_lie(hex_grid, ctx.start_tile)
+		lie_system.apply_lie_to_shot(ctx, lie_info)
+
+	# 2. Club band -> base footprint fields (R#4: band_center == CLUB_STATS.distance)
+	_write_band_from_club(ctx, played_club)
+
+	# 3. Re-apply all currently-played shot-shape / modifier cards.
+	var mod_mgr = _modifier_manager()
+	if mod_mgr != null and mod_mgr.has_method("apply_before_aim"):
+		mod_mgr.apply_before_aim(ctx)
+
+	# 4. Project center + build the footprint disk.
+	build_footprint(ctx)
+
+
+func execute_shot() -> void:
+	"""Confirm the shot through the ShotManager (fast-path consumes the built
+	footprint)."""
+	if shot_manager != null:
+		shot_manager.confirm_shot()
+
+
+func terrain_factor(surface: int) -> float:
+	"""Const landing-weight multiplier per surface, clamped to a floor of 0.30."""
+	var raw: float = TERRAIN_FACTOR.get(surface, 1.0)
+	return maxf(raw, 0.30)
+
+
+# --- Footprint builder ---
+
+func build_footprint(ctx: ShotContext) -> void:
+	"""Build the weighted landing disk from the current plan. Sets ctx.aim_tile
+	to the footprint center (R#1) and metadata["footprint_built"] (R#3)."""
+	if hex_grid == null or aoe_system == null:
+		return
+	if ball_tile.x < 0:
+		return
+
+	var is_odd := ball_tile.x % 2 == 1
+	var fwd: Vector2i = aoe_system._get_direction_offsets(is_odd)[((ctx.aim_dir % 6) + 6) % 6]
+
+	# --- Provisional along-axis carry (no wind head/tail yet) ---
+	var base_along := ctx.band_center + ctx.distance_mod
+	var provisional_center := _walk(ball_tile, ctx.aim_dir, maxi(0, base_along))
+	var elevation_adjust := _elevation_adjust(ball_tile, provisional_center)
+	base_along += elevation_adjust
+
+	# --- Wind: head/tail distance and crosswind shift from the shot vector ---
+	var shot_vec := _shot_vector(ball_tile, provisional_center)
+	var wind_shift := 0
+	var head_tail := 0
+	if wind_system != null:
+		wind_shift = wind_system.calculate_wind_curve(shot_vec)
+		head_tail = clampi(int(round(wind_system.get_direction_vector().dot(shot_vec) * float(wind_system.strength) * 0.5)), -2, 2)
+	# Ignore-wind shots zero both BEFORE applying.
+	if ctx.get_metadata("ignore_wind", false):
+		wind_shift = 0
+		head_tail = 0
+	ctx.wind_curve = wind_shift
+
+	# --- Final along-axis carry ---
+	var along := base_along + head_tail
+	# Card overrides (flop / bump set to band_min; stinger adds; punch caps).
+	if ctx.has_metadata("along_axis_override"):
+		along = int(ctx.get_metadata("along_axis_override", along))
+	along += int(ctx.get_metadata("along_axis_add", 0))
+	if ctx.has_metadata("along_axis_cap"):
+		along = mini(along, int(ctx.get_metadata("along_axis_cap", along)))
+	along = clampi(along, ctx.band_min, ctx.band_max + BAND_MAX_SLACK)
+
+	# --- Walk to the footprint center, then apply perp shift ---
+	var center := _walk(ball_tile, ctx.aim_dir, maxi(0, along))
+	var perp_shift := wind_shift + int(round(ctx.curve_strength))
+	if perp_shift != 0:
+		center = _apply_perp_shift(center, ctx.aim_dir, perp_shift)
+
+	# R#1: aimed center drives scoring chips via get_shot_distance().
+	ctx.aim_tile = center
+
+	# --- Spread radius + weighted disk ---
+	var radius := maxi(0, ctx.base_spread + ctx.spread_mod)
+	var tiles: Array[Vector2i] = aoe_system.compute_circle_aoe(center, radius, hex_grid)
+	ctx.aoe_tiles = tiles
+	ctx.aoe_radius = radius
+
+	var weights: Dictionary = {}
+	for t in tiles:
+		var d := _hex_distance(center, t)
+		var falloff: float = pow(float(radius + 1 - d), ctx.falloff_pow)
+		var surface := _surface_at(t)
+		var w: float = falloff * terrain_factor(surface)
+		weights[t] = maxf(w, MIN_WEIGHT)
+	ctx.aoe_weights = weights
+
+	ctx.add_metadata("footprint_built", true)
+
+
+# --- Board resolution (R#2) ---
+
+func apply_board_resolution(ctx: ShotContext) -> void:
+	"""Connected to ShotManager.landing_resolved. Reconstructs the roll line from
+	the drawn landing hex, applies the green slope nudge, handles water, and
+	mutates ctx.landing_tile IN PLACE before _simulate_ball_path / _compute_scoring.
+	Only runs for footprint-built shots (leaves the legacy path untouched)."""
+	if not ctx.get_metadata("footprint_built", false):
+		return
+	if hex_grid == null:
+		return
+
+	var passes_tree: bool = ctx.get_metadata("punch", false) or ctx.get_metadata("stinger", false)
+
+	# Roll distance: base_roll + roll_mod + terrain roll of the landing surface.
+	var landing := ctx.landing_tile
+	var landing_surface := _surface_at(landing)
+	var roll := maxi(0, ctx.base_roll + ctx.roll_mod + _terrain_roll(landing_surface))
+
+	# R#2: step along aim_dir `roll` times, recomputing parity each step; stop
+	# before OOB / WATER, and (unless Punch/Stinger) before TREE.
+	var tile := landing
+	for _i in range(roll):
+		var is_odd := tile.x % 2 == 1
+		var next: Vector2i = aoe_system._get_neighbor_in_direction(tile, ctx.aim_dir, is_odd)
+		if not _in_bounds(next):
+			break
+		var next_surface := _surface_at(next)
+		if next_surface == SURF_WATER:
+			break
+		if next_surface == SURF_TREE and not passes_tree:
+			break
+		tile = next
+
+	# Deterministic green slope nudge (design §4.3).
+	if _surface_at(tile) == SURF_GREEN:
+		tile = _green_slope_nudge(tile, ctx.aim_dir)
+
+	# Water handling: if the final hex is water, flag it (drop logic lives in the
+	# loop; here we only tag so scoring/loop can react).
+	if _surface_at(tile) == SURF_WATER:
+		ctx.add_metadata("hit_water", true)
+
+	# Mutate in place before scoring (R#1: landing terrain scored on this hex).
+	ctx.landing_tile = tile
+
+
+# --- Helpers ---
+
+func _ctx() -> ShotContext:
+	if shot_manager == null:
+		return null
+	return shot_manager.current_context
+
+
+func _modifier_manager():
+	if shot_manager == null:
+		return null
+	return shot_manager.modifier_manager
+
+
+func _write_band_from_club(ctx: ShotContext, club: int) -> void:
+	if hex_grid == null or club < 0:
+		return
+	var stats: Dictionary = hex_grid.CLUB_STATS.get(club, {})
+	if stats.is_empty():
+		return
+	ctx.band_min = int(stats.get("band_min", 0))
+	ctx.band_max = int(stats.get("band_max", 0))
+	ctx.band_center = int(stats.get("band_center", int(stats.get("distance", 0))))
+	# R#4 fallback: keep band_center aligned with the legacy distance value.
+	if not stats.has("band_center"):
+		ctx.band_center = int(stats.get("distance", ctx.band_center))
+	ctx.base_spread = int(stats.get("base_spread", 0))
+	ctx.base_roll = int(stats.get("roll", 0))
+
+
+func _walk(start: Vector2i, dir: int, steps: int) -> Vector2i:
+	"""Step `steps` times in hex direction dir, recomputing parity each step and
+	stopping before out-of-bounds."""
+	var tile := start
+	for _i in range(steps):
+		var is_odd := tile.x % 2 == 1
+		var next: Vector2i = aoe_system._get_neighbor_in_direction(tile, dir, is_odd)
+		if not _in_bounds(next):
+			break
+		tile = next
+	return tile
+
+
+func _apply_perp_shift(center: Vector2i, aim_dir: int, perp_shift: int) -> Vector2i:
+	"""R#5: +shift uses hex direction (d+2)%6, -shift uses (d+4)%6."""
+	var d := ((aim_dir % 6) + 6) % 6
+	var perp_dir := (d + 2) % 6 if perp_shift > 0 else (d + 4) % 6
+	return _walk(center, perp_dir, abs(perp_shift))
+
+
+func _green_slope_nudge(tile: Vector2i, aim_dir: int) -> Vector2i:
+	"""If the hex is GREEN and a neighbor is meaningfully downhill, push one hex
+	downhill (deterministic: pick the steepest drop, break ties by direction)."""
+	var here_elev := _elevation_at(tile)
+	var best_dir := -1
+	var best_drop := 0.25  # threshold
+	for dir in range(6):
+		var is_odd := tile.x % 2 == 1
+		var n: Vector2i = aoe_system._get_neighbor_in_direction(tile, dir, is_odd)
+		if not _in_bounds(n):
+			continue
+		var drop := here_elev - _elevation_at(n)
+		if drop > best_drop:
+			best_drop = drop
+			best_dir = dir
+	if best_dir >= 0:
+		var is_odd2 := tile.x % 2 == 1
+		return aoe_system._get_neighbor_in_direction(tile, best_dir, is_odd2)
+	return tile
+
+
+func _shot_vector(from_tile: Vector2i, to_tile: Vector2i) -> Vector2:
+	"""World-space delta projected to Vector2(x, z), normalized."""
+	if hex_grid == null:
+		return Vector2.ZERO
+	var a: Vector3 = hex_grid.get_tile_surface_position(to_tile)
+	var b: Vector3 = hex_grid.get_tile_surface_position(from_tile)
+	var v := Vector2(a.x - b.x, a.z - b.z)
+	if v.length() < 0.0001:
+		return Vector2.ZERO
+	return v.normalized()
+
+
+func _elevation_adjust(from_tile: Vector2i, to_tile: Vector2i) -> int:
+	"""Downhill target (lower than the ball) adds carry; uphill subtracts."""
+	var delta := _elevation_at(from_tile) - _elevation_at(to_tile)
+	return int(round(clampf(delta * 0.5, -3.0, 3.0)))
+
+
+func _elevation_at(tile: Vector2i) -> float:
+	if hex_grid != null and hex_grid.has_method("get_elevation"):
+		return hex_grid.get_elevation(tile.x, tile.y)
+	return 0.0
+
+
+func _surface_at(tile: Vector2i) -> int:
+	if hex_grid != null and hex_grid.has_method("get_cell"):
+		return hex_grid.get_cell(tile.x, tile.y)
+	return SURF_FAIRWAY
+
+
+func _terrain_roll(surface: int) -> int:
+	"""Additive roll contribution from the landing surface."""
+	match surface:
+		SURF_FAIRWAY, SURF_TEE:
+			return 1
+		SURF_GREEN:
+			return 0
+		SURF_ROUGH:
+			return -1
+		SURF_DEEP_ROUGH:
+			return -2
+		SURF_SAND:
+			return -2
+		SURF_TREE:
+			return -1
+		_:
+			return 0
+
+
+func _in_bounds(tile: Vector2i) -> bool:
+	if hex_grid == null:
+		return false
+	var w: int = hex_grid.get_grid_width() if hex_grid.has_method("get_grid_width") else int(hex_grid.get("grid_width"))
+	var h: int = hex_grid.get_grid_height() if hex_grid.has_method("get_grid_height") else int(hex_grid.get("grid_height"))
+	return tile.x >= 0 and tile.x < w and tile.y >= 0 and tile.y < h
+
+
+func _hex_distance(a: Vector2i, b: Vector2i) -> int:
+	"""Offset-coordinate hex distance (odd-q vertical layout)."""
+	var ac := _offset_to_cube(a)
+	var bc := _offset_to_cube(b)
+	return int((abs(ac.x - bc.x) + abs(ac.y - bc.y) + abs(ac.z - bc.z)) / 2)
+
+
+func _offset_to_cube(hex: Vector2i) -> Vector3i:
+	# odd-q offset -> cube (columns are x; odd columns pushed down)
+	var x := hex.x
+	var z := hex.y - int((hex.x - (hex.x & 1)) / 2)
+	var y := -x - z
+	return Vector3i(x, y, z)

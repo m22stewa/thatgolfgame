@@ -22,6 +22,7 @@ func _register_all_cards() -> void:
 	
 	# 2. Load hardcoded cards (only if not already loaded)
 	_register_golf_cards()
+	_register_shot_shape_cards()
 	_register_club_cards()
 
 
@@ -267,6 +268,113 @@ func _register_golf_cards() -> void:
 	cf_effect.trigger_condition = 5 # OnGreen
 	clutch_finish.effects.append(cf_effect)
 	_register(clutch_finish)
+
+
+func _register_shot_shape_cards() -> void:
+	# New footprint-era SHOT cards (FEAT-002). These drive the TurnController
+	# footprint builder via apply_before_aim. Club cards are untouched.
+
+	# === IGNORE WIND ===
+	if not _cards.has("ignore_wind"):
+		var ignore_wind = CardData.create("ignore_wind", "Ignore Wind", CardData.Rarity.UNCOMMON)
+		ignore_wind.card_type = CardData.CardType.SHOT
+		ignore_wind.description = "This shot ignores wind entirely."
+		ignore_wind.flavor_text = "Flat, boring, and immune to the breeze."
+		ignore_wind.effects.append(EffectIgnoreWind.new())
+		_register(ignore_wind)
+
+	# === ROLL +2 (reuse EffectSimpleStat roll_mod) ===
+	if not _cards.has("roll_plus_2"):
+		var roll_plus = CardData.create("roll_plus_2", "Roll +2", CardData.Rarity.COMMON)
+		roll_plus.card_type = CardData.CardType.SHOT
+		roll_plus.description = "Roll +2 tiles after landing."
+		roll_plus.flavor_text = "Let it run out."
+		var rp_effect = EffectSimpleStat.new()
+		rp_effect.target_stat = "roll_mod"
+		rp_effect.value = 2
+		roll_plus.effects.append(rp_effect)
+		_register(roll_plus)
+
+	# === SOFT LANDING (reuse EffectSimpleStat roll_mod -99) ===
+	if not _cards.has("soft_landing"):
+		var soft_landing = CardData.create("soft_landing", "Soft Landing", CardData.Rarity.UNCOMMON)
+		soft_landing.card_type = CardData.CardType.SHOT
+		soft_landing.description = "Kills roll: the ball stops where it lands."
+		soft_landing.flavor_text = "Drops it on a dime."
+		var sl_effect = EffectSimpleStat.new()
+		sl_effect.target_stat = "roll_mod"
+		sl_effect.value = -99
+		soft_landing.effects.append(sl_effect)
+		_register(soft_landing)
+
+	# === TIGHTEN SPREAD ===
+	if not _cards.has("tighten_spread"):
+		var tighten = CardData.create("tighten_spread", "Tighten Spread", CardData.Rarity.UNCOMMON)
+		tighten.card_type = CardData.CardType.SHOT
+		tighten.description = "Tighter landing: spread -1, steeper falloff."
+		tighten.flavor_text = "Dial it in."
+		tighten.effects.append(EffectTightenSpread.new())
+		_register(tighten)
+
+	# === PUNCH ===
+	if not _cards.has("punch"):
+		var punch = CardData.create("punch", "Punch", CardData.Rarity.UNCOMMON)
+		punch.card_type = CardData.CardType.SHOT
+		punch.description = "Low runner: caps carry, +1 roll, tighter spread, punches through trees."
+		punch.flavor_text = "Keep it under the wind."
+		punch.effects.append(EffectPunch.new())
+		_register(punch)
+
+	# === FLOP ===
+	if not _cards.has("flop"):
+		var flop = CardData.create("flop", "Flop", CardData.Rarity.RARE)
+		flop.card_type = CardData.CardType.SHOT
+		flop.description = "Shortest carry, dead stop, tighter spread."
+		flop.flavor_text = "High and soft."
+		flop.effects.append(EffectFlop.new())
+		_register(flop)
+
+	# === DRAW (reuse EffectCurveShot, negative curve_strength) ===
+	if not _cards.has("draw"):
+		var draw = CardData.create("draw", "Draw", CardData.Rarity.UNCOMMON)
+		draw.card_type = CardData.CardType.SHOT
+		draw.description = "Shapes the shot with a draw (curves to one side)."
+		draw.flavor_text = "A gentle right-to-left shape."
+		var draw_effect = EffectCurveShot.new()
+		draw_effect.curve_direction = 0  # Draw -> negative curve_strength / "draw"
+		draw_effect.curve_tiles = 2
+		draw.effects.append(draw_effect)
+		_register(draw)
+
+	# === FADE (reuse EffectCurveShot, positive curve_strength) ===
+	if not _cards.has("fade"):
+		var fade = CardData.create("fade", "Fade", CardData.Rarity.UNCOMMON)
+		fade.card_type = CardData.CardType.SHOT
+		fade.description = "Shapes the shot with a fade (curves to the other side)."
+		fade.flavor_text = "A gentle left-to-right shape."
+		var fade_effect = EffectCurveShot.new()
+		fade_effect.curve_direction = 1  # Fade -> positive curve_strength / "fade"
+		fade_effect.curve_tiles = 2
+		fade.effects.append(fade_effect)
+		_register(fade)
+
+	# === BUMP-AND-RUN ===
+	if not _cards.has("bump_run"):
+		var bump = CardData.create("bump_run", "Bump-and-run", CardData.Rarity.COMMON)
+		bump.card_type = CardData.CardType.SHOT
+		bump.description = "Short carry, +3 roll, tighter spread."
+		bump.flavor_text = "Let the ground do the work."
+		bump.effects.append(EffectBumpRun.new())
+		_register(bump)
+
+	# === STINGER ===
+	if not _cards.has("stinger"):
+		var stinger = CardData.create("stinger", "Stinger", CardData.Rarity.RARE)
+		stinger.card_type = CardData.CardType.SHOT
+		stinger.description = "Ignores wind, +2 roll, +1 carry, tighter spread, punches through trees."
+		stinger.flavor_text = "Knock it down and let it run."
+		stinger.effects.append(EffectStinger.new())
+		_register(stinger)
 
 
 func _register_common_cards() -> void:
