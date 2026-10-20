@@ -1,7 +1,14 @@
-[gd_resource type="ArrayMesh" load_steps=3 format=4 uid="uid://b6vfv1t0jvu0r"]
+[gd_resource type="ArrayMesh" load_steps=4 format=4 uid="uid://b6vfv1t0jvu0r"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pocud"]
-albedo_color = Color(0.0062606, 0.15476039, 1.2032688e-08, 1)
+[ext_resource type="Shader" path="res://scripts/rough_turf.gdshader" id="1_rough"]
+
+[sub_resource type="ShaderMaterial" id="StandardMaterial3D_pocud"]
+render_priority = 0
+shader = ExtResource("1_rough")
+shader_parameter/base_color = Color(0.122, 0.227, 0.133, 1)
+shader_parameter/tuft_scale = 20.0
+shader_parameter/tuft_strength = 0.09
+shader_parameter/roughness = 1.0
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_xhlje"]
 _surfaces = [{

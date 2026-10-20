@@ -3,10 +3,10 @@
 [ext_resource type="Texture2D" uid="uid://oiwyrbxun2jr" path="res://textures/seamless_cartoon_styled_water_texture_by_berserkitty_dcatyft-375w-2x.jpg" id="2_lmmp0"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_drubu"]
-albedo_color = Color(0, 0.2901961, 1, 1)
+albedo_color = Color(0.294, 0.471, 0.573, 1)
 albedo_texture = ExtResource("2_lmmp0")
-metallic = 0.6
-roughness = 0.48
+metallic = 0.1
+roughness = 0.35
 uv1_triplanar = true
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_xhlje"]

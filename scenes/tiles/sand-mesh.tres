@@ -1,7 +1,16 @@
-[gd_resource type="ArrayMesh" load_steps=3 format=4 uid="uid://63eyw8eh73m1"]
+[gd_resource type="ArrayMesh" load_steps=4 format=4 uid="uid://63eyw8eh73m1"]
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pocud"]
-albedo_color = Color(0.6770523, 0.6733679, 0.28709343, 1)
+[ext_resource type="Shader" path="res://scripts/sand.gdshader" id="1_sand"]
+
+[sub_resource type="ShaderMaterial" id="StandardMaterial3D_pocud"]
+render_priority = 0
+shader = ExtResource("1_sand")
+shader_parameter/base_color = Color(0.824, 0.741, 0.518, 1)
+shader_parameter/ripple_dir = Vector2(0.7, 0.7)
+shader_parameter/ripple_freq = 22.0
+shader_parameter/ripple_strength = 0.05
+shader_parameter/grain_strength = 0.05
+shader_parameter/roughness = 1.0
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_xhlje"]
 _surfaces = [{

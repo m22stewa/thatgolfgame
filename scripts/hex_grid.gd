@@ -6599,6 +6599,33 @@ func _generate_grid() -> void:
 	# Add slope arrows on green tiles
 	_spawn_green_slope_arrows(green_cells)
 
+	# Align fairway/green mowing stripes to the hole's tee->flag play direction
+	_apply_mowing_direction()
+
+
+# Align mowing stripes on the fairway and green turf materials to the hole's
+# play direction (tee -> flag). Both tiles share one MultiMesh material each
+# (reached via mesh_map), so setting stripe_dir once updates every instance.
+# Does not alter any tile transforms, generation, or layout.
+func _apply_mowing_direction() -> void:
+	var stripe_dir := Vector2(0.0, 1.0)
+	if flag_position.x >= 0 and flag_position.y >= 0 and tee_position != Vector3.ZERO:
+		var width := TILE_SIZE
+		var height := TILE_SIZE * sqrt(3.0)
+		var flag_x := flag_position.x * width * 1.5
+		var flag_z := flag_position.y * height + (flag_position.x % 2) * (height / 2.0)
+		var dir := Vector2(flag_x - tee_position.x, flag_z - tee_position.z)
+		if dir.length() > 0.001:
+			stripe_dir = dir.normalized()
+
+	for surf_type in [SurfaceType.FAIRWAY, SurfaceType.GREEN]:
+		var mesh := mesh_map[surf_type] as ArrayMesh
+		if mesh == null or mesh.get_surface_count() == 0:
+			continue
+		var mat := mesh.surface_get_material(0)
+		if mat is ShaderMaterial:
+			mat.set_shader_parameter("stripe_dir", stripe_dir)
+
 
 # Coin magnet radius - base is 1 tile, can be increased by items
 var coin_magnet_radius: int = 1
