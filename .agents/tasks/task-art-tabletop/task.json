@@ -1,0 +1,7 @@
+{
+  "task_id": "task-art-tabletop",
+  "task_description": "Refined-tabletop-golf art-direction pass on the Godot 4.7.2 golf deckbuilder: clean neutral-studio environment/lighting overhaul in scenes/GOLF.tscn; textured (not flat) terrain tile materials with mowing stripes/ripple/tuft grain in a limited premium palette; and crafted low-poly soft-cel trees with dark outlines, soft contact shadows, and MultiMesh instancing. Keep hole layout, course generation, camera, navigation, the playable turn loop, and the two headless test harnesses EXACTLY as they are. Capture AFTER screenshots with the same framings as the existing BEFORE set.",
+  "status": "completed",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
+  "blocked_reason": null
+}
