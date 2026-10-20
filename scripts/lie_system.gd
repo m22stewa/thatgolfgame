@@ -24,10 +24,11 @@ const LIE_DATA = {
 		"description": "Perfect lie on a tee. Full power and control.",
 		"distance_mod": 0,     # No change - baseline
 		"accuracy_mod": 0,     # Normal AOE
+		"spread_mod": 0,
 		"roll_mod": 0,
 		"chip_bonus": 5,
 		"mult_bonus": 0.0,
-		"allowed_clubs": ["DRIVER", "WOOD_3", "WOOD_5", "IRON_3", "IRON_5", "IRON_6", "IRON_7", "IRON_8", "IRON_9", "PITCHING_WEDGE"],
+		"allowed_clubs": ["DRIVER", "WOOD_3", "IRON_3", "IRON_6", "IRON_8", "PITCHING_WEDGE"],
 		"color": Color(0.4, 0.8, 0.4),
 	},
 	"FAIRWAY": {
@@ -35,10 +36,11 @@ const LIE_DATA = {
 		"description": "Clean lie on short grass. Excellent contact.",
 		"distance_mod": 0,     # Standard distance
 		"accuracy_mod": 0,
+		"spread_mod": 0,
 		"roll_mod": 0,
 		"chip_bonus": 0,
 		"mult_bonus": 0.1,
-		"allowed_clubs": ["WOOD_3", "WOOD_5", "IRON_3", "IRON_5", "IRON_6", "IRON_7", "IRON_8", "IRON_9", "PITCHING_WEDGE", "SAND_WEDGE"],
+		"allowed_clubs": ["WOOD_3", "IRON_3", "IRON_6", "IRON_8", "PITCHING_WEDGE"],
 		"color": Color(0.3, 0.7, 0.3),
 	},
 	"ROUGH": {
@@ -46,10 +48,11 @@ const LIE_DATA = {
 		"description": "Ball in longer grass. Reduced distance.",
 		"distance_mod": -2,    # 2 tiles less distance
 		"accuracy_mod": 1,     # +1 AOE ring (less accurate)
+		"spread_mod": 1,
 		"roll_mod": -1,
 		"chip_bonus": -5,
 		"mult_bonus": 0.0,
-		"allowed_clubs": ["IRON_5", "IRON_6", "IRON_7", "IRON_8", "IRON_9", "PITCHING_WEDGE", "SAND_WEDGE"],
+		"allowed_clubs": ["IRON_3", "IRON_6", "IRON_8", "PITCHING_WEDGE"],
 		"color": Color(0.2, 0.5, 0.2),
 	},
 	"DEEP_ROUGH": {
@@ -57,10 +60,11 @@ const LIE_DATA = {
 		"description": "Ball buried in thick grass. Major power and control loss.",
 		"distance_mod": -4,    # 4 tiles less distance
 		"accuracy_mod": 2,     # +2 AOE rings (very inaccurate)
+		"spread_mod": 2,
 		"roll_mod": -2,
 		"chip_bonus": -15,
 		"mult_bonus": -0.2,
-		"allowed_clubs": ["IRON_7", "IRON_8", "IRON_9", "PITCHING_WEDGE", "SAND_WEDGE"],
+		"allowed_clubs": ["IRON_6", "IRON_8", "PITCHING_WEDGE"],
 		"color": Color(0.15, 0.35, 0.15),
 	},
 	"SAND": {
@@ -68,11 +72,12 @@ const LIE_DATA = {
 		"description": "Sand trap. Use sand wedge for best results.",
 		"distance_mod": -6,    # 6 tiles less distance
 		"accuracy_mod": 3,     # +3 AOE rings
+		"spread_mod": 2,
 		"roll_mod": -3,
 		"chip_bonus": -20,
 		"mult_bonus": 0.0,
-		"preferred_club": "SAND_WEDGE",
-		"allowed_clubs": ["SAND_WEDGE", "PITCHING_WEDGE", "IRON_9"],
+		"preferred_club": "PITCHING_WEDGE",
+		"allowed_clubs": ["PITCHING_WEDGE", "IRON_8"],
 		"color": Color(0.9, 0.85, 0.6),
 	},
 	"GREEN": {
@@ -80,6 +85,7 @@ const LIE_DATA = {
 		"description": "Putting surface. Putter only.",
 		"distance_mod": 0,
 		"accuracy_mod": 0,
+		"spread_mod": 0,
 		"roll_mod": 0,
 		"chip_bonus": 0,
 		"mult_bonus": 0.0,
@@ -92,6 +98,7 @@ const LIE_DATA = {
 		"description": "Penalty area. Drop required.",
 		"distance_mod": -100,  # Can't hit from water
 		"accuracy_mod": 0,
+		"spread_mod": 0,
 		"roll_mod": 0,
 		"chip_bonus": -50,
 		"mult_bonus": -0.5,
@@ -103,10 +110,11 @@ const LIE_DATA = {
 		"description": "Obstructed lie. Limited swing options.",
 		"distance_mod": -6,
 		"accuracy_mod": 3,     # Very inaccurate
+		"spread_mod": 3,
 		"roll_mod": -2,
 		"chip_bonus": -25,
 		"mult_bonus": -0.3,
-		"allowed_clubs": ["IRON_7", "IRON_8", "IRON_9", "PITCHING_WEDGE", "SAND_WEDGE"],
+		"allowed_clubs": ["IRON_6", "IRON_8", "PITCHING_WEDGE"],
 		"color": Color(0.3, 0.25, 0.1),
 	},
 	"FLAG": {
@@ -114,6 +122,7 @@ const LIE_DATA = {
 		"description": "In the cup!",
 		"distance_mod": 0,
 		"accuracy_mod": 0,
+		"spread_mod": 0,
 		"roll_mod": 0,
 		"chip_bonus": 100,
 		"mult_bonus": 1.0,
@@ -195,6 +204,8 @@ func apply_lie_to_shot(context: ShotContext, lie_info: Dictionary) -> void:
 	# Note: accuracy_mod no longer affects AOE - AOE is card-driven only
 	# context.accuracy_mod += lie_info.get("accuracy_mod", 0)
 	context.roll_mod += lie_info.get("roll_mod", 0)
+	# Footprint spread modifier (FEAT-001): lie widens the shot footprint
+	context.spread_mod += lie_info.get("spread_mod", 0)
 	
 	# Store lie info in context metadata (for UI and debugging)
 	context.add_metadata("lie_info", lie_info)

@@ -24,6 +24,9 @@ var modifier_manager: Node = null    # Reference to ModifierManager
 # Current shot context
 var current_context: ShotContext = null
 
+# Optional seeded RNG for deterministic landing selection (null = use globals)
+var rng: RandomNumberGenerator = null
+
 # Shot state
 var is_shot_in_progress: bool = false
 var is_animating: bool = false  # True while ball is in flight/bouncing
@@ -269,6 +272,19 @@ func _apply_modifiers_on_aoe() -> void:
 func _resolve_landing_tile() -> void:
 	"""Phase 6: Determine landing tile from aim tile with accuracy-based spread"""
 	
+	# R#3 footprint fast-path: when the TurnController built the footprint
+	# (aoe_tiles + aoe_weights), select directly over them and skip both
+	# _calculate_curved_target AND the compute_aoe rebuild. Gate on the
+	# footprint_built metadata flag ALONE (never aoe_weights.size()>0 — stale
+	# weights can persist across phases and cause false positives).
+	# The legacy path below breaks when footprint-built because
+	# compute_aoe(target_tile) re-keys aoe_tiles so the builder weights no
+	# longer match (collapsing to uniform via the .get(tile,1.0) fallback).
+	if current_context.get_metadata("footprint_built", false):
+		current_context.landing_tile = _weighted_tile_selection()
+		landing_resolved.emit(current_context)
+		return
+	
 	# Calculate the target with curve applied (from cards + wind)
 	var target_tile = _calculate_curved_target()
 	
@@ -320,7 +336,7 @@ func _select_landing_tile_from_aoe(center_tile: Vector2i, aoe_tiles: Array[Vecto
 		weights[i] = w
 		total_weight += w
 	
-	var roll := randf() * total_weight
+	var roll := (rng.randf() if rng else randf()) * total_weight
 	var cumulative := 0.0
 	for i in range(aoe_tiles.size()):
 		cumulative += weights[i]
@@ -421,7 +437,7 @@ func _weighted_tile_selection() -> Vector2i:
 	for tile in current_context.aoe_tiles:
 		total_weight += current_context.aoe_weights.get(tile, 1.0)
 	
-	var roll = randf() * total_weight
+	var roll = (rng.randf() if rng else randf()) * total_weight
 	var cumulative = 0.0
 	
 	for tile in current_context.aoe_tiles:

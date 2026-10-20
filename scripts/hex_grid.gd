@@ -38,7 +38,10 @@ var spin_buttons: Dictionary = {}   # SpinType -> Button
 const CLUB_STATS = {
 	   ClubType.DRIVER: {
 		   "name": "Driver",
-		   "distance": 22,
+		   "distance": 24,     # R#4: == band_center
+		   "band_min": 22,
+		   "band_max": 26,
+		   "base_spread": 3,
 		   "accuracy": 3,      # 3 AOE rings - hardest to control
 		   "roll": 3,          # Hot landing, lots of roll
 		   "loft": 1,          # Low loft
@@ -48,7 +51,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.WOOD_3: {
 		   "name": "3 Wood",
-		   "distance": 20,
+		   "distance": 19,     # R#4: == band_center
+		   "band_min": 18,
+		   "band_max": 20,
+		   "base_spread": 2,
 		   "accuracy": 3,
 		   "roll": 3,
 		   "loft": 1,
@@ -58,7 +64,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.WOOD_5: {
 		   "name": "5 Wood",
-		   "distance": 18,
+		   "distance": 17,     # R#4: == band_center (band 16-18)
+		   "band_min": 16,
+		   "band_max": 18,
+		   "base_spread": 2,
 		   "accuracy": 3,
 		   "roll": 3,
 		   "loft": 1,
@@ -68,7 +77,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.IRON_3: {
 		   "name": "3 Iron",
-		   "distance": 17,
+		   "distance": 16,     # R#4: == band_center
+		   "band_min": 15,
+		   "band_max": 17,
+		   "base_spread": 1,
 		   "accuracy": 2,
 		   "roll": 2,
 		   "loft": 2,
@@ -78,7 +90,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.IRON_5: {
 		   "name": "5 Iron",
-		   "distance": 16,
+		   "distance": 15,     # R#4: == band_center (band 14-16)
+		   "band_min": 14,
+		   "band_max": 16,
+		   "base_spread": 1,
 		   "accuracy": 2,
 		   "roll": 2,
 		   "loft": 2,
@@ -88,7 +103,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.IRON_6: {
 		   "name": "6 Iron",
-		   "distance": 15,
+		   "distance": 13,     # R#4: == band_center
+		   "band_min": 12,
+		   "band_max": 14,
+		   "base_spread": 1,
 		   "accuracy": 1,
 		   "roll": 2,
 		   "loft": 2,
@@ -98,7 +116,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.IRON_7: {
 		   "name": "7 Iron",
-		   "distance": 14,
+		   "distance": 13,     # R#4: == band_center (band 12-14)
+		   "band_min": 12,
+		   "band_max": 14,
+		   "base_spread": 1,
 		   "accuracy": 1,
 		   "roll": 1,
 		   "loft": 3,
@@ -108,7 +129,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.IRON_8: {
 		   "name": "8 Iron",
-		   "distance": 13,
+		   "distance": 10,     # R#4: == band_center
+		   "band_min": 9,
+		   "band_max": 11,
+		   "base_spread": 1,
 		   "accuracy": 1,
 		   "roll": 1,
 		   "loft": 3,
@@ -118,7 +142,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.IRON_9: {
 		   "name": "9 Iron",
-		   "distance": 12,
+		   "distance": 11,     # R#4: == band_center (band 10-12)
+		   "band_min": 10,
+		   "band_max": 12,
+		   "base_spread": 1,
 		   "accuracy": 1,
 		   "roll": 1,
 		   "loft": 4,
@@ -128,7 +155,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.PITCHING_WEDGE: {
 		   "name": "Pitching Wedge",
-		   "distance": 11,
+		   "distance": 6,      # R#4: == band_center
+		   "band_min": 5,
+		   "band_max": 8,
+		   "base_spread": 1,
 		   "accuracy": 1,
 		   "roll": 1,
 		   "loft": 4,
@@ -138,7 +168,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.SAND_WEDGE: {
 		   "name": "Sand Wedge",
-		   "distance": 9,
+		   "distance": 6,      # R#4: == band_center (band 4-7)
+		   "band_min": 4,
+		   "band_max": 7,
+		   "base_spread": 1,
 		   "accuracy": 1,
 		   "roll": 0,
 		   "loft": 5,          # Highest loft
@@ -148,7 +181,10 @@ const CLUB_STATS = {
 	   },
 	   ClubType.PUTTER: {
 		   "name": "Putter",
-		   "distance": 5,
+		   "distance": 2,      # R#4: == band_center
+		   "band_min": 1,
+		   "band_max": 4,
+		   "base_spread": 0,
 		   "accuracy": 1,
 		   "roll": 5,
 		   "loft": 0,

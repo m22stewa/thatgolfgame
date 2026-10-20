@@ -30,13 +30,14 @@ const DIRECTION_NAMES = ["W", "SW", "S", "SE", "E", "NE", "N", "NW"]
 const STRENGTH_NAMES = ["Calm", "Light", "Moderate", "Strong"]
 
 
-func generate_wind(difficulty: float = 0.5) -> void:
+func generate_wind(difficulty: float = 0.5, rng: RandomNumberGenerator = null) -> void:
 	"""Generate random wind conditions for a hole.
-	difficulty: 0.0-1.0, affects wind probability and strength"""
+	difficulty: 0.0-1.0, affects wind probability and strength
+	rng: optional seeded RNG for deterministic generation (null = use globals)"""
 	
 	# Wind probability increases with difficulty (30% easy -> 80% hard)
 	var wind_chance = lerp(0.3, 0.8, difficulty)
-	enabled = randf() < wind_chance
+	enabled = (rng.randf() if rng else randf()) < wind_chance
 	
 	if not enabled:
 		speed_kmh = 0.0
@@ -45,12 +46,12 @@ func generate_wind(difficulty: float = 0.5) -> void:
 		return
 	
 	# Random direction (0-7)
-	direction_index = randi() % 8
+	direction_index = (rng.randi() if rng else randi()) % 8
 	
 	# Wind speed scales with difficulty (5-15 easy -> 15-40 hard)
 	var min_speed = lerp(5.0, 15.0, difficulty)
 	var max_speed = lerp(15.0, 40.0, difficulty)
-	speed_kmh = randf_range(min_speed, max_speed)
+	speed_kmh = (rng.randf_range(min_speed, max_speed) if rng else randf_range(min_speed, max_speed))
 	
 	# Calculate strength (0-3) from speed
 	strength = _calculate_strength()

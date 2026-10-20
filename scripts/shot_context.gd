@@ -22,6 +22,16 @@ var roll_mod: int = 0                        # Roll distance modifier (tiles)
 # Wind effect on ball curve (0-3 range, applied during flight)
 var wind_curve: int = 0                      # Tiles of lateral wind push
 
+# Footprint / shot-shape fields (FEAT-001 foundation)
+var aim_dir: int = 0                          # Dominant hex direction of the shot (0..5)
+var band_min: int = 0                         # Club distance band minimum (tiles)
+var band_max: int = 0                         # Club distance band maximum (tiles)
+var band_center: int = 0                      # Club distance band center (tiles)
+var base_spread: int = 0                      # Base footprint spread (rings)
+var base_roll: int = 0                        # Base roll (tiles) before modifiers
+var spread_mod: int = 0                       # Additive spread modifier (lie/cards)
+var falloff_pow: float = 1.0                  # Footprint weight falloff exponent
+
 # AOE (Area of Effect) data
 var aoe_tiles: Array[Vector2i] = []           # All tiles in AOE
 var aoe_radius: int = 1                       # Base AOE radius in hex rings
@@ -66,6 +76,14 @@ func reset() -> void:
 	accuracy_mod = 0
 	roll_mod = 0
 	wind_curve = 0
+	aim_dir = 0
+	band_min = 0
+	band_max = 0
+	band_center = 0
+	base_spread = 0
+	base_roll = 0
+	spread_mod = 0
+	falloff_pow = 1.0
 	aoe_tiles.clear()
 	aoe_radius = 0  # Start at 0 (perfect accuracy)
 	aoe_shape = "circle"
