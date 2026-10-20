@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-004",
+  "type": "chore",
+  "description": "Final cross-FEAT integration polish and documentation of manual-only verification. After FEAT-001..003, run the whole loop end-to-end one more time, tidy the new UI to the clean/neutral 'refined tabletop golf' direction (flat panels, existing theme font, navy/cream + brass accent — no new art), confirm no stray debug prints or scratch files remain, and record in the PR what can only be verified by code reading / manual play. This feature introduces no new mechanics; it is the convergence/cleanup pass. Depends on all prior FEATs.",
+  "status": "pending",
+  "steps": [
+    "Run the full harness and both clean-build commands; confirm the complete loop deal-hand -> play club -> optionally play modifiers -> aim 6 dirs -> preview footprint -> Shoot -> resolve (carry+roll+wind+slope) -> ball moves toward hole -> scoring computed (reward layer) -> hole-out, with fixed-seed determinism.",
+    "Tidy the new UI: ShootButton + 2D hand strip + footprint preview readout use flat panels, the existing theme/custom_font, navy/cream with a brass accent for the primary Shoot action; no decorative framing, no new art assets. Do NOT touch theme/ or assets/ beyond referencing existing resources.",
+    "Remove any temporary debug asserts/prints or scratch files added during implementation (the test harness under scripts/tests/ and scenes/tests/ stays, marked test-only).",
+    "Confirm project.godot run/main_scene is still uid://i0lqex70w705 (scenes/GOLF.tscn) — unchanged.",
+    "In the final report / PR description, explicitly state what is only verifiable by code reading / manual play: the FEEL of the weighted variance, the live preview brightness mapping, camera/animation polish, UI layout aesthetics, and that WCAG/accessibility of the new UI is not validated here. Note the 2 pre-existing font errors (uid://csixfh5trj68q) are the accepted baseline, not new regressions."
+  ],
+  "acceptance_criteria": [
+    "AC12: the headless harness runs the full loop and exits 0.",
+    "Both clean-build commands report 0 new script errors (only the accepted 2 pre-existing font errors remain).",
+    "No stray debug prints/scratch files remain; the test harness is the only test-only addition.",
+    "project.godot run/main_scene unchanged (uid://i0lqex70w705).",
+    "The new UI is clean/neutral per the art direction and adds no new art assets."
+  ],
+  "verification": [
+    "Run the two clean-build commands -> 0 new errors.",
+    "Run: /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/m22stewa/Documents/Godot/Golf/.worktrees/gameloop scenes/tests/test_turn_loop.tscn 2>&1 -> exits 0.",
+    "git -C /Users/m22stewa/Documents/Godot/Golf/.worktrees/gameloop status --short -> only intended source files changed (no models/textures/assets .import churn staged).",
+    "Commit any final changes on feature/gameloop-v1."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

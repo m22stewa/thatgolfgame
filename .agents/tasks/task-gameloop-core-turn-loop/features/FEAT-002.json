@@ -1,0 +1,37 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Footprint engine + card content + the isolated headless harness. Add the new shot-shape CardEffects and register their SHOT cards; create TurnController with the footprint builder (R#5 perp/wind sign), terrain-factor table, and the apply_board_resolution roll/tree/water walk (R#2) + green slope nudge, honoring R#1 scoring basis; and author the test harness proving the full loop, determinism (AC6), and the R#5 crosswind sign. Depends on FEAT-001 (ShotContext fields, CLUB_STATS bands, RNG seam, fast-path, lie spread, new resources). TurnController is created and unit-provable here via the harness but is wired into the live loop in FEAT-003.",
+  "status": "pending",
+  "steps": [
+    "Add new CardEffect scripts under scripts/cards/effects/ (each extends CardEffect, writes at apply_before_aim): effect_ignore_wind.gd (metadata[\"ignore_wind\"]=true); effect_tighten_spread.gd (spread_mod -= 1, falloff_pow += 0.5); effect_punch.gd (metadata[\"punch\"]=true, roll_mod += 1, spread_mod -= 1, cap along-axis distance to band_center); effect_flop.gd (along-axis = band_min, roll_mod -= 99, spread_mod -= 1); effect_bump_run.gd (along-axis = band_min, roll_mod += 3, spread_mod -= 1); effect_stinger.gd (metadata[\"ignore_wind\"]=true, roll_mod += 2, along-axis += 1, spread_mod -= 1).",
+    "In scripts/cards/card_library.gd register the new SHOT cards (Ignore Wind, Roll +2 via existing EffectSimpleStat roll_mod +2, Soft Landing via EffectSimpleStat roll_mod -99, Tighten Spread, Punch, Flop, Draw via existing EffectCurveShot Draw=negative curve_strength/\"draw\", Fade via EffectCurveShot Fade=positive/\"fade\", Bump-and-run, Stinger). Keep all 12 club cards untouched.",
+    "Create scripts/turn_controller.gd (class_name TurnController extends Node) holding refs to shot_manager, card_system, aoe_system, wind_system, lie_system, hole_context, hex_grid (as hole controller).",
+    "Implement TurnController.rebuild(): run the reset-then-reapply contract — ctx.reset(); LieSystem.apply_lie_to_shot(ctx, lie_info); write band_min/band_max/band_center/base_spread/base_roll from CLUB_STATS[played_club]; ModifierManager.apply_before_aim(ctx) to re-apply all currently-played shot-shape/modifier cards; project center_tile; call build_footprint(ctx). This is re-invoked on every plan change (club/modifier/aim).",
+    "Implement TurnController.build_footprint(ctx) per design §9 pseudocode: fwd = AOESystem._get_direction_offsets(ball.x % 2 == 1)[ctx.aim_dir]; along-axis dist = ctx.band_center + ctx.distance_mod + elevation_adjust + wind_headtail, clamped to [band_min, band_max+2]; walk the center hex honoring parity via _get_neighbor_in_direction; apply perp shift for wind+draw/fade. R#5: perp(fwd) for dominant hex direction d uses hex direction (d+2)%6 for +shift and (d+4)%6 for -shift. Set ctx.aim_tile = center (so shot_manager.set_aim_target gets it and R#1 chips come from the aimed center). R = max(0, base_spread + spread_mod + lie_spread_mod); aoe_tiles = compute_circle_aoe(center, R, hex_grid); per hex weight = pow(R+1-d, falloff_pow) * terrain_factor(get_cell(t)), min MIN_WEIGHT. Set metadata[\"footprint_built\"]=true.",
+    "Implement TurnController.terrain_factor(surface:int)->float as a const multiplier table: FAIRWAY/TEE 1.15, GREEN 1.25, ROUGH 0.90, DEEP_ROUGH 0.75, SAND 0.60, TREE 0.45, WATER 0.50, FLAG 1.40, clamped max(raw, 0.30). Do NOT edit AOESystem.calculate_weights_by_terrain.",
+    "Implement wind math in the builder: shot_vec from world-space delta hex_grid.get_tile_surface_position(center) - get_tile_surface_position(ball) projected to Vector2(x,z) normalized; wind_shift = WindSystem.calculate_wind_curve(shot_vec) -> ctx.wind_curve; head_tail = clampi(round(WindSystem.get_direction_vector().dot(shot_vec) * WindSystem.strength * 0.5), -2, 2) added to along-axis distance; if ctx.get_metadata(\"ignore_wind\", false) set both wind_shift and head_tail to 0 before applying.",
+    "Implement TurnController.execute_shot() -> shot_manager.confirm_shot(); and begin_turn()/set_aim_dir(dir) (writes ctx.aim_dir, calls rebuild()).",
+    "Implement TurnController.apply_board_resolution(ctx) connected to shot_manager.landing_resolved. R#2: reconstruct the roll line by stepping AOESystem._get_neighbor_in_direction(tile, ctx.aim_dir, tile.x % 2 == 1) exactly roll times from the DRAWN landing hex, RECOMPUTING is_odd = tile.x % 2 == 1 at EACH step, stopping before out-of-bounds, stopping before WATER, and (for non-Punch/non-Stinger) stopping before TREE (Punch/Stinger pass through TREE). roll = max(0, base_roll + roll_mod + terrain_roll(landing_surface)). Then deterministic green slope nudge (design §4.3: if final hex GREEN and max_neighbor_drop > 0.25, push one hex downhill). Water: set metadata[\"hit_water\"]=true and reposition tile. Mutate ctx.landing_tile IN PLACE before _simulate_ball_path/_compute_scoring. R#1: _simulate_ball_path stays the 2-tile stub; do NOT change it; landing terrain scored on the resolved hex.",
+    "Create the harness scripts/tests/test_turn_loop.gd + scenes/tests/test_turn_loop.tscn (test-only, not shipped). Build a fixed small HoleDefinition (tee, straight fairway, green+flag, one bunker, one water, one tree) with a fixed seed; deal a fixed hand via HandDefinition.fixed_hand; instantiate the needed systems + TurnController headlessly without real-time UI. Assert all acceptance criteria below.",
+    "Harness must set shot_manager.rng and wind rng from a fixed HoleContext.rng so AC6 determinism holds."
+  ],
+  "acceptance_criteria": [
+    "AC3: playing club_driver sets ctx.band_min/band_max/band_center/base_spread/base_roll from CLUB_STATS[DRIVER] and ctx.band_center == CLUB_STATS[DRIVER].distance (R#4).",
+    "AC4: each of the 6 aim_dir yields non-empty aoe_tiles, positive total weight, and a center along that direction within [band_min, band_max] (clamped to bounds).",
+    "AC5: Tighten Spread reduces footprint hex count or concentrates weight; Ignore Wind makes the resolved center independent of the wind vector.",
+    "R#5 crosswind sign: a fixed crosswind on a fixed tee shot pushes center_tile to the EXPECTED side (hex dir (d+2)%6 for +shift), asserted as moved-to-that-side not the opposite.",
+    "AC6: fixed seed + fixed plays + fixed aim -> two execute_shot runs yield an IDENTICAL landing_tile.",
+    "AC7: get_tile_distance(landing, flag) <= get_tile_distance(start, flag) for a straight clear tee shot.",
+    "AC8: ctx.calculate_final_score() == int(round(ctx.chips * ctx.mult)); nothing gates progression; ScoringManager is NOT asserted against.",
+    "Both clean-build commands report 0 new script errors.",
+    "The harness exits 0 (AC12)."
+  ],
+  "verification": [
+    "Run the two clean-build commands (headless run + --editor --quit grep) -> 0 new errors.",
+    "Run: /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/m22stewa/Documents/Godot/Golf/.worktrees/gameloop scenes/tests/test_turn_loop.tscn 2>&1 -> all assertions pass, process exits 0.",
+    "Commit the new/changed source files on feature/gameloop-v1 (stage specific files)."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

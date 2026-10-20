@@ -1,0 +1,33 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Wire the live loop and retire the old real-time flows, strictly add-before-remove so the headless build never breaks. Add the ShootButton + 2D hand display + TurnController instantiation; own HoleContext in hex_grid (seed RNG, apply HoleDefinition, deal hand); route club-select/modifier/aim/preview/Shoot through TurnController; then retire the SpinMeter/SwingMeter confirm path, excise the real-time putting mini-game, confirm board-only wind, and finally delete the now-orphaned meter/putting/swing-hand scripts and scenes (Finding 7 two-retirement split, grep-guarded). Depends on FEAT-001 and FEAT-002 (TurnController + harness must exist and pass BEFORE the deletions).",
+  "steps": [
+    "R0: Add a clean Button \"Shoot\" (brass accent, bottom-center) to scenes/ui/main_ui.tscn and a simple HBoxContainer 2D hand strip (club row + modifier row); expose shoot_button in scripts/ui/main_ui.gd. In scripts/hex_grid.gd _init_card_system instantiate TurnController as a child of hex_grid, give it refs (shot_manager, card_system, aoe_system, wind_system, lie_system, hole_context, hex_grid), connect shot_manager.landing_resolved -> TurnController.apply_board_resolution, and wire ShootButton.pressed -> TurnController.execute_shot. Both legacy SpinMeter and the Shoot button can confirm at this point.",
+    "In scripts/hex_grid.gd hole setup: create a HoleContext, seed rng.seed from the definition seed (or random), set shot_manager.rng = hole_context.rng, and pass hole_context.rng to WindSystem.generate_wind. If definition.use_procedural is false build the grid from grid_width/height + apply surface_overrides/elevation_overrides + set tee/flag; else run existing generate_hole_with_par with the seeded RNG (additive; procedural path unchanged when definition==null; do NOT break procedural generation).",
+    "Add CardSystemManager.deal_hand_for_hole(hand_def, rng): source clubs from club_deck_manager / CardLibrary.get_club_deck() (NOT a nonexistent CardSystemManager.get_club_deck()); draw hand_size modifier cards from starter_deck.tres, or deal dealt_card_ids verbatim when fixed_hand. Clubs are a reusable bag (not consumed per shot); modifier cards deplete on play.",
+    "Route the loop through TurnController: club-selection path and CardSystemManager.activate_card_modifier call TurnController.rebuild() on every plan change; map 6-direction aim (keyboard/edge-click) to TurnController.set_aim_dir (existing hover/lock tile may remain as snap-to-nearest convenience). After rebuild(), hex_grid.refresh_aoe_display() renders the footprint (brightness proportional to aoe_weights, marker on center). Enforce ShootButton legality: disabled until a legal club for the current lie is played and an aim is set; Putter only on GREEN (read ctx.get_metadata(\"allowed_clubs\") + explicit Putter-on-GREEN guard).",
+    "R1: change ShotUI._on_spin_confirmed / _on_swing_completed_with_spin to no-op or delegate to TurnController.execute_shot; disconnect SpinMeter.spin_confirmed / SwingMeter.swing_completed from the confirm path; set SwingMeter/SpinMeter/SpinMeterPanel nodes visible=false in main_ui.tscn (scripts stay in tree for now). Confirm the loop runs end-to-end via Shoot only.",
+    "R2: in hex_grid._start_new_shot remove the should_putt = ball_surface == GREEN -> putting_system.enter_putting_mode() branch so GREEN is a normal lie (lie table restricts to PUTTER). Stop instantiating PuttingSystem in _init_putting_system; remove putting_system field reads on the shot path. Keep _trigger_hole_complete/hole_complete_triggered and the ball-on-flag check intact.",
+    "R3: verify the flight animation in hex_grid reads the resolved landing_tile (board offset), not live per-frame wind; remove any live wind application found; otherwise document as verify-only.",
+    "R4 (do this LAST, only after the FEAT-002 harness still passes): grep for all references to each retirement target, treating the 2D SwingHand (scenes/ui/swing_hand.tscn / scripts/cards/swing_hand.gd) and the SwingHand3D SubViewport chain (scripts/swing_hand_3d.gd at /root/GOLF/Control/MainUI/SwingHand/SubViewportContainer/SubViewport/SwingHand3D in _init_card_system) as TWO SEPARATE retirements (Finding 7). Then, recompiling after each sub-step: (a) remove node instances SwingMeter/SpinMeterPanel/SpinMeter/SwingHand from main_ui.tscn and the SwingHand3D wiring in _init_card_system; (b) delete scene files scenes/ui/SwingMeter.tscn, scenes/ui/spin_meter.tscn; (c) delete scripts scripts/swing_meter.gd(+.uid), scripts/spin_meter.gd(+.uid), scripts/putting_system.gd(+.uid), scripts/swing_hand_3d.gd(+.uid), and swing-card-slot helpers scripts/cards/swing_hand.gd, scripts/cards/swing_card_3d.gd, scripts/cards/swing_slot_drag_strategy.gd, scripts/cards/modifier_card_3d.gd ONLY if grep confirms orphaned (keep any still referenced); (d) remove dangling refs in shot_ui.gd (swing_meter/spin_meter/_setup_*/_on_swing_completed*/_on_spin_confirmed) and card_system_manager.gd (swing_hand/swing_hand_3d/_setup_swing_hand/_on_swing_slot_*)."
+  ],
+  "status": "pending",
+  "acceptance_criteria": [
+    "AC1: scenes/GOLF.tscn loads headless with 0 script errors and generates a hole with a reachable flag_position.",
+    "AC2: at the tee a hand is dealt (>=1 playable club card; hand_size non-club cards).",
+    "AC9: landing on the Flag hex triggers the hole-complete state exactly once (_trigger_hole_complete guarded by hole_complete_triggered).",
+    "AC10: Putter rejected off-GREEN; GREEN ball resolves a putt through the play-card-then-Shoot path (no real-time mini-game).",
+    "AC11: water landing repositions + penalty and the loop continues (no fail state).",
+    "The FEAT-002 harness still passes end-to-end after every R4 sub-step.",
+    "After R4, grep shows no remaining references to deleted scripts/scenes; both clean-build commands report 0 new script errors."
+  ],
+  "verification": [
+    "Run the two clean-build commands after EACH retirement sub-step -> 0 new errors.",
+    "Run: /Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/m22stewa/Documents/Godot/Golf/.worktrees/gameloop scenes/tests/test_turn_loop.tscn 2>&1 -> exits 0 (loop deal->play->aim->shoot->resolve->hole-out intact).",
+    "Grep (ripgrep) for each deleted script/scene basename across scripts/ and scenes/ -> no remaining references.",
+    "Commit the changed/deleted source files on feature/gameloop-v1 (stage specific files; do not git add -A)."
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

@@ -1,0 +1,7 @@
+{
+  "task_id": "task-gameloop-core-turn-loop",
+  "task_description": "First playable of a hex-based deckbuilding golf roguelike core turn loop in Godot 4.7.2 (GDScript). Retire the old real-time swing/spin/putting/wind-physics flows; repurpose the AOE system into a footprint weighting system; add clubs-as-distance-bands + shot-shape/modifier cards; wind/roll/slope/lie board modifiers; terrain outcomes; full-hand-per-hole cadence; seed/definition-drivable hole+hand architecture; 6-direction aim + footprint preview + Shoot button + ball resolution + demoted reward-layer scoring; holed-out complete state. Implemented from the APPROVED design at .agents/tasks/gameloop-design.md, carrying five pinned resolutions and Finding 7 verbatim.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
+  "blocked_reason": null
+}
