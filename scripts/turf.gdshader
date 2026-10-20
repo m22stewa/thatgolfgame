@@ -9,8 +9,8 @@ render_mode diffuse_lambert, specular_disabled, cull_back;
 uniform vec4 base_color : source_color = vec4(0.235, 0.443, 0.251, 1.0);
 uniform vec2 stripe_dir = vec2(0.0, 1.0);
 uniform float stripe_freq : hint_range(0.0, 20.0) = 3.0;
-uniform float stripe_strength : hint_range(0.0, 0.3) = 0.05;
-uniform float grain_strength : hint_range(0.0, 0.3) = 0.04;
+uniform float stripe_strength : hint_range(0.0, 0.3) = 0.06;
+uniform float grain_strength : hint_range(0.0, 0.3) = 0.07;
 uniform float roughness : hint_range(0.0, 1.0) = 1.0;
 
 varying vec3 world_pos;
@@ -38,8 +38,9 @@ void vertex() {
 void fragment() {
 	vec2 wxz = world_pos.xz;
 
-	// Fine felt grain: small value-noise modulating lightness a few percent.
-	float grain = value_noise(wxz * 8.0) - 0.5;
+	// Fine felt grain: a coarse octave plus a finer woven micro-octave so the
+	// grain reads as a woven surface rather than a single smooth noise.
+	float grain = mix(value_noise(wxz * 8.0), value_noise(wxz * 18.0), 0.5) - 0.5;
 	float grain_mix = grain * 2.0 * grain_strength;
 
 	// Mowing stripes projected onto the play direction, softened bands.

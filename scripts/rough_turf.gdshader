@@ -5,8 +5,8 @@ render_mode diffuse_lambert, specular_disabled, cull_back;
 // NO mowing stripes (rough is unmown). World-space XZ, no texture fetch.
 
 uniform vec4 base_color : source_color = vec4(0.184, 0.314, 0.188, 1.0);
-uniform float tuft_scale : hint_range(1.0, 40.0) = 16.0;
-uniform float tuft_strength : hint_range(0.0, 0.3) = 0.08;
+uniform float tuft_scale : hint_range(1.0, 40.0) = 20.0;
+uniform float tuft_strength : hint_range(0.0, 0.3) = 0.11;
 uniform float roughness : hint_range(0.0, 1.0) = 1.0;
 
 varying vec3 world_pos;

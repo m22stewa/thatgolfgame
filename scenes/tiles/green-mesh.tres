@@ -9,7 +9,7 @@ shader_parameter/base_color = Color(0.341, 0.58, 0.282, 1)
 shader_parameter/stripe_dir = Vector2(0, 1)
 shader_parameter/stripe_freq = 5.0
 shader_parameter/stripe_strength = 0.04
-shader_parameter/grain_strength = 0.035
+shader_parameter/grain_strength = 0.06
 shader_parameter/roughness = 1.0
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_xhlje"]

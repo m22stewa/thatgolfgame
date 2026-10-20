@@ -6,8 +6,8 @@
 render_priority = 0
 shader = ExtResource("1_rough")
 shader_parameter/base_color = Color(0.184, 0.314, 0.188, 1)
-shader_parameter/tuft_scale = 16.0
-shader_parameter/tuft_strength = 0.08
+shader_parameter/tuft_scale = 20.0
+shader_parameter/tuft_strength = 0.11
 shader_parameter/roughness = 1.0
 
 [sub_resource type="ArrayMesh" id="ArrayMesh_xhlje"]

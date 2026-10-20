@@ -21,6 +21,7 @@ var _selected_club_instance = null
 @onready var lie_view: Control = %LieView
 @onready var hole_info_label: Label = %HoleInfoLabel
 @onready var hole_viewer: Control = $HoleViewer
+@onready var tray: PanelContainer = get_node_or_null("%Tray")  # Felt tray (FEAT-002 shader host)
 @onready var generate_button: Button = %GenerateButton
 @onready var generate_unique_button: Button = %GenerateUniqueButton
 @onready var shoot_button: Button = get_node_or_null("%ShootButton")  # Turn-based "Shoot" confirm (FEAT-003)
@@ -48,6 +49,22 @@ func _ready() -> void:
 	
 	# Create card inspection overlay (hidden initially)
 	_create_card_inspection_ui()
+
+	# Keep the felt tray shader's stitch dashes square by feeding it the tray's
+	# live width/height ratio (FEAT-002).
+	if tray:
+		tray.resized.connect(_on_tray_resized)
+		_on_tray_resized()
+
+
+func _on_tray_resized() -> void:
+	"""Refresh the felt_tray shader's tray_aspect uniform from the tray size."""
+	if not tray or not (tray.material is ShaderMaterial):
+		return
+	var size := tray.size
+	if size.y <= 0.0:
+		return
+	(tray.material as ShaderMaterial).set_shader_parameter("tray_aspect", size.x / size.y)
 
 
 func _create_card_inspection_ui() -> void:
