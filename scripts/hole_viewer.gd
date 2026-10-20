@@ -46,6 +46,10 @@ const MIN_PITCH: float = 25.0  # Minimum camera angle (more angled/3D view)
 const MAX_PITCH: float = 65.0  # Maximum camera angle (near top-down)
 const PITCH_SPEED: float = 0.3  # Degrees per pixel of mouse movement
 
+# Aspect-aware framing tuning (used by _center_on_hole)
+const Z_FIT_FACTOR: float = 0.55  # Scales hole length (Z) to fit vertically
+const X_FIT_FACTOR: float = 2.0   # Scales hole width (X) to fit horizontally
+
 # Ball tracking
 var ball_node: Node3D = null
 var is_tracking_ball: bool = true  # Start with tracking enabled
@@ -83,6 +87,11 @@ const PUTTING_ZOOM: float = 20.0  # Closer zoom on green
 func _ready() -> void:
 	# Create the SubViewport structure
 	_setup_viewport()
+	
+	# Re-frame the hole when the viewer band resizes (e.g. window/aspect change),
+	# but only when idle so we never yank a tracked or mid-gesture camera.
+	if viewport_container:
+		viewport_container.resized.connect(_on_viewport_resized)
 	
 	# Create wind UI elements
 	_setup_wind_display()
@@ -214,19 +223,41 @@ func _calculate_hole_bounds() -> void:
 
 
 func _center_on_hole() -> void:
-	"""Position camera to show hole - camera transform handles forward shift"""
+	"""Position camera to show hole - camera transform handles forward shift.
+	Aspect-aware so the wider/shorter Snap-layout viewport still frames the hole."""
 	if hole_bounds.size.length() > 0:
+		# Guard-skip framing when the viewport isn't ready yet; retry on next resize.
+		if viewport == null or viewport.size.y <= 1:
+			return
+
 		# Center on the hole's X, and start at the tee (low Z)
 		target_position = Vector3(
 			hole_bounds.position.x + hole_bounds.size.x / 2,
 			0,
 			hole_bounds.position.y  # Start at tee position
 		)
-		
-		# Set zoom to show a good portion of the hole
-		var max_dim = max(hole_bounds.size.x * 2, hole_bounds.size.y * 0.5)
-		target_zoom = clamp(max_dim, min_zoom, max_zoom)
+
+		# Compute viewport aspect (16/9 fallback on divide-by-zero)
+		var aspect := 16.0 / 9.0
+		if viewport.size.y > 0:
+			aspect = float(viewport.size.x) / float(viewport.size.y)
+
+		# Fit the hole both along its length (Z) and width (X); wider viewport
+		# (larger aspect) needs less zoom to fit the same width.
+		var needed_for_z := hole_bounds.size.y * Z_FIT_FACTOR
+		var needed_for_x := (hole_bounds.size.x * X_FIT_FACTOR) / aspect
+		target_zoom = clamp(max(needed_for_z, needed_for_x), min_zoom, max_zoom)
 		current_zoom = target_zoom
+
+
+func _on_viewport_resized() -> void:
+	"""Re-frame the hole on a band/window resize, but only when the camera is idle
+	(not following the ball and not mid-gesture) so play isn't disrupted."""
+	if is_tracking_ball:
+		return
+	if is_panning or is_rotating or is_pitching:
+		return
+	_center_on_hole()
 
 
 func _process(delta: float) -> void:
