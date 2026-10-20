@@ -1,6 +1,18 @@
 extends Control
 class_name MainUI
 
+# --- FEAT-003: live hand strip (club + modifier rows) -------------------
+# The 2D HandStrip is the sole surface the player uses to play cards. The hole
+# controller (hex_grid.gd) deals a club bag + modifier hand at hole start, binds
+# it here via set_hand(), and listens for these selection signals to drive
+# set_club_by_name() / activate_card_modifier().
+signal club_card_selected(card_instance)
+signal modifier_card_selected(card_instance)
+
+# Lightweight card control size inside the strip (Button + card name).
+const HAND_CARD_MIN_SIZE := Vector2(104, 72)
+var _selected_club_instance = null
+
 @onready var shot_ui: Control = $ShotUI
 @onready var combined_deck_widget: DeckWidget = $DeckWidget  # Combined view (modifier only now)
 @onready var modifier_deck_widget: DeckWidget = get_node_or_null("ModifierDeckWidget")  # Standalone modifier deck (optional)
@@ -148,3 +160,73 @@ func _close_card_inspection() -> void:
 		card_inspection_overlay.visible = false
 		card_inspection_panel.visible = false
 	)
+
+
+# --- FEAT-003: hand strip population -------------------------------------
+
+func set_hand(club_cards: Array, modifier_cards: Array) -> void:
+	"""Build the 2D club + modifier rows from dealt CardInstances.
+	   Clears any existing controls first. A caller may pass a mixed list in
+	   either argument; cards are routed to the club row vs modifier row by
+	   card_type so the strip stays correct regardless of source."""
+	_selected_club_instance = null
+	clear_hand()
+	if hand_club_row == null or hand_modifier_row == null:
+		return
+	# Route by card_type so a mixed list still lands in the right row.
+	var all: Array = []
+	all.append_array(club_cards)
+	all.append_array(modifier_cards)
+	for instance in all:
+		if instance == null or instance.data == null:
+			continue
+		var is_club: bool = instance.data.card_type == CardData.CardType.CLUB
+		var row: HBoxContainer = hand_club_row if is_club else hand_modifier_row
+		var card_control := _make_hand_card(instance, is_club)
+		row.add_child(card_control)
+
+
+func clear_hand() -> void:
+	"""Remove every card control from both rows."""
+	if hand_club_row:
+		for c in hand_club_row.get_children():
+			c.queue_free()
+	if hand_modifier_row:
+		for c in hand_modifier_row.get_children():
+			c.queue_free()
+
+
+func set_selected_club(card_instance) -> void:
+	"""Highlight the control bound to card_instance in the club row."""
+	_selected_club_instance = card_instance
+	if hand_club_row == null:
+		return
+	for c in hand_club_row.get_children():
+		if not (c is Button):
+			continue
+		var bound = c.get_meta("card_instance") if c.has_meta("card_instance") else null
+		c.button_pressed = (bound == card_instance)
+
+
+func _make_hand_card(instance, is_club: bool) -> Button:
+	"""Build a lightweight, clickable card control bound to a CardInstance.
+	   Kept deliberately cheap (Button, no per-card 3D SubViewport) so a full
+	   club bag + modifier hand costs little. Emits the appropriate selection
+	   signal on press."""
+	var btn := Button.new()
+	btn.custom_minimum_size = HAND_CARD_MIN_SIZE
+	btn.clip_text = true
+	btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	btn.text = instance.data.card_name
+	btn.toggle_mode = is_club  # clubs stay visibly selected; modifiers are one-shot plays
+	btn.set_meta("card_instance", instance)
+	if instance.data.card_type != CardData.CardType.CLUB:
+		btn.tooltip_text = instance.get_full_description()
+	btn.pressed.connect(func() -> void:
+		var bound = btn.get_meta("card_instance")
+		if is_club:
+			emit_signal("club_card_selected", bound)
+		else:
+			emit_signal("modifier_card_selected", bound)
+	)
+	return btn

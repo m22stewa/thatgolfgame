@@ -355,6 +355,7 @@ grow_horizontal = 0
 text = "Generate Unique Hole"
 
 [node name="ModifierDeckUI" parent="." instance=ExtResource("16_chv3i")]
+visible = false
 layout_mode = 0
 offset_left = 1081.0
 offset_top = 238.0

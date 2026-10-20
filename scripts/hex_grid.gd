@@ -383,6 +383,7 @@ var deck_manager: DeckManager = null
 var turn_controller: TurnController = null
 var hole_context: HoleContext = null
 var shoot_button: Button = null  # Turn-based confirm button (lives in MainUI)
+var main_ui_ref: Control = null   # MainUI node (owns the 2D hand strip + Shoot button)
 var current_aim_dir: int = 3  # Dominant hex aim direction (0..5); 3 = Down = toward flag
 
 
@@ -1027,6 +1028,9 @@ func _ready() -> void:
 	_update_ui_hole_info()
 	
 	_start_new_shot()
+	# FEAT-003: deal the club bag + modifier hand into the on-screen hand UI for
+	# the opening hole (reset paths deal in their own flow after _start_new_shot).
+	_deal_hand_for_current_hole()
 	_play_opening_transition()
 
 
@@ -1158,7 +1162,15 @@ func _allowed_clubs_for_tile(tile: Vector2i) -> Array:
 	var lie_info: Dictionary = lie_system.calculate_lie(self, tile)
 	var allowed = lie_info.get("allowed_clubs", [])
 	for c in allowed:
-		result.append(c)
+		# LieSystem stores allowed_clubs as ClubType NAME strings (e.g. "DRIVER").
+		# Normalize to ClubType ints so _is_shoot_legal() can compare against
+		# current_club (an int). Pass through ints unchanged for safety.
+		if c is String:
+			var type = ClubType.get(c)
+			if type != null:
+				result.append(int(type))
+		else:
+			result.append(int(c))
 	return result
 
 
@@ -1166,6 +1178,57 @@ func _update_shoot_button_state() -> void:
 	"""Enable/disable the Shoot button based on shot legality."""
 	if shoot_button:
 		shoot_button.disabled = not _is_shoot_legal()
+
+
+# --- FEAT-003: deal the hand into the live hand UI at hole start ----------
+
+func _deal_hand_for_current_hole() -> void:
+	"""Deal a fresh club bag + modifier hand for this hole and bind it to the
+	on-screen hand strip. Called once at every hole start (initial load + each
+	regenerate/Generate path) AFTER the ball is placed, so Shoot legality can be
+	evaluated. Reuses the existing CardSystemManager.deal_hand_for_hole() (clubs
+	are a reusable bag; modifiers are drawn into the modifier deck, seeded by the
+	hole RNG for determinism)."""
+	if card_system == null:
+		return
+	if card_system.has_method("deal_hand_for_hole"):
+		var rng: RandomNumberGenerator = hole_context.rng if hole_context else null
+		card_system.deal_hand_for_hole(null, rng)
+
+	# Bind the dealt cards to the 2D hand strip.
+	if main_ui_ref and main_ui_ref.has_method("set_hand"):
+		var club_hand: Array = []
+		var modifier_hand: Array = []
+		if card_system.club_deck_manager:
+			club_hand = card_system.club_deck_manager.get_hand()
+		if card_system.deck_manager:
+			modifier_hand = card_system.deck_manager.get_hand()
+		main_ui_ref.set_hand(club_hand, modifier_hand)
+
+	# Refresh Shoot legality (stays disabled until a legal club is picked).
+	_update_shoot_button_state()
+
+
+func _on_club_card_selected(card_instance) -> void:
+	"""Hand strip: player picked a club card. Set the current club (this rebuilds
+	the turn plan + refreshes the Shoot button via set_club_by_name) and reflect
+	the selection in the strip."""
+	if card_instance == null or card_instance.data == null:
+		return
+	set_club_by_name(card_instance.data.target_club)
+	_update_shoot_button_state()
+	if main_ui_ref and main_ui_ref.has_method("set_selected_club"):
+		main_ui_ref.set_selected_club(card_instance)
+
+
+func _on_modifier_card_selected(card_instance) -> void:
+	"""Hand strip: player played a modifier card. Apply it through the card
+	system, which updates the shot context and refreshes the footprint."""
+	if card_instance == null:
+		return
+	if card_system and card_system.has_method("activate_card_modifier"):
+		card_system.activate_card_modifier(card_instance)
+	rebuild_turn_plan()
 
 
 func _init_club_menu() -> void:
@@ -2492,6 +2555,7 @@ func _find_and_setup_ui() -> void:
 	var main_ui = get_tree().current_scene.find_child("MainUI", true, false)
 	if main_ui and main_ui.has_method("get_class") and main_ui.get_script():
 		# If it's our MainUI script
+		main_ui_ref = main_ui
 		shot_ui = main_ui.shot_ui
 		lie_info_panel = main_ui.lie_info_panel
 		lie_name_label = main_ui.lie_name_label
@@ -2536,7 +2600,15 @@ func _find_and_setup_ui() -> void:
 			if turn_controller and not shoot_button.pressed.is_connected(_on_shoot_pressed):
 				shoot_button.pressed.connect(_on_shoot_pressed)
 			_update_shoot_button_state()
-		
+
+		# FEAT-003: wire the 2D hand strip selection signals. Selecting a club
+		# sets the current club (which rebuilds the plan + refreshes Shoot);
+		# selecting a modifier applies it through the card system.
+		if main_ui.has_signal("club_card_selected") and not main_ui.club_card_selected.is_connected(_on_club_card_selected):
+			main_ui.club_card_selected.connect(_on_club_card_selected)
+		if main_ui.has_signal("modifier_card_selected") and not main_ui.modifier_card_selected.is_connected(_on_modifier_card_selected):
+			main_ui.modifier_card_selected.connect(_on_modifier_card_selected)
+
 		# Setup shop UI
 		_setup_shop_ui()
 		return
@@ -3274,6 +3346,8 @@ func _regenerate_hole() -> void:
 	
 	# Start a fresh shot
 	_start_new_shot()
+	# FEAT-003: re-deal the hand into the hand UI for the regenerated hole.
+	_deal_hand_for_current_hole()
 
 
 func _play_hole_confetti() -> void:
@@ -6900,6 +6974,8 @@ func _on_regenerate_button_pressed() -> void:
 	
 	# Start a fresh shot
 	_start_new_shot()
+	# FEAT-003: re-deal the hand into the hand UI for the regenerated hole.
+	_deal_hand_for_current_hole()
 
 
 func _on_button_pressed() -> void:
@@ -6935,6 +7011,8 @@ func _on_button_pressed() -> void:
 		
 		# Start a fresh shot
 		_start_new_shot()
+		# FEAT-003: re-deal the hand into the hand UI for the new hole.
+		_deal_hand_for_current_hole()
 	)
 
 
@@ -6971,6 +7049,8 @@ func _on_generate_unique_pressed() -> void:
 		
 		# Start a fresh shot
 		_start_new_shot()
+		# FEAT-003: re-deal the hand into the hand UI for the new unique hole.
+		_deal_hand_for_current_hole()
 	)
 
 

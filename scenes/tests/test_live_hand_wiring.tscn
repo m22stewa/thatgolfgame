@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://b2livehandwiring01"]
+
+[ext_resource type="Script" path="res://scripts/tests/test_live_hand_wiring.gd" id="1_livehand"]
+
+[node name="TestLiveHandWiring" type="Node"]
+script = ExtResource("1_livehand")
