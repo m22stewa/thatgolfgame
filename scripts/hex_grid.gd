@@ -239,6 +239,26 @@ var TREE_SCENES: Array[PackedScene] = [
 	# preload("res://scenes/trees/birch.tscn"),
 ]
 
+# Shared soft-cel + dark-outline foliage material applied to the tree MultiMesh
+# instances (per-instance foliage colour rides in MultiMesh custom data).
+const TREE_FOLIAGE_MATERIAL := preload("res://scenes/tiles/tree_foliage.tres")
+const TREE_SHADOW_SHADER := preload("res://scripts/tree_shadow.gdshader")
+
+# Muted-green foliage variation palette (mirrors tree_spawner.gd::foliage_colors)
+# so each placed tree reads as its own game piece.
+const TREE_FOLIAGE_COLORS: Array[Color] = [
+	Color(0.13, 0.33, 0.25, 1.0),
+	Color(0.20, 0.45, 0.15, 1.0),
+	Color(0.15, 0.35, 0.10, 1.0),
+	Color(0.25, 0.50, 0.20, 1.0),
+	Color(0.18, 0.40, 0.12, 1.0),
+]
+
+# Cached per-model {mesh, local} data and the shared shadow-disc mesh, built
+# lazily on first use (see _get_tree_model_data / _get_tree_shadow_mesh).
+var _tree_model_data: Array = []
+var _tree_shadow_mesh: QuadMesh = null
+
 # Foliage models for course decoration (from res://models/features/)
 var GRASS_MODELS: Array[PackedScene] = [
 	preload("res://models/features/Grass_bush_high_011.fbx"),
@@ -6542,53 +6562,116 @@ func _generate_grid() -> void:
 					golf_ball.add_to_group("golfball")
 					add_child(golf_ball)
 
-	# Instance trees at TREE cells
-	# Trees are placed to frame the hole and provide visual boundaries
+	# Instance trees at TREE cells.
+	# Trees are placed to frame the hole and provide visual boundaries.
+	#
+	# VISUALS are drawn with one MultiMeshInstance3D per tree model (GPU
+	# instancing) so a forest of trees stays cheap. COLLISIONS stay as a
+	# lightweight per-cell StaticBody3D + CylinderShape3D (gameplay depends on
+	# tree collisions), each added to the "trees" group just as before.
+	#
+	# IMPORTANT: placement (which cells, position jitter, rotation, scale ranges)
+	# is UNCHANGED - only the render path moved from one scene instance per cell
+	# to shared MultiMeshes. Per-tree foliage colour variation is carried as
+	# MultiMesh per-instance custom data (see tree_toon.gdshader INSTANCE_CUSTOM).
+	var tree_models := _get_tree_model_data()
+	# Per-model accumulated transforms + custom colours, indexed by model.
+	var tree_xforms: Array = []
+	var tree_colors: Array = []
+	var shadow_xforms: Array = []
+	for _m in range(tree_models.size()):
+		tree_xforms.append([] as Array[Transform3D])
+		tree_colors.append([] as Array[Color])
 	for col in range(grid_width):
 		for row in range(grid_height):
 			if get_cell(col, row) == SurfaceType.TREE:
 				# Pick a random tree model from the array
-				var tree_scene = TREE_SCENES[randi() % TREE_SCENES.size()]
-				var tree_instance = tree_scene.instantiate()
-				
+				var model_idx := randi() % tree_models.size()
+
 				var tree_x = col * width * 1.5
 				var tree_z = row * height + (col % 2) * (height / 2.0)
 				var tree_y = get_elevation(col, row) + TILE_SURFACE_OFFSET  # Position on tile surface
-				
+
 				# Add random position offset for natural variation
 				tree_x += (randf() - 0.5) * 0.4
 				tree_z += (randf() - 0.5) * 0.4
-				tree_instance.position = Vector3(tree_x, tree_y, tree_z)
-				
-				# Random Y rotation for variety
-				tree_instance.rotation.y = randf() * TAU
-				
-				# Random slight tilt for natural look (max ~5 degrees)
-				tree_instance.rotation.x = deg_to_rad(randf_range(-5.0, 5.0))
-				tree_instance.rotation.z = deg_to_rad(randf_range(-5.0, 5.0))
-				
+				var tree_pos := Vector3(tree_x, tree_y, tree_z)
+
+				# Random Y rotation for variety + slight tilt for natural look
+				var tree_rot := Vector3(
+					deg_to_rad(randf_range(-5.0, 5.0)),
+					randf() * TAU,
+					deg_to_rad(randf_range(-5.0, 5.0))
+				)
+
 				# Random scale with height bias for tree variety (larger trees)
 				var base_scale = randf_range(1.5, 2.5)
 				var height_scale = base_scale * randf_range(0.9, 1.3)  # Trees can be taller
-				tree_instance.scale = Vector3(base_scale, height_scale, base_scale)
-				
-				# Apply random color variation to foliage (CSGSphere3D children)
-				_apply_random_tree_colors(tree_instance)
-				
-				# Add collision body so shots can hit trees
+
+				# Build the placement transform exactly as the old per-scene
+				# instance did (position, euler rotation, non-uniform scale),
+				# then fold in the model's own node-tree local transform so the
+				# MultiMesh instance lands where the scene instance would have.
+				var basis := Basis.from_euler(tree_rot) * Basis.from_scale(
+					Vector3(base_scale, height_scale, base_scale))
+				var placement := Transform3D(basis, tree_pos)
+				var mesh_xform: Transform3D = placement * tree_models[model_idx]["local"]
+				tree_xforms[model_idx].append(mesh_xform)
+				tree_colors[model_idx].append(_pick_tree_foliage_color())
+
+				# Faux contact shadow disc flat on the tile surface under the tree.
+				var disc_scale: float = 0.9 * base_scale
+				var shadow_basis := Basis.from_scale(Vector3(disc_scale, 1.0, disc_scale))
+				shadow_xforms.append(Transform3D(
+					shadow_basis, Vector3(tree_x, tree_y + 0.02, tree_z)))
+
+				# Lightweight per-cell collision so shots can hit trees.
 				var collision_shape = CollisionShape3D.new()
 				var cylinder = CylinderShape3D.new()
 				cylinder.radius = 0.3 * base_scale  # Scale with tree size
 				cylinder.height = 3.0 * height_scale  # Trunk height
 				collision_shape.shape = cylinder
 				collision_shape.position = Vector3(0, cylinder.height / 2.0, 0)  # Center on trunk
-				
+
 				var static_body = StaticBody3D.new()
+				static_body.position = tree_pos
 				static_body.add_child(collision_shape)
-				tree_instance.add_child(static_body)
-				
-				tree_instance.add_to_group("trees")
-				add_child(tree_instance)
+				static_body.add_to_group("trees")
+				add_child(static_body)
+
+	# Build one MultiMeshInstance3D per tree model for the visual meshes.
+	for model_idx in range(tree_models.size()):
+		var xlist: Array = tree_xforms[model_idx]
+		if xlist.is_empty():
+			continue
+		var clist: Array = tree_colors[model_idx]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = tree_models[model_idx]["mesh"]
+		mm.instance_count = xlist.size()
+		for i in range(xlist.size()):
+			mm.set_instance_transform(i, xlist[i])
+			var c: Color = clist[i]
+			# a=1 flags the shader to use this per-instance foliage tint.
+			mm.set_instance_custom_data(i, Color(c.r, c.g, c.b, 1.0))
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = TREE_FOLIAGE_MATERIAL
+		add_child(mmi)
+
+	# One MultiMesh for every faux contact-shadow disc.
+	if not shadow_xforms.is_empty():
+		var smm := MultiMesh.new()
+		smm.transform_format = MultiMesh.TRANSFORM_3D
+		smm.mesh = _get_tree_shadow_mesh()
+		smm.instance_count = shadow_xforms.size()
+		for i in range(shadow_xforms.size()):
+			smm.set_instance_transform(i, shadow_xforms[i])
+		var smmi := MultiMeshInstance3D.new()
+		smmi.multimesh = smm
+		smmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(smmi)
 	
 	# Spawn coins based on par: Par 5 = 3 coins, Par 4 = 2 coins, Par 3 = 1 coin
 	_spawn_coins(fairway_cells)
@@ -6823,20 +6906,85 @@ func _spawn_foliage() -> void:
 				add_child(instance)
 
 
-# Apply random color variation to tree foliage spheres
+# Pick a random muted-green foliage tint from the variation palette.
+func _pick_tree_foliage_color() -> Color:
+	return TREE_FOLIAGE_COLORS[randi() % TREE_FOLIAGE_COLORS.size()]
+
+
+# Apply random foliage colour variation to a single tree scene instance.
+#
+# The tree meshes are soft-cel ShaderMaterial meshes (tree_toon.gdshader); this
+# walks the MeshInstance3D children, duplicates the ShaderMaterial per tree so
+# they don't share, and sets the foliage_colour parameter. This is the real
+# recolor path for a standalone tree scene instance (the in-course forest uses
+# the MultiMesh per-instance custom-data path instead). Rewritten from the old
+# no-op that only touched CSGSphere3D children (the trees have none).
 func _apply_random_tree_colors(tree: Node3D) -> void:
-	for child in tree.get_children():
-		if child is CSGSphere3D and child.material:
-			var mat = child.material
-			if mat is StandardMaterial3D:
-				var new_mat = mat.duplicate()
-				var base_color = new_mat.albedo_color
-				# Vary hue, saturation, and value slightly
-				var h = base_color.h + randf_range(-0.03, 0.03)
-				var s = clamp(base_color.s + randf_range(-0.15, 0.15), 0.3, 1.0)
-				var v = clamp(base_color.v + randf_range(-0.2, 0.2), 0.15, 0.9)
-				new_mat.albedo_color = Color.from_hsv(h, s, v)
-				child.material = new_mat
+	var color := _pick_tree_foliage_color()
+	for mi in _find_mesh_instances(tree):
+		var mesh := mi.mesh
+		if mesh == null:
+			continue
+		for surf in range(mesh.get_surface_count()):
+			# Prefer an explicit surface override; otherwise start from the
+			# mesh's surface material so we never mutate the shared resource.
+			var src: Material = mi.get_surface_override_material(surf)
+			if src == null:
+				src = mesh.surface_get_material(surf)
+			if src is ShaderMaterial:
+				var dup := (src as ShaderMaterial).duplicate() as ShaderMaterial
+				dup.set_shader_parameter("foliage_colour", color)
+				mi.set_surface_override_material(surf, dup)
+
+
+# Depth-first collect all MeshInstance3D nodes under a tree scene root.
+func _find_mesh_instances(node: Node) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for child in node.get_children():
+		if child is MeshInstance3D:
+			out.append(child)
+		out.append_array(_find_mesh_instances(child))
+	return out
+
+
+# Instantiate each tree scene once to harvest its mesh and the accumulated
+# node-tree local transform down to the MeshInstance3D (the scenes nest the
+# mesh under scaled Node3D parents). Cached so regeneration is cheap.
+func _get_tree_model_data() -> Array:
+	if not _tree_model_data.is_empty():
+		return _tree_model_data
+	for scene in TREE_SCENES:
+		var root := scene.instantiate() as Node3D
+		var mi := _find_mesh_instances(root)
+		if not mi.is_empty():
+			var inst := mi[0]
+			# Accumulate transforms from the scene root down to the mesh.
+			var xform := Transform3D.IDENTITY
+			var chain: Array = []
+			var n: Node = inst
+			while n != null and n != root:
+				chain.push_front(n)
+				n = n.get_parent()
+			for step_node in chain:
+				xform = xform * (step_node as Node3D).transform
+			_tree_model_data.append({"mesh": inst.mesh, "local": xform})
+		root.free()
+	return _tree_model_data
+
+
+# Build (once) the shared flat disc used for faux tree contact shadows.
+func _get_tree_shadow_mesh() -> QuadMesh:
+	if _tree_shadow_mesh != null:
+		return _tree_shadow_mesh
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.6, 1.6)
+	# Lay the quad flat (facing +Y) so it reads as a shadow on the ground.
+	quad.orientation = PlaneMesh.FACE_Y
+	var mat := ShaderMaterial.new()
+	mat.shader = TREE_SHADOW_SHADER
+	quad.material = mat
+	_tree_shadow_mesh = quad
+	return _tree_shadow_mesh
 
 
 # Spawn contour grid overlay on green tiles to show elevation (like PGA Tour games)
