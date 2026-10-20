@@ -130,6 +130,11 @@ func _setup_viewport() -> void:
 	# IMPORTANT: Use PASS so we can handle input on the parent Control
 	viewport_container.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(viewport_container)
+	# The 3D viewport is created in code and would otherwise be the LAST child
+	# of HoleViewer, drawing on top of the HoleHUD overlay (wind/lie readouts,
+	# Generate buttons, and the on-screen HoleControls) authored in main_ui.tscn.
+	# Move it to the bottom of the draw order so the HUD renders over the 3D band.
+	move_child(viewport_container, 0)
 	
 	# Create SubViewport
 	viewport = SubViewport.new()
