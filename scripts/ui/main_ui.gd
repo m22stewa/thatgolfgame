@@ -11,6 +11,10 @@ class_name MainUI
 @onready var hole_viewer: Control = $HoleViewer
 @onready var generate_button: Button = $GenerateButton
 @onready var generate_unique_button: Button = $GenerateUniqueButton
+@onready var shoot_button: Button = get_node_or_null("%ShootButton")  # Turn-based "Shoot" confirm (FEAT-003)
+@onready var hand_strip: Control = get_node_or_null("%HandStrip")  # 2D hand strip (club + modifier rows)
+@onready var hand_club_row: HBoxContainer = get_node_or_null("%ClubRow")
+@onready var hand_modifier_row: HBoxContainer = get_node_or_null("%ModifierRow")
 @onready var lie_info_panel: PanelContainer = %LieInfoPanel
 @onready var lie_name_label: Label = %LieName
 @onready var lie_desc_label: RichTextLabel = %LieDescription

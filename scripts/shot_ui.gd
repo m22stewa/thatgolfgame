@@ -7,8 +7,6 @@ class_name ShotUI
 # Signals
 signal next_hole_requested()
 
-# Swing meter scene
-const SwingMeterScene = preload("res://scenes/ui/SwingMeter.tscn")
 const ShotNumberScene = preload("res://scenes/ui/shot_number.tscn")
 
 # UI element references - set via unique names
@@ -26,17 +24,12 @@ const ShotNumberScene = preload("res://scenes/ui/shot_number.tscn")
 @onready var target_terrain: Label = %TargetTerrain
 @onready var target_distance: Label = %TargetDistance
 
-var spin_meter: SpinMeter = null  # Spin meter to confirm shot and set spin (found in parent/main_ui)
-var _spin_meter_retry_queued: bool = false
 @onready var score_popup: PanelContainer = $ScorePopup
 
 # Shot prerequisite tracking
 var tile_selected: bool = false       # Player has locked a target tile
 var swing_card_selected: bool = false # Player picked a card from swing deck
 var modifier_drawn: bool = false      # Player drew from modifier deck (or skipped)
-
-# Legacy swing meter (deprecated but kept for compatibility)
-var swing_meter: SwingMeter = null
 
 # Current shot difficulty (for display)
 var current_club_difficulty: float = 0.5
@@ -138,9 +131,6 @@ func _ready() -> void:
 	score_popup.visible = false
 	hole_complete_popup.visible = false
 	
-	# Find and wire the spin meter (it may live in the parent MainUI scene)
-	_setup_spin_meter()
-	
 	# Connect button signals
 	next_button.pressed.connect(_on_next_hole_pressed)
 	
@@ -149,68 +139,12 @@ func _ready() -> void:
 	if persistent_score_label:
 		persistent_score_label.text = "0"
 	
-	# Find or create swing meter (may be added via scene in main_ui)
-	_setup_swing_meter()
+	# FEAT-003 (R4): the real-time meters are retired; shot confirmation is driven
+	# by the turn-based Shoot button (TurnController), so there is nothing to wire
+	# here.
 	
 	# Initial UI state
 	update_club_display()
-
-
-func _setup_spin_meter() -> void:
-	"""Find an existing SpinMeter in the parent (MainUI) and connect its signals.
-	We keep this scene-driven: the meter is placed in a .tscn, and ShotUI only wires it."""
-	# Try to find a uniquely-named node inside this scene first (for compatibility)
-	spin_meter = get_node_or_null("%SpinMeter") as SpinMeter
-	
-	# Prefer the meter instance the user placed in MainUI
-	if not spin_meter:
-		var parent := get_parent()
-		if parent:
-			# Unique-name lookup must be done from the owning scene (MainUI), not from inside ShotUI's instanced scene.
-			spin_meter = parent.get_node_or_null("%SpinMeter") as SpinMeter
-			if not spin_meter:
-				spin_meter = parent.get_node_or_null("SpinMeter") as SpinMeter
-			if not spin_meter:
-				spin_meter = parent.get_node_or_null("SpinMeterPanel/SpinMeter") as SpinMeter
-			if not spin_meter:
-				spin_meter = parent.find_child("SpinMeter", true, false) as SpinMeter
-
-	if not spin_meter:
-		# One deferred retry helps if ShotUI _ready runs before MainUI finished instancing children.
-		if not _spin_meter_retry_queued:
-			_spin_meter_retry_queued = true
-			call_deferred("_setup_spin_meter")
-			return
-		push_warning("[ShotUI] SpinMeter not found. Ensure MainUI has a SpinMeter node (unique name %SpinMeter or node name SpinMeter).")
-		return
-	
-	spin_meter.visible = true
-	spin_meter.set_disabled(true)
-	if not spin_meter.spin_confirmed.is_connected(_on_spin_confirmed):
-		spin_meter.spin_confirmed.connect(_on_spin_confirmed)
-	if spin_meter.has_signal("cancelled") and not spin_meter.cancelled.is_connected(_on_swing_cancelled):
-		# Treat cancel as backing out of the shot confirmation flow
-		spin_meter.cancelled.connect(_on_swing_cancelled)
-
-
-func _setup_swing_meter() -> void:
-	"""Find existing swing meter from parent (main_ui) or create one if not found"""
-	# First, look for SwingMeter as a sibling (added via main_ui.tscn)
-	var parent = get_parent()
-	if parent:
-		swing_meter = parent.get_node_or_null("SwingMeter") as SwingMeter
-	
-	# If not found as sibling, create one dynamically
-	if not swing_meter:
-		swing_meter = SwingMeterScene.instantiate()
-		add_child(swing_meter)
-	
-	# Connect signals
-	if swing_meter:
-		if not swing_meter.swing_completed.is_connected(_on_swing_completed):
-			swing_meter.swing_completed.connect(_on_swing_completed)
-		if not swing_meter.swing_cancelled.is_connected(_on_swing_cancelled):
-			swing_meter.swing_cancelled.connect(_on_swing_cancelled)
 
 
 func setup(p_shot_manager: ShotManager, p_hole_controller: Node3D) -> void:
@@ -282,21 +216,10 @@ func set_modifier_drawn(drawn: bool) -> void:
 
 
 func _update_swing_button_state() -> void:
-	"""Enable spin meter.
-	The game no longer requires tile/swing/modifier prerequisites to take a shot."""
-	if spin_meter:
-		spin_meter.set_disabled(false)
-	else:
-		# Spin meter may not be ready yet; _setup_spin_meter() does a deferred retry.
-		return
-
-
-func _on_spin_confirmed(spin_value: int) -> void:
-	"""Called when player releases the spin meter"""
-	print("[ShotUI] Spin confirmed with value: %d" % spin_value)
-	
-	# Pass spin value to swing completion - it will be applied after shot starts
-	_on_swing_completed_with_spin(spin_value)
+	"""FEAT-003 (R1): shot confirmation is driven by the turn-based Shoot button
+	(TurnController), whose legality is managed by the hole controller. The spin
+	meter no longer gates shots, so this is now a no-op."""
+	pass
 
 
 func set_hole_info(hole: int, par: int, yardage: int) -> void:
@@ -491,10 +414,7 @@ func _update_club_difficulty() -> void:
 		# If club is not appropriate for the lie, increase difficulty
 		if not club_is_appropriate:
 			current_lie_difficulty = min(current_lie_difficulty + 0.5, 1.0)
-	
-	# Update spin meter oscillation speed based on club difficulty
-	if spin_meter:
-		spin_meter.set_club_difficulty(current_club_difficulty)
+	# FEAT-003 (R4): the spin meter is retired; no oscillation speed to update.
 
 
 func next_club() -> void:
@@ -657,71 +577,6 @@ func _on_shot_completed(context: ShotContext) -> void:
 	"""Called when shot finishes"""
 	# Reset prerequisites for the next shot
 	reset_shot_prerequisites()
-
-
-func _on_swing_completed_with_spin(spin_value: int) -> void:
-	"""Called when player completes the swing with spin value from meter."""
-	if not shot_manager:
-		push_error("[ShotUI] No shot_manager reference! Cannot confirm shot.")
-		return
-	
-	# If shot not started yet, auto-start it now (player did pre-aiming)
-	if not shot_manager.is_shot_in_progress:
-		# We need to start the shot lifecycle first
-		if hole_controller and hole_controller.has_method("force_start_shot"):
-			hole_controller.force_start_shot()
-		else:
-			# Fallback: try to start shot directly
-			var ball = hole_controller.golf_ball if hole_controller else null
-			if ball:
-				var ball_tile = hole_controller.world_to_grid(ball.position)
-				shot_manager.start_shot(ball, ball_tile)
-				
-				# Also set the aim target if we have a locked cell
-				if hole_controller.target_locked and hole_controller.locked_cell.x >= 0:
-					var adjusted = hole_controller.get_shape_adjusted_landing(hole_controller.locked_cell)
-					shot_manager.set_aim_target(adjusted)
-	
-	# Apply spin value to roll_mod AFTER shot started (modifiers already applied)
-	if shot_manager.current_context:
-		var ctx := shot_manager.current_context
-		var before := {"roll_mod": ctx.roll_mod, "metadata": ctx.metadata.duplicate(true)}
-		ctx.roll_mod += spin_value
-		print("[ShotUI] Applied spin to roll_mod, new value: %d" % ctx.roll_mod)
-		var after := {"roll_mod": ctx.roll_mod, "metadata": ctx.metadata.duplicate(true)}
-		_try_record_debug_delta("ui_spin", "SpinMeter", before, after)
-	
-	# Now confirm the shot
-	shot_manager.confirm_shot()
-
-
-func _try_record_debug_delta(phase: String, name: String, before: Dictionary, after: Dictionary) -> void:
-	var dbg := get_tree().get_first_node_in_group("debug_overlay") if get_tree() else null
-	if dbg == null or not dbg.has_method("record_modifier_delta"):
-		return
-	var delta: Dictionary = {}
-	for k in after.keys():
-		if not before.has(k):
-			delta[k] = {"from": null, "to": after[k]}
-		elif before[k] != after[k]:
-			delta[k] = {"from": before[k], "to": after[k]}
-	if delta.is_empty():
-		return
-	dbg.record_modifier_delta(phase, name, delta)
-
-
-func _on_swing_completed(power: float, accuracy: float, curve_mod: float) -> void:
-	"""Called when player completes the swing.
-	With new system, swing button just confirms shot - accuracy is determined by stats.
-	Power/accuracy/curve_mod params kept for backwards compatibility but not used."""
-	# Delegate to the new function with no spin
-	_on_swing_completed_with_spin(0)
-
-
-func _on_swing_cancelled() -> void:
-	"""Called when swing is cancelled - reset to aiming"""
-	# Player can click a new target or click swing meter again
-	pass
 
 
 func _on_next_hole_pressed() -> void:

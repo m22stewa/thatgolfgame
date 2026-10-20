@@ -208,6 +208,9 @@ func set_club_by_name(club_name: String) -> void:
 		_update_club_button_visuals()
 		_update_trajectory(Vector3.ZERO) # Refresh trajectory
 		_update_dim_overlays()
+		# FEAT-003: a club change is a plan change -> rebuild the footprint.
+		if turn_controller:
+			rebuild_turn_plan()
 
 # Club button references
 var club_buttons: Array[Button] = []
@@ -375,6 +378,12 @@ var shop_ui: ShopUI = null
 var card_system: CardSystemManager = null
 var card_library: CardLibrary = null
 var deck_manager: DeckManager = null
+
+# Turn-based loop (FEAT-003): TurnController drives the footprint + board resolution.
+var turn_controller: TurnController = null
+var hole_context: HoleContext = null
+var shoot_button: Button = null  # Turn-based confirm button (lives in MainUI)
+var current_aim_dir: int = 3  # Dominant hex aim direction (0..5); 3 = Down = toward flag
 
 
 # UI references for lie info panel
@@ -1000,12 +1009,14 @@ func get_tile_data(cell: Vector2i) -> Dictionary:
 # --- Lifecycle ----------------------------------------------------------
 
 func _ready() -> void:
+	_setup_hole_context()
 	_create_highlight_mesh()
 	_create_trajectory_mesh()
 	_init_shot_system()
 	_init_club_menu()
 	_generate_course()
 	_generate_grid()
+	_apply_hole_definition_overrides()
 	_log_hole_info()
 	
 	# Initialize run state with first hole info
@@ -1017,6 +1028,144 @@ func _ready() -> void:
 	
 	_start_new_shot()
 	_play_opening_transition()
+
+
+func _setup_hole_context() -> void:
+	"""FEAT-003: own a HoleContext for this hole, seed its RNG, and route that
+	RNG into the shot/wind seams so landing selection and wind are deterministic
+	for a given seed. The procedural generation path is unchanged when there is
+	no HoleDefinition (definition == null)."""
+	hole_context = HoleContext.new()
+	hole_context.rng = RandomNumberGenerator.new()
+
+	var definition: HoleDefinition = hole_context.definition
+	if definition != null:
+		hole_context.seed = definition.seed
+	else:
+		# No authored definition yet: pick a fresh random seed each hole so the
+		# procedural generator behaves exactly as before.
+		hole_context.seed = randi()
+	hole_context.rng.seed = hole_context.seed
+
+	# Seam into the shot system (deterministic weighted landing selection).
+	if shot_manager:
+		shot_manager.rng = hole_context.rng
+	if turn_controller:
+		turn_controller.hole_context = hole_context
+
+
+func _apply_hole_definition_overrides() -> void:
+	"""FEAT-003: if a HoleDefinition is present and non-procedural, build the grid
+	from its fixed dimensions + surface/elevation overrides and set tee/flag.
+	Additive: when definition == null OR use_procedural is true, nothing changes
+	and the existing procedural generation stands."""
+	if hole_context == null:
+		return
+	var definition: HoleDefinition = hole_context.definition
+	if definition == null or definition.use_procedural:
+		return
+
+	grid_width = definition.grid_width
+	grid_height = definition.grid_height
+	current_par = definition.par
+	_init_grid()
+
+	for key in definition.surface_overrides:
+		var cell: Vector2i = key
+		if cell.x >= 0 and cell.x < grid_width and cell.y >= 0 and cell.y < grid_height:
+			grid[cell.x][cell.y] = int(definition.surface_overrides[key])
+	for key in definition.elevation_overrides:
+		var cell2: Vector2i = key
+		if cell2.x >= 0 and cell2.x < grid_width and cell2.y >= 0 and cell2.y < grid_height:
+			elevation[cell2.x][cell2.y] = float(definition.elevation_overrides[key])
+
+	if definition.tee != Vector2i.ZERO:
+		grid[definition.tee.x][definition.tee.y] = SurfaceType.TEE
+	if definition.flag != Vector2i.ZERO:
+		flag_position = definition.flag
+		grid[definition.flag.x][definition.flag.y] = SurfaceType.FLAG
+
+
+# --- FEAT-003: turn-based plan + Shoot button ---------------------------
+
+func rebuild_turn_plan() -> void:
+	"""Re-run the TurnController footprint build from the current plan
+	(ball tile + played club + active modifier cards + aim) and refresh the
+	on-board footprint display. Called on every plan change (club / modifier /
+	aim)."""
+	if turn_controller == null or golf_ball == null:
+		return
+	var ball_tile := world_to_grid(golf_ball.position)
+	turn_controller.ball_tile = ball_tile
+	turn_controller.played_club = current_club
+	# Keep the ShotManager context's aim direction in sync so rebuild() preserves it.
+	if shot_manager and shot_manager.current_context:
+		shot_manager.current_context.aim_dir = current_aim_dir
+	turn_controller.set_aim_dir(current_aim_dir)
+	refresh_aoe_display()
+	_update_shoot_button_state()
+
+
+func set_turn_aim_dir(dir: int) -> void:
+	"""Map a 6-direction aim input to the TurnController and rebuild."""
+	current_aim_dir = ((dir % 6) + 6) % 6
+	rebuild_turn_plan()
+
+
+func _on_shoot_pressed() -> void:
+	"""Shoot button handler: confirm the planned shot through TurnController."""
+	if turn_controller == null:
+		return
+	if not _is_shoot_legal():
+		return
+	# Make sure the ShotManager has a live shot + the latest footprint before
+	# confirming (execute_shot -> confirm_shot consumes the built footprint).
+	if shot_manager and not shot_manager.is_shot_in_progress and golf_ball:
+		var ball_tile := world_to_grid(golf_ball.position)
+		turn_controller.ball_tile = ball_tile
+		turn_controller.played_club = current_club
+		turn_controller.begin_turn()
+		turn_controller.set_aim_dir(current_aim_dir)
+	turn_controller.execute_shot()
+
+
+func _is_shoot_legal() -> bool:
+	"""Shoot is legal once a club legal for the current lie is selected and an aim
+	direction is set. Putter is only legal on GREEN."""
+	if current_club < 0 or golf_ball == null:
+		return false
+	var ball_tile := world_to_grid(golf_ball.position)
+	var ball_surface := get_cell(ball_tile.x, ball_tile.y)
+
+	# Putter-on-GREEN explicit guard (and GREEN requires Putter).
+	if current_club == ClubType.PUTTER and ball_surface != SurfaceType.GREEN:
+		return false
+	if ball_surface == SurfaceType.GREEN and current_club != ClubType.PUTTER:
+		return false
+
+	# Legal-club check against the lie's allowed_clubs metadata.
+	var allowed := _allowed_clubs_for_tile(ball_tile)
+	if not allowed.is_empty() and not allowed.has(current_club):
+		return false
+	return true
+
+
+func _allowed_clubs_for_tile(tile: Vector2i) -> Array:
+	"""Resolve the lie's allowed_clubs (ClubType ints) for a tile via LieSystem."""
+	var result: Array = []
+	if lie_system == null:
+		return result
+	var lie_info: Dictionary = lie_system.calculate_lie(self, tile)
+	var allowed = lie_info.get("allowed_clubs", [])
+	for c in allowed:
+		result.append(c)
+	return result
+
+
+func _update_shoot_button_state() -> void:
+	"""Enable/disable the Shoot button based on shot legality."""
+	if shoot_button:
+		shoot_button.disabled = not _is_shoot_legal()
 
 
 func _init_club_menu() -> void:
@@ -2167,23 +2316,9 @@ func _init_card_system() -> void:
 	card_system.club_deck_definition = club_deck
 	card_system.initialize_starter_deck()
 	
-	# Connect swing hand 3D to club_deck_manager (contains swing cards from swing_deck.tres)
-	var swing_hand_3d = get_node_or_null("/root/GOLF/Control/MainUI/SwingHand/SubViewportContainer/SubViewport/SwingHand3D")
-	if swing_hand_3d:
-		print("SwingHand3D found, setting up with club_deck_manager (swing cards)")
-		swing_hand_3d.setup(card_system.club_deck_manager)
-		# Provide a direct reference so CardSystemManager can lock/clear the slot.
-		if card_system.has_method("set_swing_hand_3d"):
-			card_system.set_swing_hand_3d(swing_hand_3d)
-		# IMPORTANT: SwingHand3D is wired directly here (not via the SwingHand Control wrapper),
-		# so we must forward slot play/unplay events to CardSystemManager for dynamic AOE.
-		if swing_hand_3d.has_signal("card_played") and not swing_hand_3d.card_played.is_connected(card_system._on_swing_slot_card_dropped):
-			swing_hand_3d.card_played.connect(card_system._on_swing_slot_card_dropped)
-		if swing_hand_3d.has_signal("card_unplayed") and not swing_hand_3d.card_unplayed.is_connected(card_system._on_swing_hand_card_unplayed):
-			swing_hand_3d.card_unplayed.connect(card_system._on_swing_hand_card_unplayed)
-		print("Swing hand has ", card_system.club_deck_manager.get_hand().size(), " cards")
-	else:
-		print("SwingHand3D not found!")
+	# FEAT-003 (R4, Finding 7): the SwingHand3D SubViewport card-slot chain is
+	# retired. The turn-based loop plays cards through the 2D hand strip + the
+	# Shoot button (TurnController), so the 3D swing-hand wiring is removed.
 	
 	# Connect modifier deck 3D to deck_manager (contains modifier cards from starter_deck.tres)
 	var modifier_deck_ui = get_node_or_null("/root/GOLF/Control/MainUI/ModifierDeckUI")
@@ -2200,23 +2335,35 @@ func _init_card_system() -> void:
 		var wind_modifier = WindModifier.new(wind_system)
 		modifier_manager.add_modifier(wind_modifier)
 
+	# --- FEAT-003: Turn-based loop controller ---
+	# TurnController builds the weighted landing footprint from the current plan
+	# (club + modifiers + aim) and reconstructs the board-resolution roll line
+	# after the ball lands. It is wired alongside the legacy flow (add-before-
+	# remove): both the Shoot button and the legacy confirm path can drive a shot
+	# until the real-time pieces are retired.
+	turn_controller = TurnController.new()
+	turn_controller.name = "TurnController"
+	turn_controller.shot_manager = shot_manager
+	turn_controller.card_system = card_system
+	turn_controller.aoe_system = aoe_system
+	turn_controller.wind_system = wind_system
+	turn_controller.lie_system = lie_system
+	turn_controller.hole_context = hole_context
+	turn_controller.hex_grid = self
+	add_child(turn_controller)
+
+	# Board resolution runs on the landing_resolved callback (R#2 roll/tree/water
+	# walk + green slope nudge), mutating landing_tile in place before scoring.
+	if shot_manager and not shot_manager.landing_resolved.is_connected(turn_controller.apply_board_resolution):
+		shot_manager.landing_resolved.connect(turn_controller.apply_board_resolution)
+
 
 func _init_putting_system() -> void:
-	"""Initialize putting system for green play"""
-	# Load and create putting system
-	var PuttingSystemClass = load("res://scripts/putting_system.gd")
-	if PuttingSystemClass:
-		putting_system = PuttingSystemClass.new()
-		putting_system.name = "PuttingSystem"
-		add_child(putting_system)
-		
-		# Connect signals
-		putting_system.putting_mode_entered.connect(_on_putting_mode_entered)
-		putting_system.putting_mode_exited.connect(_on_putting_mode_exited)
-		putting_system.putt_started.connect(_on_putt_started)
-		putting_system.putt_completed.connect(_on_putt_completed)
-	else:
-		push_warning("Could not load putting_system.gd")
+	"""FEAT-003 (R2): the real-time putting mini-game is retired. GREEN is a
+	normal lie (lie table restricts to PUTTER) resolved through the play-card-
+	then-Shoot loop, so no PuttingSystem is instantiated. Left as a no-op to keep
+	the init call site stable; putting_system stays null."""
+	pass
 
 
 func _init_economy_system() -> void:
@@ -2382,6 +2529,13 @@ func _find_and_setup_ui() -> void:
 			# Connect card system to shot_ui for swing button prerequisites
 			if card_system:
 				card_system.shot_ui = shot_ui
+
+		# FEAT-003: wire the turn-based Shoot button to TurnController.execute_shot.
+		if main_ui.get("shoot_button") and main_ui.shoot_button:
+			shoot_button = main_ui.shoot_button
+			if turn_controller and not shoot_button.pressed.is_connected(_on_shoot_pressed):
+				shoot_button.pressed.connect(_on_shoot_pressed)
+			_update_shoot_button_state()
 		
 		# Setup shop UI
 		_setup_shop_ui()
@@ -2487,34 +2641,15 @@ func _start_new_shot() -> void:
 		_trigger_hole_complete()
 		return
 	
-	# Check if ball is ON the green - ONLY green tiles trigger putting mode
-	var should_putt = ball_surface == SurfaceType.GREEN
-	
-	if should_putt:
-		if putting_system:
-			# Hide ALL shot mode visuals before entering putting mode
-			if target_highlight_mesh:
-				target_highlight_mesh.visible = false
-			if highlight_mesh:
-				highlight_mesh.visible = false
-			_hide_range_preview()
-			_hide_all_aoe_highlights()
-			
-			putting_system.golf_ball = golf_ball
-			putting_system.setup(self, hole_viewer)
-			putting_system.enter_putting_mode()
-			return
-	
-	# Normal shot mode
-	if putting_system and putting_system.is_putting_mode:
-		putting_system.exit_putting_mode()
+	# FEAT-003 (R2): GREEN is now a normal lie. The lie table restricts the
+	# allowed club to PUTTER on GREEN, and the player resolves the putt through
+	# the play-card-then-Shoot loop. The real-time putting mini-game is retired,
+	# so there is no enter_putting_mode() branch here.
 	
 	# Reset club selection for new shot
 	current_club = -1
 	
-	# Hide swing meter (will show again when club is selected and target locked)
-	if shot_ui and shot_ui.swing_meter:
-		shot_ui.swing_meter.hide_meter()
+	# FEAT-003 (R4): the swing meter is retired; nothing to hide here.
 	
 	# Update UI with distance to flag (useful for club selection)
 	if shot_ui and flag_position.x >= 0:
@@ -2553,7 +2688,7 @@ func _on_turn_selection_complete(club_card: CardInstance, modifier_card: CardIns
 		var adjusted_landing = get_shape_adjusted_landing(locked_cell)
 		shot_manager.set_aim_target(adjusted_landing)
 		
-		# Also refresh UI to show SwingMeter now that shot is in progress
+		# Also refresh UI target info now that the shot is in progress
 		if shot_ui:
 			var terrain = get_cell(adjusted_landing.x, adjusted_landing.y)
 			var distance = _calculate_distance_yards(ball_tile, adjusted_landing)
@@ -4697,7 +4832,9 @@ func _log_hole_info() -> void:
 		elif current_par == 3 or current_yardage < 200:
 			difficulty = 0.3  # Easier holes get less wind
 		
-		wind_system.generate_wind(difficulty)
+		# FEAT-003: seed wind from the HoleContext RNG for determinism.
+		var wind_rng: RandomNumberGenerator = hole_context.rng if hole_context else null
+		wind_system.generate_wind(difficulty, wind_rng)
 		
 		# Debug wind info
 		# print("--- WIND DEBUG ---")

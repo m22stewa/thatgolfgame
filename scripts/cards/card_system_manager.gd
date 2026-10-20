@@ -21,11 +21,8 @@ var deck_view: DeckView3D = null
 var club_deck_view: DeckView3D = null
 var deck_widget: Control = null  # Modifier deck widget
 var club_deck_widget: Control = null  # Swing deck widget (legacy)
-var swing_hand: SwingHand = null  # Fanned hand display for swing cards
-# Swing card slot is now handled by SwingHand3D (3D card system)
-
-# Optional direct reference to SwingHand3D for slot locking and hole resets.
-var swing_hand_3d: Node = null
+# FEAT-003 (R4, Finding 7): the 2D fanned swing hand and the SwingHand3D slot
+# chain are retired; cards are played through the 2D hand strip + Shoot button.
 var items_bar: ItemsBar = null  # Item slots display
 
 # Signals for external systems
@@ -325,11 +322,7 @@ func _setup_deck_ui() -> void:
 		push_warning("[CardSystem] MainUI not found")
 		return
 	
-	# Setup SwingHand for swing cards (fanned display at bottom)
-	if main_ui.get("swing_hand") and main_ui.swing_hand:
-		_setup_swing_hand(main_ui.swing_hand)
-	
-	# Swing card slot is now part of SwingHand3D (3D card system)
+	# FEAT-003 (R4): the fanned swing hand and the 3D card slot are retired.
 	
 	# Setup ItemsBar
 	if main_ui.get("items_bar") and main_ui.items_bar:
@@ -346,28 +339,6 @@ func _setup_deck_ui() -> void:
 			break
 
 
-func _setup_swing_hand(hand: SwingHand) -> void:
-	"""Setup the SwingHand for displaying swing cards as a fanned hand"""
-	print("[CardSystem] Setting up SwingHand for swing cards")
-	swing_hand = hand
-	
-	# Setup hand with swing deck manager
-	swing_hand.setup(club_deck_manager)
-	
-	# Connect hand signals for card selection
-	if not swing_hand.card_selected.is_connected(_on_swing_hand_card_selected):
-		swing_hand.card_selected.connect(_on_swing_hand_card_selected)
-	if not swing_hand.card_played.is_connected(_on_swing_hand_card_played):
-		swing_hand.card_played.connect(_on_swing_hand_card_played)
-	if swing_hand.has_signal("card_unplayed") and not swing_hand.card_unplayed.is_connected(_on_swing_hand_card_unplayed):
-		swing_hand.card_unplayed.connect(_on_swing_hand_card_unplayed)
-	
-	print("[CardSystem] SwingHand setup complete")
-
-
-# _setup_swing_card_slot removed - swing cards now handled by SwingHand3D
-
-
 func _setup_modifier_deck(widget: DeckWidget) -> void:
 	"""Setup standalone modifier deck widget"""
 	print("[CardSystem] Setting up modifier deck widget")
@@ -382,103 +353,6 @@ func _setup_modifier_deck(widget: DeckWidget) -> void:
 		deck_view.request_club_selection.connect(_start_modifier_selection)
 	
 	print("[CardSystem] Modifier deck setup complete")
-
-
-func _on_swing_hand_card_selected(card: CardInstance) -> void:
-	"""Handler when a card is selected (hovered/clicked) in the swing hand"""
-	print("[CardSystem] Swing hand card selected: %s" % (card.data.card_name if card else "null"))
-	# This is just highlighting, no action needed
-
-
-func _on_swing_hand_card_played(card: CardInstance) -> void:
-	"""Handler when a card is played from the swing hand (clicked twice to play)"""
-	if not card:
-		return
-	
-	# The card needs to go to the swing card slot
-	# For now, just trigger the same logic as slot drop
-	_on_swing_slot_card_dropped(card)
-
-
-func _on_swing_slot_card_dropped(card: CardInstance) -> void:
-	"""Handler when a swing card is dropped into the slot"""
-	if not card:
-		return
-	
-	# Allow replacing the currently selected swing card.
-	if selected_club_card != null and selected_club_card != card:
-		_clear_selected_swing_card()
-	elif selected_club_card == card:
-		return
-	
-	print("[CardSystem] Swing card played to slot: %s" % card.data.card_name)
-	selected_club_card = card
-	
-	# Do NOT consume the card yet; the player may put it back or swap it.
-	# The card is consumed when the shot starts.
-	
-	# Apply card as modifier (shot modifier, not club selection)
-	if card.data.target_club and not card.data.target_club.is_empty():
-		# Legacy club card - apply it
-		_apply_club_selection(card)
-	else:
-		# Shot modifier card - apply its effects
-		activate_card_modifier(card)
-	
-	# Notify UI that swing card is selected
-	swing_card_selected.emit(card)
-	if shot_ui:
-		shot_ui.set_swing_card_selected(true)
-	
-	# Refresh hand display
-	# Note: Do not refresh/rebuild the hand here; the card was moved visually into the slot,
-	# but the deck state hasn't changed yet. Rebuilding would re-add it to the hand.
-
-
-func _on_swing_hand_card_unplayed(card: CardInstance) -> void:
-	"""Handler when a swing card is removed from the swing slot (put back in hand)."""
-	if not card:
-		return
-	if selected_club_card != card:
-		return
-	
-	_clear_selected_swing_card()
-	
-	# Notify UI and refresh AOE visuals.
-	if shot_ui:
-		shot_ui.set_swing_card_selected(false)
-	_refresh_aoe_display()
-
-
-func _clear_selected_swing_card() -> void:
-	"""Clear the currently selected swing card and remove its modifier effects."""
-	if selected_club_card == null:
-		return
-	
-	# Remove matching card modifier (only one swing card allowed).
-	var to_remove: Array = []
-	for card_mod in active_card_modifiers:
-		if card_mod is CardModifier and card_mod.card == selected_club_card:
-			to_remove.append(card_mod)
-	for card_mod in to_remove:
-		if modifier_manager:
-			modifier_manager.remove_modifier(card_mod)
-		active_card_modifiers.erase(card_mod)
-	
-	selected_club_card = null
-	club_selection_locked = false
-
-	# Reset preview context fields and re-apply remaining modifiers (lie, etc.).
-	if shot_manager and shot_manager.current_context and modifier_manager:
-		var ctx := shot_manager.current_context
-		ctx.distance_mod = 0
-		ctx.accuracy_mod = 0
-		ctx.roll_mod = 0
-		ctx.curve_strength = 0.0
-		ctx.wind_curve = 0
-		ctx.aoe_radius = 0
-		ctx.aoe_shape = "circle"
-		modifier_manager.apply_before_aim(ctx)
 
 
 func _setup_combined_deck_mode(widget: DeckWidget) -> void:
@@ -593,6 +467,68 @@ func initialize_starter_deck() -> void:
 		club_deck_manager.initialize_with_instances(club_cards)
 
 
+func deal_hand_for_hole(hand_def: HandDefinition, rng: RandomNumberGenerator = null) -> void:
+	"""FEAT-003: deal the hand for a hole.
+	   Clubs are a reusable bag (sourced from the club/swing deck or the
+	   CardLibrary) and are NOT consumed per shot. Modifier cards are drawn into
+	   the modifier deck's hand and DO deplete when played. When hand_def is
+	   fixed_hand, the dealt_card_ids are dealt verbatim (seeded curated hands)."""
+	# --- Clubs: reusable bag ---
+	var club_cards: Array[CardInstance] = []
+	if card_library and card_library.has_method("get_club_deck"):
+		club_cards = card_library.get_club_deck()
+	if club_deck_manager:
+		club_deck_manager.initialize_with_instances(club_cards)
+
+	# --- Modifiers ---
+	var hand_size: int = hand_def.hand_size if hand_def else 5
+
+	if hand_def and hand_def.fixed_hand:
+		# Deal the curated card ids verbatim into the modifier deck.
+		var fixed_cards: Array[CardInstance] = []
+		for id in hand_def.dealt_card_ids:
+			if card_library:
+				var data = card_library.get_card(id)
+				if data:
+					fixed_cards.append(CardInstance.create_from_data(data))
+		if deck_manager:
+			deck_manager.initialize_with_instances(fixed_cards)
+		return
+
+	# Non-fixed: (re)build the modifier deck from the starter definition, then
+	# seed-shuffle so the drawn hand is deterministic for a given rng.
+	if deck_manager:
+		var modifier_cards: Array[CardInstance] = []
+		if starter_deck_definition:
+			for data in starter_deck_definition.get_all_cards():
+				modifier_cards.append(CardInstance.create_from_data(data))
+		elif card_library:
+			modifier_cards = card_library.get_starter_deck()
+		deck_manager.initialize_with_instances(modifier_cards)
+		if rng != null:
+			_seeded_shuffle(deck_manager, rng)
+		# Note: the drawn hand (hand_size) is surfaced via the modifier deck's
+		# existing draw path; hand_size bounds how many are available this hole.
+		if hand_size > 0 and deck_manager.get_draw_pile_count() > hand_size:
+			# Trim the available hand to hand_size for this hole.
+			var keep: Array[CardInstance] = []
+			var pile := deck_manager.get_hand()
+			for i in range(min(hand_size, pile.size())):
+				keep.append(pile[i])
+			deck_manager.initialize_with_instances(keep)
+
+
+func _seeded_shuffle(dm: DeckManager, rng: RandomNumberGenerator) -> void:
+	"""Deterministic Fisher-Yates shuffle of a deck's draw pile using a seeded RNG."""
+	var pile := dm.get_hand()  # copy of the draw pile
+	for i in range(pile.size() - 1, 0, -1):
+		var j := rng.randi() % (i + 1)
+		var tmp = pile[i]
+		pile[i] = pile[j]
+		pile[j] = tmp
+	dm.initialize_with_instances(pile)
+
+
 func activate_card_modifier(card_instance: CardInstance) -> void:
 	"""Apply a card's effects to the modifier system and update visuals"""
 	if not card_instance or not modifier_manager:
@@ -635,7 +571,11 @@ func _refresh_aoe_display() -> void:
 		hex_grid = shot_manager.hole_controller
 	
 	if hex_grid:
-		if hex_grid.has_method("refresh_aoe_display"):
+		# FEAT-003: a plan change (club/modifier) rebuilds the TurnController
+		# footprint; rebuild_turn_plan() also refreshes the AOE display.
+		if hex_grid.has_method("rebuild_turn_plan"):
+			hex_grid.rebuild_turn_plan()
+		elif hex_grid.has_method("refresh_aoe_display"):
 			hex_grid.refresh_aoe_display()
 		if hex_grid.has_method("_refresh_trajectory"):
 			hex_grid._refresh_trajectory()
@@ -660,12 +600,6 @@ func _on_shot_started(context: ShotContext) -> void:
 	
 	# Consume the selected swing card now that the shot is committed.
 	if selected_club_card != null and club_deck_manager:
-		# Lock the card in the slot so it can't be picked up after this shot.
-		if swing_hand_3d:
-			if swing_hand_3d.has_method("set_slot_accepts_new_cards"):
-				swing_hand_3d.set_slot_accepts_new_cards(false)
-			if swing_hand_3d.has_method("lock_card_instance"):
-				swing_hand_3d.lock_card_instance(selected_club_card)
 		club_deck_manager.play_card(selected_club_card)
 		club_selection_locked = true
 
@@ -695,8 +629,6 @@ func _on_shot_completed(context: ShotContext) -> void:
 	
 	# Unlock club selection for next shot
 	club_selection_locked = false
-	if swing_hand_3d and swing_hand_3d.has_method("set_slot_accepts_new_cards"):
-		swing_hand_3d.set_slot_accepts_new_cards(true)
 	if shot_ui:
 		shot_ui.set_swing_card_selected(false)
 	
@@ -733,11 +665,6 @@ func undim_all_cards() -> void:
 		club_deck_view.undim_all_cards()
 
 
-func set_swing_hand_3d(node: Node) -> void:
-	"""Provide a direct reference to SwingHand3D (HexGrid wires SwingHand3D directly)."""
-	swing_hand_3d = node
-
-
 func reset_swing_deck_for_new_hole() -> void:
 	"""Reset only the swing (club) deck for a new hole; does not touch modifier deck."""
 	# Clear any in-progress selection/modifiers from the previous hole.
@@ -751,12 +678,7 @@ func reset_swing_deck_for_new_hole() -> void:
 		club_deck_manager.shuffle_discard_into_deck()
 		club_deck_manager.hand_changed.emit()
 
-	# Clear the visual slot stack of locked cards.
-	if swing_hand_3d:
-		if swing_hand_3d.has_method("clear_swing_slot"):
-			swing_hand_3d.clear_swing_slot()
-		if swing_hand_3d.has_method("set_slot_accepts_new_cards"):
-			swing_hand_3d.set_slot_accepts_new_cards(true)
+	# FEAT-003 (R4): the SwingHand3D visual slot is retired; nothing to clear.
 
 	# Restore visuals for the new hole (no deck state changes).
 	undim_all_cards()
