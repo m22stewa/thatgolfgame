@@ -29,6 +29,11 @@ var _selected_club_instance = null
 @onready var hand_club_row: HBoxContainer = get_node_or_null("%ClubRow")
 @onready var hand_modifier_row: HBoxContainer = get_node_or_null("%ModifierRow")
 @onready var lie_info_panel: PanelContainer = %LieInfoPanel
+# FEAT-003: on-screen hole-view controls (zoom / rotate / reset) in the HUD.
+@onready var zoom_in_button: Button = get_node_or_null("%ZoomInButton")
+@onready var zoom_out_button: Button = get_node_or_null("%ZoomOutButton")
+@onready var rotate_button: Button = get_node_or_null("%RotateButton")
+@onready var reset_view_button: Button = get_node_or_null("%ResetViewButton")
 @onready var lie_name_label: Label = %LieName
 @onready var lie_desc_label: RichTextLabel = %LieDescription
 @onready var lie_mods_label: RichTextLabel = %LieModifiers
@@ -55,6 +60,17 @@ func _ready() -> void:
 	if tray:
 		tray.resized.connect(_on_tray_resized)
 		_on_tray_resized()
+
+	# Wire the on-screen hole-view controls to the HoleViewer camera (FEAT-003).
+	if hole_viewer:
+		if zoom_in_button:
+			zoom_in_button.pressed.connect(hole_viewer.on_zoom_in_pressed)
+		if zoom_out_button:
+			zoom_out_button.pressed.connect(hole_viewer.on_zoom_out_pressed)
+		if rotate_button:
+			rotate_button.pressed.connect(hole_viewer.on_rotate_pressed)
+		if reset_view_button:
+			reset_view_button.pressed.connect(hole_viewer.on_reset_view_pressed)
 
 
 func _on_tray_resized() -> void:

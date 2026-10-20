@@ -268,6 +268,48 @@ offset_bottom = 203.251
 grow_horizontal = 0
 text = "Generate Unique Hole"
 
+[node name="HoleControls" type="VBoxContainer" parent="HoleViewer/HoleHUD"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -148.0
+offset_top = -196.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_constants/separation = 6
+alignment = 2
+
+[node name="ZoomInButton" type="Button" parent="HoleViewer/HoleHUD/HoleControls"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Zoom +"
+
+[node name="ZoomOutButton" type="Button" parent="HoleViewer/HoleHUD/HoleControls"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Zoom -"
+
+[node name="RotateButton" type="Button" parent="HoleViewer/HoleHUD/HoleControls"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Rotate"
+
+[node name="ResetViewButton" type="Button" parent="HoleViewer/HoleHUD/HoleControls"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 10
+text = "Reset view"
+
 [node name="tiltshift" type="ColorRect" parent="."]
 visible = false
 material = SubResource("ShaderMaterial_aa6wj")

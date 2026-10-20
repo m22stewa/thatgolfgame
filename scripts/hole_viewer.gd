@@ -46,6 +46,27 @@ const MIN_PITCH: float = 25.0  # Minimum camera angle (more angled/3D view)
 const MAX_PITCH: float = 65.0  # Maximum camera angle (near top-down)
 const PITCH_SPEED: float = 0.3  # Degrees per pixel of mouse movement
 
+# Default camera pitch (matches camera_angle / target_pitch initializers) - used by reset_view()
+const DEFAULT_PITCH: float = 55.0
+
+# Cross-platform input tuning
+const TAP_MOVE_THRESHOLD: float = 10.0   # px of movement before a press becomes a drag (not a tap)
+const TAP_TIME_THRESHOLD: int = 350      # ms a press may last and still count as a tap
+
+# --- Tap-vs-drag discriminator state (shared by left-mouse and single-finger touch) ---
+var pending_tap: bool = false
+var press_pos: Vector2 = Vector2.ZERO
+var press_time: int = 0
+
+# --- Touch / gesture state ---
+var touches: Dictionary = {}          # index -> position (Vector2) of active touch points
+var last_input_was_touch: bool = false
+var prev_dist: float = 0.0            # previous two-finger distance (pinch)
+var prev_ang: float = 0.0             # previous two-finger angle (twist)
+
+# Keyboard camera tuning
+const KEY_PAN_SPEED: float = 20.0     # world units/sec for keyboard pan nudge
+
 # Aspect-aware framing tuning (used by _center_on_hole)
 const Z_FIT_FACTOR: float = 0.55  # Scales hole length (Z) to fit vertically
 const X_FIT_FACTOR: float = 2.0   # Scales hole width (X) to fit horizontally
@@ -264,10 +285,64 @@ func _process(delta: float) -> void:
 	# Skip ball tracking in putting mode - camera stays fixed on green
 	if not is_putting_mode:
 		_handle_ball_tracking(delta)
+	_process_keyboard_camera(delta)
 	_smooth_camera_movement(delta)
 	_update_camera_transform()
 	_update_hovered_tile()
 	_update_wind_display()
+
+
+func _process_keyboard_camera(delta: float) -> void:
+	"""Keyboard camera control via input actions. Gated to when the pointer is over
+	the hole band (and a line-edit isn't focused elsewhere) so WASD/Q/E/+/- don't
+	fight text entry or fire while the mouse is over the tray/UI."""
+	# Don't steal keys from a focused text field.
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	if focus_owner is LineEdit or focus_owner is TextEdit:
+		return
+	# Only drive the camera when the pointer is over the hole band.
+	if not _is_mouse_inside():
+		return
+
+	var moved := false
+
+	# Rotate (yaw)
+	var step := rotation_speed * 300.0 * delta
+	if Input.is_action_pressed("cam_rotate_left"):
+		target_yaw -= step
+		moved = true
+	if Input.is_action_pressed("cam_rotate_right"):
+		target_yaw += step
+		moved = true
+
+	# Pan nudge (WASD / arrows map to left/right/up/down actions)
+	var pan_vec := Vector2.ZERO
+	if Input.is_action_pressed("left"):
+		pan_vec.x -= 1.0
+	if Input.is_action_pressed("right"):
+		pan_vec.x += 1.0
+	if Input.is_action_pressed("up"):
+		pan_vec.y -= 1.0
+	if Input.is_action_pressed("down"):
+		pan_vec.y += 1.0
+	if pan_vec != Vector2.ZERO:
+		var yaw := camera_yaw
+		var right := Vector3(cos(yaw), 0, sin(yaw))
+		var fwd := Vector3(sin(yaw), 0, -cos(yaw))
+		var scale := KEY_PAN_SPEED * (current_zoom / 40.0) * delta
+		target_position += right * pan_vec.x * scale + fwd * pan_vec.y * scale
+		moved = true
+
+	# Zoom
+	if Input.is_action_pressed("cam_zoom_in"):
+		target_zoom = clamp(target_zoom - zoom_speed * delta * 10.0, min_zoom, max_zoom)
+		moved = true
+	if Input.is_action_pressed("cam_zoom_out"):
+		target_zoom = clamp(target_zoom + zoom_speed * delta * 10.0, min_zoom, max_zoom)
+		moved = true
+
+	if moved:
+		is_tracking_ball = false
 
 
 func _handle_ball_tracking(delta: float) -> void:
@@ -442,11 +517,34 @@ func _control_wants_input(control: Control, mouse_pos: Vector2) -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	# --- Touch screen (phone) ---
+	if event is InputEventScreenTouch:
+		_handle_screen_touch(event)
+		return
+	if event is InputEventScreenDrag:
+		_handle_screen_drag(event)
+		return
+	# --- Trackpad / touchpad gestures (laptop, touch) ---
+	if event is InputEventMagnifyGesture:
+		_handle_magnify_gesture(event)
+		return
+	if event is InputEventPanGesture:
+		_handle_pan_gesture(event)
+		return
+
 	# Always handle motion if we're already panning/rotating (even if mouse leaves bounds)
 	if event is InputEventMouseMotion:
 		if is_panning or is_rotating:
 			_handle_mouse_motion(event)
 			get_viewport().set_input_as_handled()
+		elif pending_tap:
+			# A left-mouse press is in flight; promote it to a pan once it moves
+			# far enough so a drag never fires an aim (tap) on release.
+			if event.position.distance_to(press_pos) > TAP_MOVE_THRESHOLD:
+				pending_tap = false
+				_begin_single_pointer_pan(press_pos)
+				_handle_mouse_motion(event)
+				get_viewport().set_input_as_handled()
 		return
 	
 	# For button events, check if mouse is inside our bounds
@@ -456,7 +554,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		# If we are currently dragging/rotating, we own the mouse interaction
 		# and must handle the release event regardless of UI
-		var is_interacting = is_panning or is_rotating
+		var is_interacting = is_panning or is_rotating or pending_tap
 		
 		if not is_interacting:
 			# If not interacting, check if UI wants this event (Press OR Release)
@@ -511,10 +609,14 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 		if event.pressed:
 			target_zoom = clamp(target_zoom + zoom_speed, min_zoom, max_zoom)
 	
-	# Left click = select tile
+	# Left click = tap-vs-drag: a quick stationary press+release aims (tap);
+	# dragging past the threshold pans instead, so a pan never steals aim.
 	elif event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
-			_handle_tile_click(event.position)
+			last_input_was_touch = false
+			_begin_pending_tap(event.position)
+		else:
+			_resolve_pending_tap(event.position)
 
 
 func _handle_putting_mouse_button(event: InputEventMouseButton) -> void:
@@ -584,8 +686,195 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 		is_tracking_ball = false
 
 
+# ============================================================================
+# TAP-VS-DRAG DISCRIMINATOR (shared by left-mouse and single-finger touch)
+# ============================================================================
+
+func _begin_pending_tap(pos: Vector2) -> void:
+	"""Record a press and arm the tap/drag discriminator. We do NOT aim yet -
+	aim fires only on a quick, stationary release (a tap)."""
+	pending_tap = true
+	press_pos = pos
+	press_time = Time.get_ticks_msec()
+
+
+func _resolve_pending_tap(pos: Vector2) -> void:
+	"""On release: if the press never moved past the threshold and was quick,
+	treat it as a tap and aim; otherwise it was a drag/hold - do nothing."""
+	var was_tap := pending_tap
+	pending_tap = false
+	# End any single-pointer pan that this press may have started.
+	is_panning = false
+	if not was_tap:
+		return
+	var elapsed := Time.get_ticks_msec() - press_time
+	if elapsed > TAP_TIME_THRESHOLD:
+		return
+	if pos.distance_to(press_pos) > TAP_MOVE_THRESHOLD:
+		return
+	# In putting mode a classified tap is a putting candidate (synthesized mouse).
+	if is_putting_mode:
+		_forward_touch_putting_tap(pos)
+	else:
+		_handle_tile_click(pos)
+
+
+func _begin_single_pointer_pan(start_pos: Vector2) -> void:
+	"""Start a right-mouse-style pan driven by a single pointer (left-drag / one finger)."""
+	is_panning = true
+	pan_start_mouse = start_pos
+	pan_start_position = target_position
+	var grab_pos = _screen_to_world(start_pos)
+	if grab_pos != null:
+		pan_grab_world_pos = grab_pos
+	else:
+		pan_grab_world_pos = target_position
+
+
+# ============================================================================
+# TOUCH + TRACKPAD GESTURES (phone touch, laptop trackpad)
+# These never fire on a desktop headless run; they must compile and not throw.
+# ============================================================================
+
+func _handle_screen_touch(event: InputEventScreenTouch) -> void:
+	last_input_was_touch = true
+	if event.pressed:
+		touches[event.index] = event.position
+		if touches.size() == 1:
+			# First finger down: arm the tap/drag discriminator (single-finger
+			# drag will become a pan, a quick stationary lift becomes a tap/aim).
+			_begin_pending_tap(event.position)
+		elif touches.size() == 2:
+			# Second finger landed: cancel any pending single-finger pan/tap and
+			# seed the pinch/twist reference frame from the two touch positions.
+			pending_tap = false
+			is_panning = false
+			_seed_two_finger_gesture()
+	else:
+		# Finger lifted.
+		if touches.size() == 1 and touches.has(event.index):
+			# Lifting the last (single) finger: resolve tap vs drag.
+			touches.erase(event.index)
+			_resolve_pending_tap(event.position)
+		else:
+			touches.erase(event.index)
+		if touches.is_empty():
+			is_panning = false
+			is_rotating = false
+			pending_tap = false
+			prev_dist = 0.0
+			prev_ang = 0.0
+
+
+func _handle_screen_drag(event: InputEventScreenDrag) -> void:
+	last_input_was_touch = true
+	if touches.has(event.index):
+		touches[event.index] = event.position
+
+	if touches.size() == 1:
+		# One finger -> pan. Promote a still-pending tap into a pan once moved.
+		if pending_tap:
+			if event.position.distance_to(press_pos) > TAP_MOVE_THRESHOLD:
+				pending_tap = false
+				_begin_single_pointer_pan(press_pos)
+		if is_panning:
+			var motion := InputEventMouseMotion.new()
+			motion.position = event.position
+			_handle_mouse_motion(motion)
+	elif touches.size() >= 2:
+		# Two fingers -> pinch (zoom) + twist (yaw) as independent axes.
+		_apply_two_finger_gesture()
+
+
+func _seed_two_finger_gesture() -> void:
+	"""Seed prev_dist / prev_ang on the frame the second finger lands."""
+	var pts := touches.values()
+	if pts.size() < 2:
+		return
+	var p0: Vector2 = pts[0]
+	var p1: Vector2 = pts[1]
+	prev_dist = p0.distance_to(p1)
+	prev_ang = atan2(p1.y - p0.y, p1.x - p0.x)
+
+
+func _apply_two_finger_gesture() -> void:
+	"""Pinch + twist each two-finger frame from the two touch positions."""
+	var pts := touches.values()
+	if pts.size() < 2:
+		return
+	var p0: Vector2 = pts[0]
+	var p1: Vector2 = pts[1]
+
+	# Pinch -> zoom
+	var dist: float = p0.distance_to(p1)
+	if prev_dist > 0.001:
+		var factor: float = dist / prev_dist
+		if factor > 0.001:
+			target_zoom = clamp(target_zoom / factor, min_zoom, max_zoom)
+	prev_dist = dist
+
+	# Twist -> yaw
+	var ang: float = atan2(p1.y - p0.y, p1.x - p0.x)
+	var d_ang: float = wrapf(ang - prev_ang, -PI, PI)
+	target_yaw += d_ang
+	prev_ang = ang
+
+	is_tracking_ball = false
+
+
+func _handle_magnify_gesture(event: InputEventMagnifyGesture) -> void:
+	"""Trackpad / touch pinch -> zoom via factor. Preferred over the ScreenDrag
+	pinch path when both arrive the same frame (seed prev_dist so the drag path
+	treats this frame as its reference and does not double-apply)."""
+	last_input_was_touch = true
+	if event.factor > 0.001:
+		target_zoom = clamp(target_zoom / event.factor, min_zoom, max_zoom)
+		is_tracking_ball = false
+	# Keep the two-finger drag pinch in sync so it won't re-apply this frame.
+	var pts := touches.values()
+	if pts.size() >= 2:
+		prev_dist = (pts[0] as Vector2).distance_to(pts[1] as Vector2)
+
+
+func _handle_pan_gesture(event: InputEventPanGesture) -> void:
+	"""Trackpad two-finger scroll -> pan via delta (no modifier branch)."""
+	last_input_was_touch = true
+	# Pan the look target in the camera's ground plane using the gesture delta.
+	var yaw := camera_yaw
+	var right := Vector3(cos(yaw), 0, sin(yaw))
+	var fwd := Vector3(sin(yaw), 0, -cos(yaw))
+	var scale := pan_speed * (current_zoom / 40.0)
+	target_position += right * event.delta.x * scale + fwd * event.delta.y * scale
+	is_tracking_ball = false
+
+
+func _forward_touch_putting_tap(tap_pos: Vector2) -> void:
+	"""Touch putting: synthesize a left-mouse press+release at the tap position and
+	forward to putting_system.handle_input(). putting_system is null today (retired),
+	so this is a safe no-op that preserves the mouse contract if it is un-retired."""
+	if putting_system == null:
+		return
+	var press_event := InputEventMouseButton.new()
+	press_event.button_index = MOUSE_BUTTON_LEFT
+	press_event.pressed = true
+	press_event.position = tap_pos
+	putting_system.handle_input(press_event)
+
+	var release_event := InputEventMouseButton.new()
+	release_event.button_index = MOUSE_BUTTON_LEFT
+	release_event.pressed = false
+	release_event.position = tap_pos
+	putting_system.handle_input(release_event)
+
+
 func _handle_tile_click(screen_pos: Vector2) -> void:
-	"""Handle clicking on the viewport to select a tile"""
+	"""Handle clicking on the viewport to select a tile.
+
+	TOUCH CONTRACT: on touch there is no hover, so a tap collapses 'hover' and
+	'select' into a single action. hex_grid.set_aim_cell() shows the footprint /
+	AOE / trajectory preview on a valid tile even when ShotUI is absent (it fires
+	_update_aoe_for_cell + _update_trajectory before the shot_ui guard). An invalid
+	tap returns false, locks nothing, and leaves the preview on the last valid aim."""
 	var world_pos = _screen_to_world(screen_pos)
 	if world_pos == null:
 		return
@@ -603,6 +892,10 @@ func _handle_tile_click(screen_pos: Vector2) -> void:
 
 func _update_hovered_tile() -> void:
 	"""Update which tile the mouse is hovering over"""
+	# No hover on touch: a tap collapses hover+select, so skip hover updates
+	# while the last input came from a touch screen.
+	if last_input_was_touch:
+		return
 	var mouse_pos = get_local_mouse_position()
 	if not Rect2(Vector2.ZERO, size).has_point(mouse_pos):
 		return
@@ -722,13 +1015,35 @@ func stop_tracking_ball() -> void:
 
 
 func reset_view() -> void:
-	"""Reset camera to show the ball with default rotation"""
+	"""Reset camera to show the ball with default rotation and pitch"""
 	target_yaw = 0.0
+	camera_angle = DEFAULT_PITCH
+	target_pitch = DEFAULT_PITCH
 	is_tracking_ball = true
 	if ball_node and is_instance_valid(ball_node):
 		center_on_ball(true)
 	else:
 		_center_on_hole()
+
+
+# --- On-screen HoleControls handlers (zoom/rotate/reset buttons in the HUD) ---
+
+func on_zoom_in_pressed() -> void:
+	set_zoom(target_zoom - zoom_speed)
+
+
+func on_zoom_out_pressed() -> void:
+	set_zoom(target_zoom + zoom_speed)
+
+
+func on_rotate_pressed() -> void:
+	# Guaranteed trackpad/touch rotate path (45 degree steps).
+	target_yaw += deg_to_rad(45)
+	is_tracking_ball = false
+
+
+func on_reset_view_pressed() -> void:
+	reset_view()
 
 
 func look_at_flag() -> void:
