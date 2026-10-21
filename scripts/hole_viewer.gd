@@ -468,9 +468,14 @@ func _is_mouse_inside() -> bool:
 	return rect.has_point(mouse_pos)
 
 
-func _is_mouse_over_ui_control() -> bool:
-	"""Check if mouse is over a UI control that should consume clicks (buttons, etc)"""
-	var mouse_pos = get_global_mouse_position()
+func _is_mouse_over_ui_control(mouse_pos_override: Vector2 = Vector2(INF, INF)) -> bool:
+	"""Check if mouse is over a UI control that should consume clicks (buttons, etc).
+
+	Pass mouse_pos_override to test the gate at a specific global point; defaults
+	to the live OS mouse position (the normal runtime path)."""
+	var mouse_pos = mouse_pos_override
+	if mouse_pos.x == INF:
+		mouse_pos = get_global_mouse_position()
 	
 	# Get all controls under mouse and check if any should consume input
 	var parent_control = get_parent()
@@ -483,6 +488,18 @@ func _is_mouse_over_ui_control() -> bool:
 				if _control_wants_input(child, mouse_pos):
 					# print("Input consumed by: ", child.name)
 					return true
+
+	# Also check our OWN descendant UI (the HoleHUD corner overlay and its
+	# buttons now live under HoleViewer). Skip the SubViewportContainer: it is a
+	# full-rect PASS control and treating it as "wants input" would make the
+	# viewer yield everywhere and break hole aiming.
+	for child in get_children():
+		if child == viewport_container or child is SubViewportContainer:
+			continue
+		if child is Control and child.visible:
+			if _control_wants_input(child, mouse_pos):
+				# print("Input consumed by HUD descendant: ", child.name)
+				return true
 	return false
 
 
