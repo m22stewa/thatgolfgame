@@ -20,8 +20,9 @@ func _init() -> void:
 	trigger_condition = 0  # Always
 
 
-func apply_before_aim(context: ShotContext, _upgrade_level: int = 0) -> void:
-	context.add_metadata("power_cost", int(context.get_metadata("power_cost", 0)) + power_cost)
+func apply_before_aim(context: ShotContext, upgrade_level: int = 0) -> void:
+	# Each upgrade takes 1 off the power cost
+	context.add_metadata("power_cost", int(context.get_metadata("power_cost", 0)) + maxi(0, power_cost - upgrade_level))
 	context.add_metadata("shape_bulge", float(context.get_metadata("shape_bulge", 0.0)) + bulge)
 	context.add_metadata("ring_mod", int(context.get_metadata("ring_mod", 0)) + ring_mod)
 	context.roll_mod += roll_mod

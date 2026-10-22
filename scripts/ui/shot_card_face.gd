@@ -41,10 +41,10 @@ static func kind_for(data: CardData) -> Dictionary:
 	return {"kind": "", "tag": "SHOT", "strength": 1.0}
 
 
-static func cost_for(data: CardData) -> int:
+static func cost_for(data: CardData, upgrade_level: int = 0) -> int:
 	for e in data.effects:
 		if e is EffectShotShape:
-			return e.power_cost
+			return maxi(0, e.power_cost - upgrade_level)
 	return 0
 
 

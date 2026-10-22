@@ -294,7 +294,7 @@ func set_hand(club_cards: Array, modifier_cards: Array, club_subtitles: Dictiona
 		row.add_child(card_control)
 
 
-func _build_shot_card(btn: Button, instance) -> void:
+func build_shot_card(btn: Button, instance) -> void:
 	"""Card face: tag + cost row, name, drawn icon, one-line effect."""
 	var info := ShotCardFace.kind_for(instance.data)
 	var is_curse: bool = info.kind == "strain"
@@ -327,11 +327,11 @@ func _build_shot_card(btn: Button, instance) -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top.add_child(spacer)
-	var cost := ShotCardFace.cost_for(instance.data)
+	var cost := ShotCardFace.cost_for(instance.data, instance.upgrade_level)
 	if not is_curse:
 		top.add_child(_card_label("%d" % cost if cost > 0 else "free", 13, CARD_BRASS.darkened(0.3)))
 
-	var title := _card_label(instance.data.card_name, 16, CARD_INK)
+	var title := _card_label(instance.get_display_name(), 16, CARD_INK)
 	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title.clip_text = true
 	col.add_child(title)
@@ -408,7 +408,7 @@ func _make_hand_card(instance, is_club: bool, subtitle: String = "") -> Button:
 		btn.add_theme_color_override("font_pressed_color", Color(0.12, 0.1, 0.05))
 		btn.add_theme_color_override("font_hover_pressed_color", Color(0.12, 0.1, 0.05))
 	else:
-		_build_shot_card(btn, instance)
+		build_shot_card(btn, instance)
 	btn.pressed.connect(func() -> void:
 		var bound = btn.get_meta("card_instance")
 		if is_club:
