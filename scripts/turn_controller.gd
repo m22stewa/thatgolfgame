@@ -61,6 +61,12 @@ const TERRAIN_FACTOR := {
 var played_club: int = -1
 # World reference to the ball tile for this turn (shot start tile).
 var ball_tile: Vector2i = Vector2i(-1, -1)
+# Hex the player aimed at. When set, the shot follows the true line to it and
+# the club band caps the carry; (-1,-1) falls back to the 6-direction aim_dir.
+var aim_target: Vector2i = Vector2i(-1, -1)
+# Prototype: with a tapped target, build the card-shaped flight (ShotPlan)
+# instead of the club-band projection.
+var path_mode: bool = true
 
 
 # --- Public API ---
@@ -143,12 +149,19 @@ func build_footprint(ctx: ShotContext) -> void:
 	if ball_tile.x < 0:
 		return
 
-	var is_odd := ball_tile.x % 2 == 1
-	var fwd: Vector2i = aoe_system._get_direction_offsets(is_odd)[((ctx.aim_dir % 6) + 6) % 6]
+	# Aim at a hex: carry toward it (clamped to the club band) along the true
+	# line; aim_dir becomes the nearest hex direction (perp shift + roll-out).
+	var aiming_at_target := aim_target.x >= 0 and aim_target != ball_tile
+	if path_mode and aiming_at_target:
+		_build_path_footprint(ctx)
+		return
+	var base_along := ctx.band_center + ctx.distance_mod
+	if aiming_at_target:
+		ctx.aim_dir = _dominant_dir(ball_tile, aim_target)
+		base_along = clampi(_hex_distance(ball_tile, aim_target), ctx.band_min, ctx.band_max) + ctx.distance_mod
 
 	# --- Provisional along-axis carry (no wind head/tail yet) ---
-	var base_along := ctx.band_center + ctx.distance_mod
-	var provisional_center := _walk(ball_tile, ctx.aim_dir, maxi(0, base_along))
+	var provisional_center := _project(ball_tile, aiming_at_target, ctx.aim_dir, maxi(0, base_along))
 	var elevation_adjust := _elevation_adjust(ball_tile, provisional_center)
 	base_along += elevation_adjust
 
@@ -176,7 +189,7 @@ func build_footprint(ctx: ShotContext) -> void:
 	along = clampi(along, ctx.band_min, ctx.band_max + BAND_MAX_SLACK)
 
 	# --- Walk to the footprint center, then apply perp shift ---
-	var center := _walk(ball_tile, ctx.aim_dir, maxi(0, along))
+	var center := _project(ball_tile, aiming_at_target, ctx.aim_dir, maxi(0, along))
 	var perp_shift := wind_shift + int(round(ctx.curve_strength))
 	if perp_shift != 0:
 		center = _apply_perp_shift(center, ctx.aim_dir, perp_shift)
@@ -185,8 +198,49 @@ func build_footprint(ctx: ShotContext) -> void:
 	ctx.aim_tile = center
 
 	# --- Spread radius + weighted disk ---
-	var radius := maxi(0, ctx.base_spread + ctx.spread_mod)
+	_weigh_disk(ctx, center, maxi(0, ctx.base_spread + ctx.spread_mod))
+	ctx.add_metadata("footprint_built", true)
+
+
+func _build_path_footprint(ctx: ShotContext) -> void:
+	"""Prototype: the flight is built from the tapped target + shape cards
+	(ShotPlan). The landing ring sits on the path's end, roll follows the
+	curve's final heading, and a tree-blocked flight drops dead."""
+	var wind_vec := Vector2.ZERO
+	var strength := 0
+	if wind_system != null:
+		wind_vec = wind_system.get_direction_vector()
+		strength = wind_system.strength
+	# A club can't be hit shorter than its band: a short tap is carried out to band_min.
+	var target := aim_target
+	if ctx.band_min > 0 and _hex_distance(ball_tile, target) < ctx.band_min:
+		target = _point_along(ball_tile, aim_target, ctx.band_min)
+	var plan := ShotPlan.build(hex_grid, ball_tile, target, {
+		"power": ctx.band_max + ctx.distance_mod,
+		"bulge": float(ctx.get_metadata("shape_bulge", 0.0)),
+		"loft": ctx.get_metadata("loft", false),
+		"ignore_wind": ctx.get_metadata("ignore_wind", false),
+		"wind_vec": wind_vec,
+		"wind_strength": strength,
+		"extra_cost": int(ctx.get_metadata("power_cost", 0)),
+		"ring_mod": int(ctx.get_metadata("ring_mod", 0)) + ctx.spread_mod,
+	})
+	var center: Vector2i = plan.end
+	ctx.aim_tile = center
+	ctx.aim_dir = _dir_for_vector(center, plan.tangent)
+	ctx.wind_curve = 0
+	ctx.add_metadata("shot_plan", plan)
+	if plan.blocked:
+		ctx.add_metadata("path_blocked", true)
+	_weigh_disk(ctx, center, plan.ring)
+	ctx.add_metadata("footprint_built", true)
+
+
+func _weigh_disk(ctx: ShotContext, center: Vector2i, radius: int) -> void:
+	"""Candidate landing hexes around center, weighted by falloff x terrain."""
 	var tiles: Array[Vector2i] = aoe_system.compute_circle_aoe(center, radius, hex_grid)
+	if tiles.is_empty():
+		tiles = [center]
 	ctx.aoe_tiles = tiles
 	ctx.aoe_radius = radius
 
@@ -198,8 +252,6 @@ func build_footprint(ctx: ShotContext) -> void:
 		var w: float = falloff * terrain_factor(surface)
 		weights[t] = maxf(w, MIN_WEIGHT)
 	ctx.aoe_weights = weights
-
-	ctx.add_metadata("footprint_built", true)
 
 
 # --- Board resolution (R#2) ---
@@ -220,6 +272,8 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 	var landing := ctx.landing_tile
 	var landing_surface := _surface_at(landing)
 	var roll := maxi(0, ctx.base_roll + ctx.roll_mod + _terrain_roll(landing_surface))
+	if ctx.get_metadata("path_blocked", false):
+		roll = 0  # dropped out of the trees
 
 	# R#2: step along aim_dir `roll` times, recomputing parity each step; stop
 	# before OOB / WATER, and (unless Punch/Stinger) before TREE.
@@ -290,6 +344,57 @@ func _walk(start: Vector2i, dir: int, steps: int) -> Vector2i:
 			break
 		tile = next
 	return tile
+
+
+func _project(start: Vector2i, aiming_at_target: bool, dir: int, steps: int) -> Vector2i:
+	"""Hex `steps` from start along the line to aim_target (or hex dir)."""
+	if aiming_at_target:
+		return _point_along(start, aim_target, steps)
+	return _walk(start, dir, steps)
+
+
+func _point_along(start: Vector2i, toward: Vector2i, steps: int) -> Vector2i:
+	"""Hex `steps` away from start on the straight line through `toward` (may
+	pass beyond it). Pulled back toward start until in bounds."""
+	var dist := _hex_distance(start, toward)
+	if dist == 0 or steps <= 0:
+		return start
+	var a := Vector3(_offset_to_cube(start)) + Vector3(1e-6, 2e-6, -3e-6)
+	var b := Vector3(_offset_to_cube(toward)) + Vector3(1e-6, 2e-6, -3e-6)
+	for s in range(steps, 0, -1):
+		var tile := _cube_to_offset(_cube_round(a.lerp(b, float(s) / float(dist))))
+		if _in_bounds(tile):
+			return tile
+	return start
+
+
+func _dir_for_vector(tile: Vector2i, vec: Vector2) -> int:
+	"""The hex direction (0..5) from tile that best matches a world (x,z) vector."""
+	var is_odd := tile.x % 2 == 1
+	var best_dir := 3
+	var best_dot := -INF
+	for d in range(6):
+		var n: Vector2i = aoe_system._get_neighbor_in_direction(tile, d, is_odd)
+		var dot := _shot_vector(tile, n).dot(vec)
+		if dot > best_dot:
+			best_dot = dot
+			best_dir = d
+	return best_dir
+
+
+func _dominant_dir(from_tile: Vector2i, to_tile: Vector2i) -> int:
+	"""The hex direction (0..5) whose neighbor step best matches from->to."""
+	var target_vec := _shot_vector(from_tile, to_tile)
+	var is_odd := from_tile.x % 2 == 1
+	var best_dir := 3
+	var best_dot := -INF
+	for d in range(6):
+		var n: Vector2i = aoe_system._get_neighbor_in_direction(from_tile, d, is_odd)
+		var dot := _shot_vector(from_tile, n).dot(target_vec)
+		if dot > best_dot:
+			best_dot = dot
+			best_dir = d
+	return best_dir
 
 
 func _apply_perp_shift(center: Vector2i, aim_dir: int, perp_shift: int) -> Vector2i:
@@ -382,6 +487,26 @@ func _hex_distance(a: Vector2i, b: Vector2i) -> int:
 	var ac := _offset_to_cube(a)
 	var bc := _offset_to_cube(b)
 	return int((abs(ac.x - bc.x) + abs(ac.y - bc.y) + abs(ac.z - bc.z)) / 2)
+
+
+func _cube_to_offset(c: Vector3i) -> Vector2i:
+	return Vector2i(c.x, c.z + int((c.x - (c.x & 1)) / 2))
+
+
+func _cube_round(c: Vector3) -> Vector3i:
+	var rx := roundf(c.x)
+	var ry := roundf(c.y)
+	var rz := roundf(c.z)
+	var dx := absf(rx - c.x)
+	var dy := absf(ry - c.y)
+	var dz := absf(rz - c.z)
+	if dx > dy and dx > dz:
+		rx = -ry - rz
+	elif dy > dz:
+		ry = -rx - rz
+	else:
+		rz = -rx - ry
+	return Vector3i(int(rx), int(ry), int(rz))
 
 
 func _offset_to_cube(hex: Vector2i) -> Vector3i:

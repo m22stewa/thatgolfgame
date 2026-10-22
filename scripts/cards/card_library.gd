@@ -21,6 +21,8 @@ func _register_all_cards() -> void:
 	_load_resources_recursive("res://resources/cards")
 	
 	# 2. Load hardcoded cards (only if not already loaded)
+	# Prototype path cards first: they own the draw/fade ids.
+	_register_path_cards()
 	_register_golf_cards()
 	_register_shot_shape_cards()
 	_register_club_cards()
@@ -375,6 +377,43 @@ func _register_shot_shape_cards() -> void:
 		stinger.flavor_text = "Knock it down and let it run."
 		stinger.effects.append(EffectStinger.new())
 		_register(stinger)
+
+
+func _register_path_cards() -> void:
+	# Prototype path cards (ShotPlan): each shapes the card-built flight and
+	# spends power. Draw/Fade bow the flight so it still finishes on the
+	# tapped hex; Hard versions bow further for more power.
+	_register_path_card("draw", "Draw", "Starts right, curves back left onto the target.", 1, {"bulge": 1.5})
+	_register_path_card("fade", "Fade", "Starts left, curves back right onto the target.", 1, {"bulge": -1.5})
+	_register_path_card("hard_draw", "Hard Draw", "Big right-to-left curve around trouble.", 2, {"bulge": 3.5})
+	_register_path_card("hard_fade", "Hard Fade", "Big left-to-right curve around trouble.", 2, {"bulge": -3.5})
+	_register_path_card("loft", "Loft", "High flight: clears trees on the way.", 1, {"loft": true})
+	_register_path_card("stop", "Stop", "No roll after landing.", 0, {"roll_mod": -99})
+	_register_path_card("release", "Release", "+2 roll after landing.", 0, {"roll_mod": 2})
+	_register_path_card("dart", "Dart", "Tighter landing ring.", 1, {"ring_mod": -1})
+	_register_path_card("wind_cheater", "Wind Cheater", "The wind can't move this shot.", 1, {"ignore_wind": true})
+
+	# Strain: added to your deck when you overspend power. Dead weight in hand.
+	if not _cards.has("strain"):
+		var strain = CardData.create("strain", "Strain", CardData.Rarity.COMMON)
+		strain.card_type = CardData.CardType.NEGATIVE
+		strain.description = "Unplayable. Added when you swing past your club's power."
+		_register(strain)
+
+
+func _register_path_card(id: String, card_name: String, description: String, cost: int, fields: Dictionary) -> void:
+	if _cards.has(id):
+		return
+	var card = CardData.create(id, card_name, CardData.Rarity.COMMON)
+	card.card_type = CardData.CardType.SHOT
+	card.description = "%s (%d power)" % [description, cost] if cost > 0 else description
+	var effect := EffectShotShape.new()
+	effect.effect_name = card_name
+	effect.power_cost = cost
+	for key in fields:
+		effect.set(key, fields[key])
+	card.effects.append(effect)
+	_register(card)
 
 
 func _register_common_cards() -> void:

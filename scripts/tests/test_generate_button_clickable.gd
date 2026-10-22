@@ -84,6 +84,10 @@ func _run() -> void:
 		_finish()
 		return
 
+	# Prototype mode hides the dev buttons; this test checks them when shown (F1).
+	_check(not main_ui.get_node("%GenerateButton").visible, "prototype UI hides GenerateButton")
+	main_ui.set_prototype_ui(false)
+
 	var gen_button: Control = main_ui.get_node_or_null("%GenerateButton")
 	var gen_unique: Control = main_ui.get_node_or_null("%GenerateUniqueButton")
 	var hole_hud: Control = hole_viewer.get_node_or_null("HoleHUD")

@@ -405,6 +405,17 @@ var hole_context: HoleContext = null
 var shoot_button: Button = null  # Turn-based confirm button (lives in MainUI)
 var main_ui_ref: Control = null   # MainUI node (owns the 2D hand strip + Shoot button)
 var current_aim_dir: int = 3  # Dominant hex aim direction (0..5); 3 = Down = toward flag
+var turn_aim_target: Vector2i = Vector2i(-1, -1)  # Hex the player is aiming at this shot
+var club_chosen_by_player: bool = false  # Player picked a club this shot -> don't auto-suggest
+
+# Prototype shot hand: a fresh hand every shot from a deck that lasts the run
+# (Strain cards picked up by overspending stay in it).
+const SHOT_HAND_SIZE := 4
+const MAX_PLANNED_CARDS := 3
+var shot_deck: Array = []       # CardInstances, draw pile
+var shot_discard: Array = []
+var shot_hand: Array = []
+var planned_cards: Dictionary = {}  # CardInstance -> CardModifier, played on this shot
 
 
 # UI references for lie info panel
@@ -1122,12 +1133,159 @@ func rebuild_turn_plan() -> void:
 	var ball_tile := world_to_grid(golf_ball.position)
 	turn_controller.ball_tile = ball_tile
 	turn_controller.played_club = current_club
+	turn_controller.aim_target = turn_aim_target
 	# Keep the ShotManager context's aim direction in sync so rebuild() preserves it.
 	if shot_manager and shot_manager.current_context:
 		shot_manager.current_context.aim_dir = current_aim_dir
 	turn_controller.set_aim_dir(current_aim_dir)
 	refresh_aoe_display()
 	_update_shoot_button_state()
+
+
+func _auto_aim_new_shot() -> void:
+	"""Every shot starts aimed at the flag with a suggested club, so Shoot is
+	one tap away; the player re-aims by tapping a hex or picks another club."""
+	if golf_ball == null or flag_position.x < 0 or hole_complete_triggered:
+		return
+	turn_aim_target = flag_position
+	target_locked = true
+	locked_cell = flag_position
+	club_chosen_by_player = false
+	_suggest_club_for_target()
+	# Default aim stays within the club's power: overspending is always a choice.
+	if turn_controller and current_club >= 0:
+		var reach: int = int(CLUB_STATS.get(current_club, {}).get("band_max", 0))
+		var ball_tile := world_to_grid(golf_ball.position)
+		if reach > 0 and hex_distance(ball_tile, flag_position) > reach:
+			turn_aim_target = turn_controller._point_along(ball_tile, flag_position, reach)
+			locked_cell = turn_aim_target
+	rebuild_turn_plan()
+
+
+func _suggest_club_for_target() -> void:
+	"""Pick the legal club in the hand that best reaches turn_aim_target: the
+	shortest club whose band covers the distance, else the closest band."""
+	if card_system == null or card_system.club_deck_manager == null or golf_ball == null:
+		return
+	var ball_tile := world_to_grid(golf_ball.position)
+	var dist := hex_distance(ball_tile, turn_aim_target)
+	var best = null
+	var best_cost := INF
+	for card in card_system.club_deck_manager.get_hand():
+		if card == null or card.data == null:
+			continue
+		var club_type = ClubType.get(card.data.target_club)
+		if club_type == null or not _is_club_legal_at(club_type, ball_tile):
+			continue
+		var stats: Dictionary = CLUB_STATS.get(club_type, {})
+		var lo: int = stats.get("band_min", 0)
+		var hi: int = stats.get("band_max", 0)
+		# Inside the band: prefer the shortest (most control). Outside: closest miss.
+		var cost: float = float(hi) if (dist >= lo and dist <= hi) else 1000.0 + float(mini(absi(dist - lo), absi(dist - hi)))
+		if cost < best_cost:
+			best_cost = cost
+			best = card
+	if best != null:
+		_on_club_card_selected(best)
+		club_chosen_by_player = false
+
+
+func _show_turn_footprint() -> void:
+	"""Draw the real shot plan: the aim marker, the weighted landing spread
+	(brighter = more likely), the most-likely center and the flight arc."""
+	_hide_all_aoe_highlights()
+	modifier_trajectory_mesh.visible = false
+	curved_trajectory_mesh.visible = false
+	if golf_ball == null or turn_aim_target.x < 0 or hole_complete_triggered:
+		highlight_mesh.visible = false
+		target_highlight_mesh.visible = false
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
+		return
+	
+	# Where the player aimed
+	highlight_mesh.position = _hex_marker_position(turn_aim_target)
+	highlight_mesh.rotation.y = PI / 6.0
+	highlight_mesh.visible = true
+	
+	var ctx: ShotContext = shot_manager.current_context if shot_manager else null
+	if current_club < 0 or ctx == null or ctx.aoe_tiles.is_empty():
+		target_highlight_mesh.visible = false
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
+		return
+	
+	# Landing spread, alpha scaled by weight
+	var center: Vector2i = ctx.aim_tile
+	var max_w := 0.0
+	for t in ctx.aoe_tiles:
+		max_w = maxf(max_w, float(ctx.aoe_weights.get(t, 0.0)))
+	for t in ctx.aoe_tiles:
+		if t == center:
+			continue
+		var hl := _get_or_create_aoe_highlight(t, _get_hex_distance(center, t))
+		hl.position = _hex_marker_position(t)
+		hl.rotation.y = PI / 6.0
+		var w := float(ctx.aoe_weights.get(t, 0.0)) / max_w if max_w > 0.0 else 0.5
+		var mat := hl.material_override as StandardMaterial3D
+		if mat:
+			mat.albedo_color.a = lerpf(0.12, 0.55, w)
+		hl.visible = true
+	
+	# Most-likely landing hex + flight arc to it
+	target_highlight_mesh.position = _hex_marker_position(center)
+	target_highlight_mesh.rotation.y = PI / 6.0
+	target_highlight_mesh.visible = true
+	var ball_tile := world_to_grid(golf_ball.position)
+	if target_highlight_mesh.has_method("set_distance_and_club"):
+		target_highlight_mesh.set_distance_and_club(_calculate_distance_yards(ball_tile, center), CLUB_STATS.get(current_club, {}).get("name", "---"))
+	locked_target_pos = get_tile_surface_position(center)
+	var plan: Dictionary = ctx.get_metadata("shot_plan", {})
+	if plan.is_empty():
+		_draw_trajectory_arc(trajectory_mesh, golf_ball.position, locked_target_pos, Color(1.0, 1.0, 1.0, 0.6))
+	else:
+		# Over budget = orange, blocked by trees = red, otherwise white
+		var color := Color(1.0, 1.0, 1.0, 0.75)
+		if plan.blocked:
+			color = Color(1.0, 0.35, 0.3, 0.85)
+		elif int(plan.over) > 0:
+			color = Color(1.0, 0.65, 0.2, 0.85)
+		_draw_path_ribbon(trajectory_mesh, plan.points, golf_ball.position.y, locked_target_pos.y, color)
+	trajectory_mesh.visible = true
+	# The straight ground shadow only matches an unshaped arc
+	trajectory_shadow_mesh.visible = plan.is_empty()
+	if plan.is_empty():
+		_draw_trajectory_shadow(golf_ball.position, locked_target_pos, false)
+	if shot_ui:
+		shot_ui.update_target_info(get_cell(center.x, center.y), _calculate_distance_yards(ball_tile, center))
+
+
+func _draw_path_ribbon(mesh: MeshInstance3D, points: Array, start_y: float, end_y: float, color: Color) -> void:
+	"""Ribbon along a ShotPlan's sampled flight (world x,z), lifted into an arc."""
+	var im: ImmediateMesh = mesh.mesh
+	im.clear_surfaces()
+	if points.size() < 2:
+		return
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	var ribbon_width := 0.12
+	var last := points.size() - 1
+	for i in range(points.size()):
+		var t := float(i) / float(last)
+		var alpha := clampf(minf(t, 1.0 - t) / 0.12, 0.0, 1.0)
+		im.surface_set_color(Color(color.r, color.g, color.b, alpha * color.a))
+		var p: Vector2 = points[i]
+		var nxt: Vector2 = points[mini(i + 1, last)] if i < last else p + (p - points[i - 1])
+		var dir := (nxt - p).normalized()
+		var side := Vector3(-dir.y, 0.0, dir.x) * ribbon_width
+		var center := Vector3(p.x, lerpf(start_y, end_y, t) + sin(t * PI) * trajectory_height, p.y)
+		im.surface_add_vertex(center - side)
+		im.surface_add_vertex(center + side)
+	im.surface_end()
+
+
+func _hex_marker_position(cell: Vector2i) -> Vector3:
+	var hex_height = TILE_SIZE * sqrt(3.0)
+	return Vector3(cell.x * TILE_SIZE * 1.5, get_elevation(cell.x, cell.y) + TILE_SURFACE_OFFSET, cell.y * hex_height + (cell.x % 2) * (hex_height / 2.0))
 
 
 func set_turn_aim_dir(dir: int) -> void:
@@ -1150,6 +1308,9 @@ func _on_shoot_pressed() -> void:
 		turn_controller.played_club = current_club
 		turn_controller.begin_turn()
 		turn_controller.set_aim_dir(current_aim_dir)
+	var plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {}) if shot_manager else {}
+	if int(plan.get("over", 0)) > 0:
+		_add_strain_cards(int(plan.over))
 	turn_controller.execute_shot()
 
 
@@ -1158,18 +1319,19 @@ func _is_shoot_legal() -> bool:
 	direction is set. Putter is only legal on GREEN."""
 	if current_club < 0 or golf_ball == null:
 		return false
-	var ball_tile := world_to_grid(golf_ball.position)
+	return _is_club_legal_at(current_club, world_to_grid(golf_ball.position))
+
+
+func _is_club_legal_at(club: int, ball_tile: Vector2i) -> bool:
+	"""Lie legality for a club: Putter only (and always) on GREEN, otherwise the
+	lie's allowed_clubs."""
 	var ball_surface := get_cell(ball_tile.x, ball_tile.y)
-
-	# Putter-on-GREEN explicit guard (and GREEN requires Putter).
-	if current_club == ClubType.PUTTER and ball_surface != SurfaceType.GREEN:
+	if club == ClubType.PUTTER and ball_surface != SurfaceType.GREEN:
 		return false
-	if ball_surface == SurfaceType.GREEN and current_club != ClubType.PUTTER:
+	if ball_surface == SurfaceType.GREEN and club != ClubType.PUTTER:
 		return false
-
-	# Legal-club check against the lie's allowed_clubs metadata.
 	var allowed := _allowed_clubs_for_tile(ball_tile)
-	if not allowed.is_empty() and not allowed.has(current_club):
+	if not allowed.is_empty() and not allowed.has(club):
 		return false
 	return true
 
@@ -1198,6 +1360,13 @@ func _update_shoot_button_state() -> void:
 	"""Enable/disable the Shoot button based on shot legality."""
 	if shoot_button:
 		shoot_button.disabled = not _is_shoot_legal()
+		var plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {}) if shot_manager and shot_manager.current_context else {}
+		if plan.is_empty() or current_club < 0:
+			shoot_button.text = "Shoot"
+		elif int(plan.over) > 0:
+			shoot_button.text = "Shoot  %d/%d\n+%d Strain" % [plan.cost, plan.power, plan.over]
+		else:
+			shoot_button.text = "Shoot  %d/%d" % [plan.cost, plan.power]
 
 
 # --- FEAT-003: deal the hand into the live hand UI at hole start ----------
@@ -1222,10 +1391,12 @@ func _deal_hand_for_current_hole() -> void:
 		if card_system.club_deck_manager:
 			club_hand = card_system.club_deck_manager.get_hand()
 		if card_system.deck_manager:
-			modifier_hand = card_system.deck_manager.get_hand()
+			modifier_hand = shot_hand
 		main_ui_ref.set_hand(club_hand, modifier_hand)
 
-	# Refresh Shoot legality (stays disabled until a legal club is picked).
+	# Fresh shot deck for the hole, then deal + aim the opening shot.
+	_reset_shot_deck_for_hole()
+	_begin_shot()
 	_update_shoot_button_state()
 
 
@@ -1235,6 +1406,7 @@ func _on_club_card_selected(card_instance) -> void:
 	the selection in the strip."""
 	if card_instance == null or card_instance.data == null:
 		return
+	club_chosen_by_player = true
 	set_club_by_name(card_instance.data.target_club)
 	_update_shoot_button_state()
 	if main_ui_ref and main_ui_ref.has_method("set_selected_club"):
@@ -1242,13 +1414,89 @@ func _on_club_card_selected(card_instance) -> void:
 
 
 func _on_modifier_card_selected(card_instance) -> void:
-	"""Hand strip: player played a modifier card. Apply it through the card
-	system, which updates the shot context and refreshes the footprint."""
-	if card_instance == null:
+	"""Hand strip: toggle a shot card on/off for this shot (up to
+	MAX_PLANNED_CARDS). Strain cards can't be played."""
+	if card_instance == null or card_instance.data == null:
 		return
-	if card_system and card_system.has_method("activate_card_modifier"):
-		card_system.activate_card_modifier(card_instance)
+	if planned_cards.has(card_instance):
+		if modifier_manager:
+			modifier_manager.remove_modifier(planned_cards[card_instance])
+		planned_cards.erase(card_instance)
+	elif card_instance.data.card_type != CardData.CardType.NEGATIVE and planned_cards.size() < MAX_PLANNED_CARDS:
+		var mod := CardModifier.new(card_instance)
+		if modifier_manager:
+			modifier_manager.add_modifier(mod)
+		planned_cards[card_instance] = mod
+	if main_ui_ref and main_ui_ref.has_method("set_card_pressed"):
+		main_ui_ref.set_card_pressed(card_instance, planned_cards.has(card_instance))
 	rebuild_turn_plan()
+
+
+func _clear_planned_cards() -> void:
+	"""Take this shot's played cards back out of the modifier manager."""
+	for card in planned_cards:
+		if modifier_manager:
+			modifier_manager.remove_modifier(planned_cards[card])
+	planned_cards.clear()
+
+
+func _begin_shot() -> void:
+	"""Every shot: a fresh hand, then aim at the flag with a suggested club."""
+	_deal_shot_hand()
+	_auto_aim_new_shot()
+	_refresh_hole_label()
+
+
+func _reset_shot_deck_for_hole() -> void:
+	"""Hole start: every card (Strain included) back into one shuffled deck.
+	The very first call builds the deck from the starter definition."""
+	_clear_planned_cards()
+	if shot_deck.is_empty() and shot_discard.is_empty() and shot_hand.is_empty() and starter_deck:
+		for data in starter_deck.get_all_cards():
+			shot_deck.append(CardInstance.create_from_data(data))
+	shot_deck.append_array(shot_discard)
+	shot_deck.append_array(shot_hand)
+	shot_discard.clear()
+	shot_hand.clear()
+	_shuffle_cards(shot_deck)
+
+
+func _deal_shot_hand() -> void:
+	"""Discard the last hand and draw SHOT_HAND_SIZE fresh cards."""
+	_clear_planned_cards()
+	if shot_deck.is_empty() and shot_discard.is_empty() and shot_hand.is_empty():
+		_reset_shot_deck_for_hole()
+	shot_discard.append_array(shot_hand)
+	shot_hand.clear()
+	for i in range(SHOT_HAND_SIZE):
+		if shot_deck.is_empty():
+			if shot_discard.is_empty():
+				break
+			shot_deck = shot_discard
+			shot_discard = []
+			_shuffle_cards(shot_deck)
+		shot_hand.append(shot_deck.pop_back())
+	if main_ui_ref and main_ui_ref.has_method("set_hand") and card_system and card_system.club_deck_manager:
+		main_ui_ref.set_hand(card_system.club_deck_manager.get_hand(), shot_hand)
+
+
+func _shuffle_cards(cards: Array) -> void:
+	"""Fisher-Yates on the hole's seeded RNG (global RNG as fallback)."""
+	var rng: RandomNumberGenerator = hole_context.rng if hole_context else null
+	for i in range(cards.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i) if rng else randi_range(0, i)
+		var tmp = cards[i]
+		cards[i] = cards[j]
+		cards[j] = tmp
+
+
+func _add_strain_cards(count: int) -> void:
+	"""Overspending power adds Strain to the deck (it shows up in later hands)."""
+	var data = CardLibrary.instance.get_card("strain") if CardLibrary.instance else null
+	if data == null:
+		return
+	for i in range(count):
+		shot_discard.append(CardInstance.create_from_data(data))
 
 
 func _init_club_menu() -> void:
@@ -2007,6 +2255,9 @@ func refresh_aoe_display() -> void:
 	"""Public function to refresh AOE display after modifiers change.
 	   Call this when cards are applied that affect accuracy.
 	   Also hides AOE if no target is selected."""
+	if turn_aim_target.x >= 0:
+		_show_turn_footprint()
+		return
 	if target_locked and locked_cell.x >= 0:
 		_update_aoe_for_cell(locked_cell)
 	elif hovered_cell.x >= 0:
@@ -2020,7 +2271,25 @@ func refresh_aoe_display() -> void:
 ## Public function to set aim target from external sources (like HoleViewer)
 func set_aim_cell(cell: Vector2i) -> bool:
 	"""Set the aim target to a specific cell. Returns true if successful."""
-	# Use unified validation
+	# Turn loop: aim at any hex on the board; the club band caps the carry.
+	if turn_controller and golf_ball:
+		if shot_manager and shot_manager.is_animating:
+			return false
+		if hole_complete_triggered or (run_state and run_state.is_blown_out):
+			return false
+		if cell.x < 0 or cell.x >= grid_width or cell.y < 0 or cell.y >= grid_height:
+			return false
+		if cell == world_to_grid(golf_ball.position):
+			return false
+		turn_aim_target = cell
+		locked_cell = cell
+		target_locked = true
+		if not club_chosen_by_player:
+			_suggest_club_for_target()
+		rebuild_turn_plan()
+		return true
+	
+	# Legacy path (no turn controller): unified validation
 	if not is_valid_target(cell):
 		return false
 	
@@ -2096,6 +2365,10 @@ func set_aim_cell(cell: Vector2i) -> bool:
 ## Set hovered cell for highlighting (from external sources like HoleViewer)
 func set_hover_cell(cell: Vector2i) -> void:
 	"""Set the currently hovered cell and update all highlighting"""
+	# Turn loop: the aimed footprint stays on screen while hovering
+	if turn_aim_target.x >= 0:
+		hovered_cell = cell
+		return
 	# If target is locked, don't update visuals - keep it on locked cell
 	if target_locked:
 		_update_trajectory(locked_target_pos)
@@ -2302,8 +2575,7 @@ func _display_tile_debug_info(cell: Vector2i) -> void:
 	debug_text += "\nNearby Landforms:\n%s" % nearby_landforms
 	
 	# Update the label - append to hole info
-	if holelabel:
-		holelabel.text = hole_info_text + "\n" + debug_text
+	_refresh_hole_label(debug_text)
 
 
 # --- Shot System Integration -------------------------------------------
@@ -2315,6 +2587,7 @@ func _init_shot_system() -> void:
 	run_state.name = "RunStateManager"
 	add_child(run_state)
 	run_state.start_new_run(9)  # 9-hole round by default
+	run_state.vs_par_changed.connect(func(_v): _refresh_hole_label())
 	
 	# Initialize economy system (must be after run_state)
 	_init_economy_system()
@@ -2354,6 +2627,14 @@ func _init_shot_system() -> void:
 	shot_manager.aoe_computed.connect(_on_aoe_computed)
 	shot_manager.landing_resolved.connect(_on_landing_resolved)
 	shot_manager.shot_completed.connect(_on_shot_completed)
+	
+	# Points: trick shots score through the ShotManager scoring phase
+	trick_detector = TrickShotDetector.new()
+	trick_detector.hole = self
+	shot_manager.trick_detector = trick_detector
+	run_state.hole_started.connect(func(_h, _p, _y): _on_run_hole_started())
+	if currency_manager:
+		currency_manager.currency_changed.connect(func(_a, _d): _refresh_hole_label())
 	
 	# Initialize card system
 	_init_card_system()
@@ -2715,6 +2996,10 @@ func _update_ui_hole_info() -> void:
 
 func _start_new_shot() -> void:
 	"""Start a new shot from the ball's current position"""
+	# Run over: the last stroke pushed the score to the blowout limit.
+	if run_state and run_state.is_blown_out:
+		_show_blowout()
+		return
 	if golf_ball == null:
 		push_warning("No golf ball to start shot from")
 		return
@@ -2759,6 +3044,7 @@ func _start_new_shot() -> void:
 		
 		# Just update overlays for current state (likely empty/default)
 		_update_dim_overlays()
+		_begin_shot()
 	else:
 		# Fallback
 		shot_manager.start_shot(golf_ball, ball_tile)
@@ -2994,7 +3280,12 @@ func _on_shot_completed(context: ShotContext) -> void:
 	
 	# Record the stroke in run state
 	if run_state:
-		run_state.record_stroke(context.final_score)
+		run_state.record_stroke(0)
+	if context.final_score > 0:
+		var names: Array = []
+		for t in context.get_metadata("tricks", []):
+			names.append(t.name)
+		_award_points(context.final_score, " + ".join(names) if names.size() > 0 else "Shot bonus")
 		# Update UI with new stroke count
 		if shot_ui:
 			var dist_to_flag = 0
@@ -3003,12 +3294,16 @@ func _on_shot_completed(context: ShotContext) -> void:
 				dist_to_flag = _calculate_distance_yards(ball_tile, flag_position)
 			shot_ui.update_shot_info(run_state.strokes_this_hole, dist_to_flag)
 	
+	_clear_planned_cards()
+	
 	# Reset target lock state
 	target_locked = false
+	turn_aim_target = Vector2i(-1, -1)
 	locked_cell = Vector2i(-1, -1)
 	locked_target_pos = Vector3.ZERO
 	hovered_cell = Vector2i(-1, -1)
 	target_highlight_mesh.visible = false
+	highlight_mesh.visible = false
 	
 	# Hide all AOE and trajectory visuals
 	_hide_all_aoe_highlights()
@@ -3095,11 +3390,16 @@ func _on_shot_completed(context: ShotContext) -> void:
 	if shot_manager:
 		shot_manager.end_animation()
 	
-	# Show score popup now that ball has landed
-	if shot_ui:
-		var is_water_hit = context.has_metadata("hit_water")
-		var is_sand_hit = context.has_metadata("hit_sand")
-		shot_ui.show_score_popup(context.chips, context.mult, context.final_score, is_water_hit, is_sand_hit)
+	# Coins under the ball (hole-outs collect theirs in _trigger_hole_complete)
+	if not hit_water and not hit_oob and not hole_complete_triggered:
+		_collect_coins_at_ball()
+	
+	# Show score popup now that ball has landed - only for trick shots
+	if shot_ui and context.final_score > 0:
+		var names: Array = []
+		for t in context.get_metadata("tricks", []):
+			names.append(t.name)
+		shot_ui.show_score_popup(context.chips, context.mult, context.final_score, false, false, "\n".join(names))
 		
 		# Wait for popup to be visible for a bit (allow animation to play)
 		await get_tree().create_timer(2.0).timeout
@@ -3206,6 +3506,9 @@ func _handle_out_of_bounds() -> void:
 
 
 var hole_complete_triggered: bool = false  # Prevent multiple triggers
+var blowout_shown: bool = false  # Run-over popup already displayed
+var trick_detector: TrickShotDetector = null  # Awards points for trick shots
+var hole_points_log: Array = []  # [{label, points}] earned this hole, for the hole-complete breakdown
 
 func _trigger_hole_complete() -> void:
 	"""Called when ball reaches the hole/flag during any phase (carry, roll, spin)"""
@@ -3251,19 +3554,37 @@ func _trigger_hole_complete() -> void:
 	# Trigger confetti on the flag
 	_play_hole_confetti()
 	
+	# Points: coins at the cup and hole-out tricks (chip-in, long putt, ace)
+	_collect_coins_at_ball()
+	if trick_detector and run_state:
+		for t in trick_detector.score_hole_out(previous_valid_tile, run_state.strokes_this_hole):
+			_award_points(t.points, t.name)
+			if shot_ui:
+				shot_ui.show_bonus(t.name, t.points)
+	
 	# Complete the hole in run state
 	var hole_result = {}
 	if run_state:
 		hole_result = run_state.complete_hole()
+		# Par result pays out last
+		if currency_manager:
+			var par_diff: int = run_state.strokes_this_hole - current_par
+			_award_points(currency_manager.calculate_hole_earnings(run_state.strokes_this_hole, current_par), run_state.get_par_name(par_diff))
 	
 	# Wait for confetti celebration
 	await get_tree().create_timer(0.8).timeout
 	
+	# Holing out can still be the stroke that blows the run.
+	if run_state and run_state.is_blown_out:
+		_show_blowout()
+		return
+	
 	# Show hole complete popup
 	if shot_ui:
 		var strokes = run_state.strokes_this_hole if run_state else (shot_manager.current_context.shot_index if shot_manager and shot_manager.current_context else 0)
-		var hole_score = hole_result.get("score", 0)
-		shot_ui.show_hole_complete(strokes, current_par, hole_score)
+		var hole_score = run_state.score_this_hole if run_state else 0
+		var balance = currency_manager.get_balance() if currency_manager else -1
+		shot_ui.show_hole_complete(strokes, current_par, hole_score, hole_points_log, balance)
 		
 		# Update total score display
 		if run_state:
@@ -3277,6 +3598,11 @@ func _on_next_hole_requested() -> void:
 	if not run_state:
 		# Fallback: just regenerate
 		_regenerate_hole()
+		return
+	
+	# Blown-out run: the popup button starts a fresh run
+	if run_state.is_blown_out:
+		_show_run_complete()
 		return
 	
 	# Check if run is complete
@@ -3310,11 +3636,91 @@ func _proceed_to_next_hole() -> void:
 	)
 
 
+func _on_run_hole_started() -> void:
+	"""New hole: clear the points log and the trick streak."""
+	hole_points_log.clear()
+	if trick_detector:
+		trick_detector.reset_hole()
+
+
+func _award_points(amount: int, label: String) -> void:
+	"""Pay points into the wallet (CurrencyManager) and log them for the hole."""
+	if amount <= 0:
+		return
+	if currency_manager:
+		currency_manager.add_chips(amount, label)
+	if run_state:
+		run_state.add_points(amount)
+	hole_points_log.append({"label": label, "points": amount})
+
+
+func _collect_coins_at_ball() -> void:
+	"""Collect coins within magnet radius of the ball and pay them out."""
+	if golf_ball == null:
+		return
+	var count := collect_coins_at(world_to_grid(golf_ball.position))
+	if count <= 0:
+		return
+	if run_state:
+		run_state.add_coins(count)
+	var points := count * TrickShotDetector.COIN_POINTS
+	_award_points(points, "Coin x%d" % count if count > 1 else "Coin")
+	if shot_ui:
+		shot_ui.show_bonus("Coin", points)
+
+
+func _show_blowout() -> void:
+	"""Run ended: the score vs par reached the blowout limit."""
+	if blowout_shown:
+		return
+	blowout_shown = true
+	if shot_ui and shot_ui.has_method("show_run_over"):
+		shot_ui.show_run_over(
+			"Blowout!",
+			"Run over at %s\n(limit %s)" % [run_state.format_vs_par(run_state.get_live_vs_par()), run_state.format_vs_par(run_state.blowout_limit)],
+			"Holes completed: %d of %d\nTotal strokes: %d" % [run_state.holes_completed, run_state.total_holes, run_state.total_strokes],
+			"New Run")
+
+
+func _refresh_hole_label(extra: String = "") -> void:
+	"""HUD hole label: run score line on top, then hole info (+ optional debug)."""
+	if holelabel == null:
+		return
+	# Prototype: one status line, no hole stats or tile debug
+	if main_ui_ref and main_ui_ref.get("prototype_ui") and run_state:
+		holelabel.text = "Hole %d · Par %d · Stroke %d  |  Run %s (blowout %s)" % [
+			run_state.current_hole, current_par, run_state.strokes_this_hole + 1,
+			run_state.format_vs_par(run_state.get_live_vs_par()),
+			run_state.format_vs_par(run_state.blowout_limit)]
+		if currency_manager:
+			holelabel.text += "  |  %d pts" % currency_manager.get_balance()
+		return
+	var text := ""
+	if run_state:
+		text = "%s  |  Run %s  (blowout %s)" % [
+			run_state.get_hole_display(),
+			run_state.format_vs_par(run_state.get_live_vs_par()),
+			run_state.format_vs_par(run_state.blowout_limit)]
+		if currency_manager:
+			text += "  |  %d pts" % currency_manager.get_balance()
+		text += "\n"
+	text += hole_info_text
+	if extra != "":
+		text += "\n" + extra
+	holelabel.text = text
+
+
 func _show_run_complete() -> void:
 	"""Show run completion screen - TODO: implement full run complete UI"""
 	# For now, start a new run
 	if run_state:
 		run_state.start_new_run(9)
+	if currency_manager:
+		currency_manager.reset_currency()
+	shot_deck.clear()
+	shot_discard.clear()
+	shot_hand.clear()
+	blowout_shown = false
 	
 	_play_transition_loading(func():
 		_regenerate_hole()
@@ -4945,8 +5351,7 @@ func _log_hole_info() -> void:
 		]
 	
 	# Update UI Label
-	if holelabel:
-		holelabel.text = hole_info_text
+	_refresh_hole_label()
 	
 	# Update ShotUI with hole info
 	_update_ui_hole_info()

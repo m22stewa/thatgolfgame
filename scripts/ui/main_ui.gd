@@ -38,12 +38,25 @@ var _selected_club_instance = null
 @onready var lie_desc_label: RichTextLabel = %LieDescription
 @onready var lie_mods_label: RichTextLabel = %LieModifiers
 
+# Prototype: hide everything not needed to plan and hit a shot (scoreboard,
+# debug info, dev buttons). Nothing is deleted; F1 toggles it all back.
+@export var prototype_ui: bool = true
+const PROTOTYPE_HIDDEN := [
+	"ShotUI/mainbg green", "ShotUI/holeinfo white", "ShotUI/shotinfo grey",
+	"ShotUI/scorebg darkgreen", "ShotUI/ScoreInfo", "ShotUI/TopBar",
+	"ShotUI/ShotCounter", "ShotUI/ActionPanel", "ShotUI/BottomPanel",
+	"HoleViewer/HoleHUD/GenerateButton", "HoleViewer/HoleHUD/GenerateUniqueButton",
+	"HoleViewer/HoleHUD/LieInfoPanel",
+]
+var _prototype_saved_visibility: Dictionary = {}  # NodePath -> visible before hiding
+
 # Card inspection popup
 var card_inspection_overlay: ColorRect = null
 var card_inspection_panel: PanelContainer = null
 var inspected_card: CardInstance = null
 
 func _ready() -> void:
+	set_prototype_ui.call_deferred(prototype_ui)
 	# Connect card inspection signals from deck widgets
 	if modifier_deck_widget and modifier_deck_widget.visible:
 		modifier_deck_widget.card_inspection_requested.connect(_on_card_inspection_requested)
@@ -197,6 +210,63 @@ func _close_card_inspection() -> void:
 
 # --- FEAT-003: hand strip population -------------------------------------
 
+func set_prototype_ui(on: bool) -> void:
+	"""Hide (or restore) the non-prototype UI listed in PROTOTYPE_HIDDEN."""
+	prototype_ui = on
+	for path in PROTOTYPE_HIDDEN:
+		var node := get_node_or_null(path) as CanvasItem
+		if node == null:
+			continue
+		if on:
+			if not _prototype_saved_visibility.has(path):
+				_prototype_saved_visibility[path] = node.visible
+			node.visible = false
+		elif _prototype_saved_visibility.has(path):
+			node.visible = _prototype_saved_visibility[path]
+	if not on:
+		_prototype_saved_visibility.clear()
+	_style_status_label(on)
+
+
+func _style_status_label(prototype: bool) -> void:
+	"""Prototype: the hole label becomes a dark, centred status line across the
+	top of the hole view (default: top-right hole info)."""
+	if hole_info_label == null:
+		return
+	if prototype:
+		hole_info_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+		hole_info_label.offset_top = 14
+		hole_info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hole_info_label.add_theme_color_override("font_color", Color(0.1, 0.16, 0.12))
+		hole_info_label.add_theme_color_override("font_outline_color", Color(1, 1, 1, 0.9))
+		hole_info_label.add_theme_constant_override("outline_size", 8)
+	else:
+		hole_info_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		hole_info_label.offset_left = -300
+		hole_info_label.offset_right = -20
+		hole_info_label.offset_top = 16
+		hole_info_label.offset_bottom = 96
+		hole_info_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		hole_info_label.remove_theme_color_override("font_color")
+		hole_info_label.remove_theme_color_override("font_outline_color")
+		hole_info_label.remove_theme_constant_override("outline_size")
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F1:
+		set_prototype_ui(not prototype_ui)
+		get_viewport().set_input_as_handled()
+
+
+func set_card_pressed(card_instance, pressed: bool) -> void:
+	"""Reflect whether a shot card is played this shot (without re-emitting)."""
+	if hand_modifier_row == null:
+		return
+	for c in hand_modifier_row.get_children():
+		if c is Button and c.has_meta("card_instance") and c.get_meta("card_instance") == card_instance:
+			c.set_pressed_no_signal(pressed)
+
+
 func set_hand(club_cards: Array, modifier_cards: Array) -> void:
 	"""Build the 2D club + modifier rows from dealt CardInstances.
 	   Clears any existing controls first. A caller may pass a mixed list in
@@ -251,10 +321,22 @@ func _make_hand_card(instance, is_club: bool) -> Button:
 	btn.clip_text = true
 	btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	btn.text = instance.data.card_name
-	btn.toggle_mode = is_club  # clubs stay visibly selected; modifiers are one-shot plays
+	btn.toggle_mode = true  # clubs stay selected; shot cards toggle on/off for this shot
+	if instance.data.card_type == CardData.CardType.NEGATIVE:
+		btn.disabled = true  # Strain: dead weight in the hand
 	btn.set_meta("card_instance", instance)
 	if instance.data.card_type != CardData.CardType.CLUB:
 		btn.tooltip_text = instance.get_full_description()
+	# Selected/played reads as "active" (brass), not the theme's greyed pressed look
+	var selected := StyleBoxFlat.new()
+	selected.bg_color = Color(0.86, 0.66, 0.28)
+	selected.border_color = Color(1.0, 0.95, 0.8)
+	selected.set_border_width_all(3)
+	selected.set_corner_radius_all(6)
+	btn.add_theme_stylebox_override("pressed", selected)
+	btn.add_theme_stylebox_override("hover_pressed", selected)
+	btn.add_theme_color_override("font_pressed_color", Color(0.12, 0.1, 0.05))
+	btn.add_theme_color_override("font_hover_pressed_color", Color(0.12, 0.1, 0.05))
 	btn.pressed.connect(func() -> void:
 		var bound = btn.get_meta("card_instance")
 		if is_club:

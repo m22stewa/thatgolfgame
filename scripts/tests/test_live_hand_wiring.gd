@@ -77,6 +77,17 @@ func _run() -> void:
 		club_hand = card_system.club_deck_manager.get_hand()
 	_check(club_hand.size() > 0, "(a) non-empty club hand dealt at hole start (size=%d)" % club_hand.size())
 
+	# --- (a2) a fresh 4-card shot hand of playable SHOT cards ---
+	var mod_hand: Array = hex_grid.shot_hand
+	_check(mod_hand.size() == hex_grid.SHOT_HAND_SIZE, "(a2) shot hand dealt with %d cards (got %d)" % [hex_grid.SHOT_HAND_SIZE, mod_hand.size()])
+	var mod_names: Array = []
+	var all_shot := mod_hand.size() > 0
+	for c in mod_hand:
+		mod_names.append(c.data.card_name)
+		if c.data.card_type != CardData.CardType.SHOT:
+			all_shot = false
+	_check(all_shot, "(a2) modifier hand is all SHOT cards %s" % str(mod_names))
+
 	# --- (b) the hand is bound to the on-screen hand UI ---
 	var club_row: Node = main_ui.get_node_or_null("%ClubRow")
 	_check(club_row != null, "ClubRow node present in hand UI")
@@ -93,13 +104,63 @@ func _run() -> void:
 			all_bound = false
 	_check(all_bound, "(b) every ClubRow control is bound to a dealt club card")
 
-	# --- (c) Shoot starts disabled before any club pick ---
+	# --- (c) each shot starts aimed at the flag with a suggested legal club ---
 	var shoot_button: Node = main_ui.get_node_or_null("%ShootButton")
 	_check(shoot_button != null, "ShootButton node present")
 	if shoot_button == null:
 		_finish()
 		return
-	_check(shoot_button.disabled == true, "(c) Shoot button disabled before any club is picked")
+	var flag_tile: Vector2i = hex_grid.get("flag_position")
+	var open_plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {})
+	_check(hex_grid.get("turn_aim_target") == flag_tile or int(open_plan.get("carry", 0)) == int(open_plan.get("power", -1)), "(c) opening shot aims at the flag, or as far toward it as the club reaches")
+	_check(int(open_plan.get("over", 1)) == 0, "(c) the default aim never overspends (%d/%d)" % [int(open_plan.get("cost", 0)), int(open_plan.get("power", 0))])
+	_check(int(hex_grid.get("current_club")) >= 0 and shoot_button.disabled == false, "(c) a legal club is suggested and Shoot is ready (club=%d)" % int(hex_grid.get("current_club")))
+
+	# --- (h) tapping a hex re-aims: the landing spread follows the new line ---
+	var ball_now: Vector2i = hex_grid.world_to_grid(golf_ball.position)
+	var flag_center: Vector2i = shot_manager.current_context.aim_tile
+	var side_target := Vector2i(clampi(ball_now.x + 4, 0, hex_grid.grid_width - 1), ball_now.y + 6)
+	if side_target.x == ball_now.x + 4 or hex_grid.grid_width <= ball_now.x + 4:
+		side_target.x = clampi(ball_now.x - 4, 0, hex_grid.grid_width - 1) if ball_now.x + 4 >= hex_grid.grid_width else side_target.x
+	_check(hex_grid.set_aim_cell(side_target), "(h) set_aim_cell accepts an off-line hex %s" % str(side_target))
+	var side_center: Vector2i = shot_manager.current_context.aim_tile
+	var tc = hex_grid.get("turn_controller")
+	_check(side_center != flag_center, "(h) re-aiming moves the footprint center (%s -> %s)" % [str(flag_center), str(side_center)])
+	_check(tc._hex_distance(side_center, side_target) < tc._hex_distance(flag_center, side_target), "(h) new center is nearer the tapped hex than the old one")
+	_check(shot_manager.current_context.aoe_tiles.has(side_center), "(h) footprint spread contains its center")
+	_check(hex_grid.set_aim_cell(flag_tile), "(h) re-aim back at the flag")
+	var near_tile: Vector2i = tc._point_along(ball_now, flag_tile, 2)
+	hex_grid.set_aim_cell(near_tile)
+	var club_min: int = int(hex_grid.CLUB_STATS.get(hex_grid.current_club, {}).get("band_min", 0))
+	var near_carry: int = int(shot_manager.current_context.get_metadata("shot_plan", {}).get("carry", 0))
+	_check(club_min <= 2 or near_carry >= club_min, "(h) a club can't be hit shorter than its band (carry %d, min %d)" % [near_carry, club_min])
+	hex_grid._auto_aim_new_shot()
+
+	# --- (i) shot cards toggle on/off, spend power, max 3; overspend adds Strain ---
+	var plan_cost := func() -> int: return int(shot_manager.current_context.get_metadata("shot_plan", {}).get("cost", -1))
+	var base_cost: int = plan_cost.call()
+	var costly = null
+	for c in hex_grid.shot_hand:
+		if c.data.effects.size() > 0 and c.data.effects[0] is EffectShotShape and c.data.effects[0].power_cost > 0:
+			costly = c
+			break
+	_check(base_cost > 0, "(i) the flag-aimed plan has a power cost (%d)" % base_cost)
+	if costly:
+		var card_cost := int(costly.data.effects[0].power_cost)
+		main_ui.emit_signal("modifier_card_selected", costly)
+		_check(hex_grid.planned_cards.has(costly), "(i) playing %s marks it played" % costly.data.card_name)
+		_check(plan_cost.call() == base_cost + card_cost, "(i) %s adds its %d power (%d -> %d)" % [costly.data.card_name, card_cost, base_cost, plan_cost.call()])
+		main_ui.emit_signal("modifier_card_selected", costly)
+		_check(not hex_grid.planned_cards.has(costly) and plan_cost.call() == base_cost, "(i) tapping it again takes it back")
+	for c in hex_grid.shot_hand:
+		main_ui.emit_signal("modifier_card_selected", c)
+	_check(hex_grid.planned_cards.size() == hex_grid.MAX_PLANNED_CARDS, "(i) at most %d cards per shot (played %d of %d)" % [hex_grid.MAX_PLANNED_CARDS, hex_grid.planned_cards.size(), hex_grid.shot_hand.size()])
+	hex_grid._clear_planned_cards()
+	hex_grid.rebuild_turn_plan()
+	var discard_before: int = hex_grid.shot_discard.size()
+	hex_grid._add_strain_cards(2)
+	var strain_added: int = hex_grid.shot_discard.size() - discard_before
+	_check(strain_added == 2 and hex_grid.shot_discard[-1].data.card_id == "strain", "(i) overspending adds Strain cards to the deck")
 
 	# --- (d) selecting a legal club enables Shoot ---
 	# Try dealt clubs via the wired hand-strip signal until Shoot enables. Prefer
@@ -126,6 +187,28 @@ func _run() -> void:
 			break
 	_check(enabled_after_pick, "(d) selecting a legal club enables the Shoot button")
 	_check(int(hex_grid.get("current_club")) >= 0, "(d) hex_grid.current_club set by selection (=%d)" % int(hex_grid.get("current_club")))
+
+	# --- (g) points: trick detector wired, coins pay out, wallet matches the log ---
+	var currency = hex_grid.get("currency_manager")
+	_check(shot_manager.trick_detector != null, "(g) ShotManager scores through the trick detector")
+	var coin: Node3D = null
+	for child in hex_grid.get_children():
+		if child.is_in_group("coins") and not child.is_queued_for_deletion():
+			coin = child
+			break
+	_check(coin != null and currency != null, "(g) a coin spawned on the hole and a wallet exists")
+	if coin and currency:
+		var before: int = currency.get_balance()
+		var ball_home: Vector3 = golf_ball.position
+		golf_ball.position = hex_grid.get_tile_surface_position(coin.get_meta("cell"))
+		hex_grid._collect_coins_at_ball()
+		golf_ball.position = ball_home
+		var gained: int = currency.get_balance() - before
+		_check(gained > 0 and gained % TrickShotDetector.COIN_POINTS == 0, "(g) landing on a coin pays %d pts per coin (gained %d)" % [TrickShotDetector.COIN_POINTS, gained])
+		var logged := 0
+		for entry in hex_grid.hole_points_log:
+			logged += entry.points
+		_check(logged == currency.get_balance(), "(g) wallet (%d) equals points logged this hole (%d)" % [currency.get_balance(), logged])
 
 	# --- (e) pressing Shoot resolves a shot that moves the ball ---
 	var start_tile: Vector2i = hex_grid.world_to_grid(golf_ball.position)
@@ -158,6 +241,17 @@ func _run() -> void:
 	_check(end_tile != start_tile, "(e) ball moved to a new tile (%s -> %s)" % [str(start_tile), str(end_tile)])
 	var end_dist: int = hex_grid.get_tile_distance(end_tile, flag_pos)
 	_check(end_dist <= start_dist, "(e) ball no farther from flag (%d -> %d)" % [start_dist, end_dist])
+
+	# --- (f) blowout ends the run: no new shot starts, run-over popup shows ---
+	var run_state = hex_grid.get("run_state")
+	var shot_ui = main_ui.get_node_or_null("ShotUI")
+	_check(run_state != null and shot_ui != null, "(f) RunStateManager and ShotUI available")
+	if run_state and shot_ui:
+		run_state.adjust_score(run_state.blowout_limit, "test: force blowout")
+		_check(run_state.is_blown_out, "(f) run is blown out at the limit")
+		hex_grid._start_new_shot()
+		_check(shot_ui.hole_complete_popup.visible, "(f) run-over popup shown instead of a new shot")
+		_check(shot_ui.next_button.text == "New Run", "(f) popup offers a New Run")
 
 	_finish()
 
