@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/tests/test_run_blowout.gd" id="1_blowout"]
+
+[node name="TestRunBlowout" type="Node"]
+script = ExtResource("1_blowout")

@@ -427,7 +427,7 @@ func prev_club() -> void:
 	select_club((selected_club - 1 + clubs.size()) % clubs.size())
 
 
-func show_score_popup(chips: int, mult: float, final_score: int, hit_water: bool = false, hit_sand: bool = false) -> void:
+func show_score_popup(chips: int, mult: float, final_score: int, hit_water: bool = false, hit_sand: bool = false, title: String = "") -> void:
 	"""Display score popup after a shot"""
 	total_points += final_score
 	
@@ -441,11 +441,11 @@ func show_score_popup(chips: int, mult: float, final_score: int, hit_water: bool
 		score_title.text = "In the Sand!"
 		score_title.add_theme_color_override("font_color", Color(0.8, 0.7, 0.3))
 	else:
-		score_title.text = "Nice Shot!"
+		score_title.text = title if title != "" else "Nice Shot!"
 		score_title.add_theme_color_override("font_color", Color.WHITE)
 	
 	score_value.text = "+%d" % final_score
-	score_details.text = "%d chips × %.1f mult" % [chips, mult]
+	score_details.text = "%d pts × %.1f streak" % [chips, mult]
 	
 	score_popup.visible = true
 	
@@ -480,58 +480,27 @@ func _update_score_display(value: int) -> void:
 		persistent_score_label.text = str(value)
 
 
-func show_hole_complete(strokes: int, par: int, hole_points: int) -> void:
-	"""Display hole completion popup"""
+func show_hole_complete(strokes: int, par: int, hole_points: int, breakdown: Array = [], balance: int = -1) -> void:
+	"""Display hole completion popup. breakdown is [{label, points}] earned this
+	   hole; balance is the spendable points total (-1 = unknown)."""
 	var diff = strokes - par
-	var score_name = ""
-	
-	# Get par bonus from run state if available
-	var par_bonus = 0
-	if run_state:
-		par_bonus = run_state._calculate_par_bonus(diff)
-		score_name = run_state.get_par_name(diff)
-	else:
-		match diff:
-			-3: score_name = "Albatross! (-3)"
-			-2: score_name = "Eagle! (-2)"
-			-1: score_name = "Birdie! (-1)"
-			0: score_name = "Par (E)"
-			1: score_name = "Bogey (+1)"
-			2: score_name = "Double Bogey (+2)"
-			_:
-				if diff < -3:
-					score_name = "Incredible! (%d)" % diff
-				else:
-					score_name = "+%d" % diff
+	var score_name = run_state.get_par_name(diff) if run_state else ("%+d" % diff if diff != 0 else "Par")
 	
 	# Update hole complete title with hole number
 	if hole_complete_title:
 		hole_complete_title.text = "Hole %d Complete!" % current_hole
 	
 	hole_score.text = "%s\n%d strokes" % [score_name, strokes]
-	
-	# Show score breakdown with new scoring info
-	var score_text = "Hole Score: %d pts" % hole_points
-	
-	# Add scoring manager breakdown if available
-	if scoring_manager:
-		var fairways = scoring_manager.get_consecutive_fairways()
-		if fairways > 0:
-			score_text += "\nFairway Streak: %d" % fairways
-		var multiplier = scoring_manager.get_current_multiplier()
-		if multiplier > 1.0:
-			score_text += "\nMultiplier: %.1fx" % multiplier
-	
-	if par_bonus > 0:
-		score_text += "\n\n%s Bonus: +%d pts" % [score_name.split("!")[0].strip_edges(), par_bonus]
-	
-	# Add coins collected if run_state tracks it
 	if run_state:
-		var coins = run_state.get_coins_this_hole()
-		if coins > 0:
-			score_text += "\nCoins: +%d" % coins
+		hole_score.text += "  |  Run %s" % run_state.format_vs_par(run_state.get_live_vs_par())
 	
-	score_text += "\n\nTotal: %d pts" % total_points
+	# Points breakdown for the hole
+	var score_text = ""
+	for entry in breakdown:
+		score_text += "%s  +%d\n" % [entry.label, entry.points]
+	score_text += "\nHole: %d pts" % hole_points
+	if balance >= 0:
+		score_text += "\nTo spend: %d pts" % balance
 	total_score.text = score_text
 	
 	# Update button text based on whether this is the final hole
@@ -540,6 +509,16 @@ func show_hole_complete(strokes: int, par: int, hole_points: int) -> void:
 	else:
 		next_button.text = "Next Hole"
 	
+	hole_complete_popup.visible = true
+
+
+func show_run_over(title: String, headline: String, details: String, button_text: String) -> void:
+	"""Reuse the hole complete popup for the end of a run (e.g. blowout)"""
+	if hole_complete_title:
+		hole_complete_title.text = title
+	hole_score.text = headline
+	total_score.text = details
+	next_button.text = button_text
 	hole_complete_popup.visible = true
 
 
@@ -733,6 +712,11 @@ func _on_modifier_flipped(card) -> void:
 	"""Display the flipped modifier card"""
 	if modifier_display_label and card:
 		modifier_display_label.text = card.get_display_text() if card.has_method("get_display_text") else "[Modifier]"
+
+
+func show_bonus(bonus_name: String, bonus_points: int) -> void:
+	"""Prominent popup for a single award (coin, chip-in, ...)"""
+	_show_golf_bonus_popup(bonus_name, bonus_points)
 
 
 func _on_points_awarded(points: int, reason: String, multiplier: float) -> void:

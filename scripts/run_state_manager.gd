@@ -10,10 +10,14 @@ signal hole_completed(hole_number: int, strokes: int, par: int, hole_score: int)
 signal run_completed(total_holes: int, total_strokes: int, total_score: int)
 signal score_changed(new_score: int)
 signal coins_changed(new_total: int)
+signal vs_par_changed(live_vs_par: int)
+signal run_blown_out(live_vs_par: int)
 
 # Run configuration
 @export var total_holes: int = 9  # 9 or 18 hole round
 @export var starting_score: int = 0
+## The run ends ("blowout") the moment the live score vs par reaches this.
+@export var blowout_limit: int = 8
 
 # Current run state
 var current_hole: int = 1
@@ -32,6 +36,12 @@ var hole_history: Array[Dictionary] = []
 
 # Run status
 var is_run_active: bool = false
+var is_blown_out: bool = false
+var hole_in_progress: bool = false
+
+# Net strokes added/removed outside of play (items like "-1 to score").
+# Negative values help the player.
+var stroke_adjustments: int = 0
 
 # NEW: Progression tracking
 var total_coins_earned: int = 0
@@ -59,6 +69,9 @@ func start_new_run(holes: int = 9) -> void:
 	score_this_hole = 0
 	hole_history.clear()
 	is_run_active = true
+	is_blown_out = false
+	hole_in_progress = false
+	stroke_adjustments = 0
 	
 	# Reset progression tracking
 	total_coins_earned = 0
@@ -82,8 +95,10 @@ func start_hole(par: int, yardage: int) -> void:
 	strokes_this_hole = 0  # Strokes counter starts at 0, increments on each record_stroke()
 	score_this_hole = 0
 	coins_this_hole = 0
+	hole_in_progress = true
 	
 	hole_started.emit(current_hole, par, yardage)
+	vs_par_changed.emit(get_live_vs_par())
 
 
 func record_stroke(shot_score: int = 0) -> void:
@@ -95,16 +110,41 @@ func record_stroke(shot_score: int = 0) -> void:
 	score_this_hole += shot_score
 	total_score += shot_score
 	score_changed.emit(total_score)
+	vs_par_changed.emit(get_live_vs_par())
+	_check_blowout()
+
+
+func add_points(amount: int) -> void:
+	"""Log points earned (tricks, coins, hole payout) for run stats.
+	   The spendable balance lives in CurrencyManager."""
+	score_this_hole += amount
+	total_score += amount
+	score_changed.emit(total_score)
+
+
+func adjust_score(stroke_delta: int, reason: String = "") -> void:
+	"""Add/remove strokes from the run score outside of play.
+	   Seam for items, e.g. "Subtract 1 from score" calls adjust_score(-1)."""
+	stroke_adjustments += stroke_delta
+	print("[RunState] Score adjusted %+d (%s)" % [stroke_delta, reason])
+	vs_par_changed.emit(get_live_vs_par())
+	_check_blowout()
+
+
+func _check_blowout() -> void:
+	"""End the run once the live score vs par reaches blowout_limit."""
+	if not is_run_active or is_blown_out:
+		return
+	var live := get_live_vs_par()
+	if live >= blowout_limit:
+		is_blown_out = true
+		is_run_active = false
+		run_blown_out.emit(live)
 
 
 func complete_hole() -> Dictionary:
 	"""Complete the current hole and return results"""
 	var par_diff = strokes_this_hole - current_par
-	
-	# Calculate par bonus/penalty
-	var par_bonus = _calculate_par_bonus(par_diff)
-	score_this_hole += par_bonus
-	total_score += par_bonus
 	
 	# Record history
 	var hole_result = {
@@ -113,15 +153,17 @@ func complete_hole() -> Dictionary:
 		"yardage": current_yardage,
 		"strokes": strokes_this_hole,
 		"par_diff": par_diff,
-		"score": score_this_hole,
-		"par_bonus": par_bonus
+		"score": score_this_hole
 	}
 	hole_history.append(hole_result)
+	hole_in_progress = false
 	
 	holes_completed += 1
 	
 	hole_completed.emit(current_hole, strokes_this_hole, current_par, score_this_hole)
 	score_changed.emit(total_score)
+	vs_par_changed.emit(get_live_vs_par())
+	_check_blowout()
 	
 	return hole_result
 
@@ -139,26 +181,6 @@ func advance_to_next_hole() -> bool:
 
 
 # --- Scoring ---
-
-func _calculate_par_bonus(par_diff: int) -> int:
-	"""Calculate bonus points based on par performance"""
-	match par_diff:
-		-3:  # Albatross
-			return 500
-		-2:  # Eagle
-			return 200
-		-1:  # Birdie
-			return 100
-		0:   # Par
-			return 50
-		1:   # Bogey
-			return 10
-		_:
-			if par_diff < -3:
-				return 1000  # Incredible!
-			else:
-				return 0  # Double bogey or worse
-
 
 func get_par_name(par_diff: int) -> String:
 	"""Get the name for a par differential"""
@@ -185,8 +207,32 @@ func get_total_par() -> int:
 
 
 func get_vs_par() -> int:
-	"""Get strokes vs par for completed holes"""
-	return total_strokes - get_total_par()
+	"""Get strokes vs par for completed holes (plus item adjustments)"""
+	var diff := stroke_adjustments
+	for hole in hole_history:
+		diff += hole.par_diff
+	return diff
+
+
+func get_live_vs_par() -> int:
+	"""Run score including the hole in progress. Strokes over par on the current
+	   hole count immediately; under-par only counts once the ball is holed."""
+	var live := get_vs_par()
+	if hole_in_progress:
+		live += maxi(0, strokes_this_hole - current_par)
+	return live
+
+
+func get_strokes_until_blowout() -> int:
+	"""How many more over-par strokes the player can absorb before the run ends."""
+	return blowout_limit - get_live_vs_par()
+
+
+func format_vs_par(diff: int) -> String:
+	"""Golf-style score: E, +3, -2"""
+	if diff == 0:
+		return "E"
+	return "%+d" % diff
 
 
 # --- State Queries ---
@@ -201,8 +247,9 @@ func get_current_state() -> Dictionary:
 		"holes_completed": holes_completed,
 		"strokes_this_hole": strokes_this_hole,
 		"current_par": current_par,
-		"vs_par": get_vs_par(),
-		"is_run_active": is_run_active
+		"vs_par": get_live_vs_par(),
+		"is_run_active": is_run_active,
+		"is_blown_out": is_blown_out
 	}
 
 

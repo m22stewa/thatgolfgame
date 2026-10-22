@@ -15,7 +15,6 @@ var chips: int = 0
 # Earnings configuration
 @export_group("Earnings")
 @export var base_hole_payout: int = 50           # Base chips per hole completed
-@export var par_bonus_multiplier: float = 1.0    # Multiplier for par bonus conversion
 @export var stroke_penalty: int = 10             # Chips lost per stroke over par
 
 # Price configuration  
@@ -52,8 +51,6 @@ func _find_run_state() -> void:
 	
 	# Connect to run state signals if found
 	if run_state:
-		if not run_state.hole_completed.is_connected(_on_hole_completed):
-			run_state.hole_completed.connect(_on_hole_completed)
 		if not run_state.score_changed.is_connected(_on_score_changed):
 			run_state.score_changed.connect(_on_score_changed)
 
@@ -62,8 +59,6 @@ func set_run_state(state: RunStateManager) -> void:
 	"""Set the RunStateManager reference"""
 	run_state = state
 	if run_state:
-		if not run_state.hole_completed.is_connected(_on_hole_completed):
-			run_state.hole_completed.connect(_on_hole_completed)
 		if not run_state.score_changed.is_connected(_on_score_changed):
 			run_state.score_changed.connect(_on_score_changed)
 
@@ -113,19 +108,14 @@ func reset_currency() -> void:
 
 # --- Hole Completion Rewards ---
 
-func _on_hole_completed(hole_number: int, strokes: int, par: int, hole_score: int) -> void:
-	"""Calculate and award chips based on hole performance"""
-	var earnings = calculate_hole_earnings(strokes, par, hole_score)
-	add_chips(earnings, "Hole %d completed" % hole_number)
-
-
 func _on_score_changed(_new_score: int) -> void:
 	"""Optional: React to score changes during play"""
 	pass
 
 
-func calculate_hole_earnings(strokes: int, par: int, hole_score: int) -> int:
-	"""Calculate chip earnings for a completed hole"""
+func calculate_hole_earnings(strokes: int, par: int) -> int:
+	"""Points paid for finishing a hole (par result only; trick/coin points are
+	   paid as they happen). The hole-complete flow in hex_grid pays this."""
 	var earnings = base_hole_payout
 	
 	# Par performance bonus
@@ -148,10 +138,6 @@ func calculate_hole_earnings(strokes: int, par: int, hole_score: int) -> int:
 			elif par_diff > 1:
 				# Penalty for going over
 				earnings = maxi(0, earnings - (par_diff - 1) * stroke_penalty)
-	
-	# Convert hole score to additional chips
-	if hole_score > 0:
-		earnings += int(hole_score * par_bonus_multiplier)
 	
 	return earnings
 

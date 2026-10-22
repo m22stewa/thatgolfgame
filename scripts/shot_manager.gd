@@ -27,6 +27,10 @@ var current_context: ShotContext = null
 # Optional seeded RNG for deterministic landing selection (null = use globals)
 var rng: RandomNumberGenerator = null
 
+# When set, shot points come only from trick shots (TrickShotDetector);
+# null keeps the legacy distance/terrain scoring.
+var trick_detector: TrickShotDetector = null
+
 # Shot state
 var is_shot_in_progress: bool = false
 var is_animating: bool = false  # True while ball is in flight/bouncing
@@ -463,7 +467,13 @@ func _simulate_ball_path() -> void:
 
 func _compute_scoring() -> void:
 	"""Phase 8: Calculate chips and mult based on shot"""
-	# Base chips from distance
+	if trick_detector != null:
+		trick_detector.score_shot(current_context)
+		current_context.calculate_final_score()
+		scoring_computed.emit(current_context)
+		return
+	
+	# Legacy: base chips from distance
 	var distance = current_context.get_shot_distance()
 	current_context.base_chips = int(distance * 5)  # 5 chips per cell distance
 	current_context.chips = current_context.base_chips
