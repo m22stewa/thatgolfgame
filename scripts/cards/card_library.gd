@@ -21,7 +21,7 @@ func _register_all_cards() -> void:
 	_load_resources_recursive("res://resources/cards")
 	
 	# 2. Load hardcoded cards (only if not already loaded)
-	# Prototype path cards first: they own the draw/fade ids.
+	# Prototype path cards (resources/cards/swing/ already owns "draw"/"fade").
 	_register_path_cards()
 	_register_golf_cards()
 	_register_shot_shape_cards()
@@ -383,21 +383,21 @@ func _register_path_cards() -> void:
 	# Prototype path cards (ShotPlan): each shapes the card-built flight and
 	# spends power. Draw/Fade bow the flight so it still finishes on the
 	# tapped hex; Hard versions bow further for more power.
-	_register_path_card("draw", "Draw", "Starts right, curves back left onto the target.", 1, {"bulge": 1.5})
-	_register_path_card("fade", "Fade", "Starts left, curves back right onto the target.", 1, {"bulge": -1.5})
-	_register_path_card("hard_draw", "Hard Draw", "Big right-to-left curve around trouble.", 2, {"bulge": 3.5})
-	_register_path_card("hard_fade", "Hard Fade", "Big left-to-right curve around trouble.", 2, {"bulge": -3.5})
-	_register_path_card("loft", "Loft", "High flight: clears trees on the way.", 1, {"loft": true})
+	_register_path_card("draw_shot", "Draw", "Curves left onto the target.", 1, {"bulge": 1.5})
+	_register_path_card("fade_shot", "Fade", "Curves right onto the target.", 1, {"bulge": -1.5})
+	_register_path_card("hard_draw", "Hard Draw", "Big curve left, around trouble.", 2, {"bulge": 3.5})
+	_register_path_card("hard_fade", "Hard Fade", "Big curve right, around trouble.", 2, {"bulge": -3.5})
+	_register_path_card("loft", "Loft", "Flies over trees.", 1, {"loft": true})
 	_register_path_card("stop", "Stop", "No roll after landing.", 0, {"roll_mod": -99})
 	_register_path_card("release", "Release", "+2 roll after landing.", 0, {"roll_mod": 2})
 	_register_path_card("dart", "Dart", "Tighter landing ring.", 1, {"ring_mod": -1})
-	_register_path_card("wind_cheater", "Wind Cheater", "The wind can't move this shot.", 1, {"ignore_wind": true})
+	_register_path_card("knockdown", "Knockdown", "Low flight: wind can't move it.", 1, {"ignore_wind": true})
 
 	# Strain: added to your deck when you overspend power. Dead weight in hand.
 	if not _cards.has("strain"):
 		var strain = CardData.create("strain", "Strain", CardData.Rarity.COMMON)
 		strain.card_type = CardData.CardType.NEGATIVE
-		strain.description = "Unplayable. Added when you swing past your club's power."
+		strain.description = "Unplayable. From overswinging."
 		_register(strain)
 
 

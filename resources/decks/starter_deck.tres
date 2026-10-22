@@ -8,4 +8,4 @@ script = ExtResource("1_script")
 deck_id = "starter_deck"
 display_name = "Starter Deck"
 description = "Prototype path deck: shape cards that spend club power."
-card_ids = Array[String](["draw", "draw", "fade", "fade", "hard_draw", "hard_fade", "loft", "loft", "stop", "stop", "release", "dart", "dart", "wind_cheater"])
+card_ids = Array[String](["draw_shot", "draw_shot", "fade_shot", "fade_shot", "hard_draw", "hard_fade", "loft", "loft", "stop", "stop", "release", "dart", "dart", "knockdown"])

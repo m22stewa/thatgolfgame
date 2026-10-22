@@ -50,10 +50,11 @@ func _ready() -> void:
 	var target := Vector2i(10, 14)  # 12 hexes straight down the hole
 
 	print("-- straight shot --")
-	var plain := ShotPlan.build(hole, ball, target, {"power": 20})
+	var plain := ShotPlan.build(hole, ball, target, {"power": 24})
 	_check(plain.end == target, "no cards, no wind: lands on the tapped hex (%s)" % str(plain.end))
 	_check(plain.carry == 12 and plain.cost == 12, "cost = carry = 12 hexes (got %d)" % plain.cost)
-	_check(plain.ring == 0, "12/20 power (60%%) lands exactly: ring 0 (got %d)" % plain.ring)
+	_check(plain.ring == 0, "12/24 power (50%%) lands exactly: ring 0 (got %d)" % plain.ring)
+	_check(ShotPlan.build(hole, ball, target, {"power": 20}).ring == 1, "12/20 power (60%) can scatter: ring 1")
 	_check(plain.tiles[0] == ball and plain.tiles.size() >= 12, "path starts at the ball and walks the hexes")
 
 	print("-- power and the landing ring --")

@@ -29,6 +29,10 @@ var hex_grid: Node3D = null            # Hole controller (get_cell/get_tile_surf
 
 # --- Tuning constants ---
 const MIN_WEIGHT: float = 0.05
+const ROLL_IN_CHANCE: float = 0.15  # a full shot rolling dead onto the cup drops this often
+# Chance a putt at the cup drops, by length in hexes (1 hex = 10 yd); a miss
+# finishes next to the cup.
+const PUTT_MAKE_CHANCE := {1: 0.6, 2: 0.4, 3: 0.25, 4: 0.15}
 const BAND_MAX_SLACK: int = 2          # along-axis may exceed band_max by this much
 
 # Surface enum (matches hex_grid.gd SurfaceType)
@@ -53,7 +57,7 @@ const TERRAIN_FACTOR := {
 	SURF_SAND: 0.60,
 	SURF_TREE: 0.45,
 	SURF_WATER: 0.50,
-	SURF_FLAG: 1.40,
+	SURF_FLAG: 1.0,  # no pull toward the cup: aces stay rare
 }
 
 # The club currently played this turn (ClubType int). Set by the loop/harness
@@ -105,7 +109,8 @@ func rebuild() -> void:
 	ctx.reset()
 	ctx.aim_dir = saved_aim_dir
 	ctx.start_tile = saved_start
-	ctx.ball = saved_ball
+	# The ball node is replaced on penalties / new holes; never keep a freed one
+	ctx.ball = saved_ball if is_instance_valid(saved_ball) else (hex_grid.get("golf_ball") if hex_grid else null)
 	ctx.hole = saved_hole
 	ctx.shot_index = saved_shot_index
 
@@ -223,17 +228,48 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 		"wind_vec": wind_vec,
 		"wind_strength": strength,
 		"extra_cost": int(ctx.get_metadata("power_cost", 0)),
+		"spread": ctx.base_spread,
+		"exact_usage": ShotPlan.PUTT_EXACT_USAGE if played_club == int(hex_grid.ClubType.PUTTER) else ShotPlan.EXACT_USAGE,
 		"ring_mod": int(ctx.get_metadata("ring_mod", 0)) + ctx.spread_mod,
 	})
 	var center: Vector2i = plan.end
 	ctx.aim_tile = center
+	# Putts are all ground: the path IS the roll
+	if played_club == int(hex_grid.ClubType.PUTTER):
+		ctx.base_roll = 0
+		ctx.add_metadata("all_ground", true)
 	ctx.aim_dir = _dir_for_vector(center, plan.tangent)
 	ctx.wind_curve = 0
 	ctx.add_metadata("shot_plan", plan)
 	if plan.blocked:
 		ctx.add_metadata("path_blocked", true)
 	_weigh_disk(ctx, center, plan.ring)
+	if played_club == int(hex_grid.ClubType.PUTTER) and center == _cup() and plan.ring > 0:
+		_weigh_putt(ctx, center, int(plan.carry))
 	ctx.add_metadata("footprint_built", true)
+
+
+func _weigh_putt(ctx: ShotContext, cup: Vector2i, length: int) -> void:
+	"""Re-weight a putt's ring so the cup hex carries the make chance for its
+	length; the rest of the ring is where a miss stops."""
+	var make: float = PUTT_MAKE_CHANCE.get(clampi(length, 1, 4), 0.2)
+	var others := 0.0
+	for t in ctx.aoe_tiles:
+		if t == cup:
+			continue
+		# A missed putt stays on the green
+		if _surface_at(t) != SURF_GREEN:
+			ctx.aoe_weights.erase(t)
+			continue
+		others += float(ctx.aoe_weights.get(t, 0.0))
+	var kept: Array[Vector2i] = []
+	for t in ctx.aoe_tiles:
+		if ctx.aoe_weights.has(t):
+			kept.append(t)
+	ctx.aoe_tiles = kept
+	if others > 0.0:
+		ctx.aoe_weights[cup] = others * make / (1.0 - make)
+	ctx.add_metadata("putt_make_chance", make)
 
 
 func _weigh_disk(ctx: ShotContext, center: Vector2i, radius: int) -> void:
@@ -271,14 +307,32 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 	# Roll distance: base_roll + roll_mod + terrain roll of the landing surface.
 	var landing := ctx.landing_tile
 	var landing_surface := _surface_at(landing)
+	var cup := _cup()
 	var roll := maxi(0, ctx.base_roll + ctx.roll_mod + _terrain_roll(landing_surface))
 	if ctx.get_metadata("path_blocked", false):
 		roll = 0  # dropped out of the trees
+	# No roll out of the water or off the course
+	if landing_surface == SURF_WATER or landing_surface < 0:
+		roll = 0
+
+	var tile := landing
+	var rolled: Array[Vector2i] = []
+	var on_cup := landing == cup or landing_surface == SURF_FLAG
+	if on_cup and ctx.get_metadata("all_ground", false):
+		roll = 0  # a putt that finishes on the cup drops
+	elif on_cup:
+		# Landing on the cup from the air: it hits the pin and kicks one hex
+		# past (a great approach, not a hole-out). Only rolling balls drop.
+		var kick: Vector2i = aoe_system._get_neighbor_in_direction(tile, ctx.aim_dir, tile.x % 2 == 1)
+		if _in_bounds(kick) and _surface_at(kick) != SURF_WATER:
+			tile = kick
+			rolled.append(tile)
+		roll = 0
 
 	# R#2: step along aim_dir `roll` times, recomputing parity each step; stop
-	# before OOB / WATER, and (unless Punch/Stinger) before TREE.
-	var tile := landing
-	for _i in range(roll):
+	# before OOB / WATER, and (unless Punch/Stinger) before TREE. A ball rolling
+	# over the cup drops only if it is slow (1 hex of roll or less left).
+	for i in range(roll):
 		var is_odd := tile.x % 2 == 1
 		var next: Vector2i = aoe_system._get_neighbor_in_direction(tile, ctx.aim_dir, is_odd)
 		if not _in_bounds(next):
@@ -289,15 +343,28 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 		if next_surface == SURF_TREE and not passes_tree:
 			break
 		tile = next
+		rolled.append(tile)
+		# Rolling over the cup: only a slow ball can drop, and it can lip out
+		if (tile == cup or next_surface == SURF_FLAG) and roll - i - 1 <= 1:
+			var rng: RandomNumberGenerator = hole_context.rng if hole_context else null
+			if (rng.randf() if rng else randf()) < ROLL_IN_CHANCE:
+				break
 
 	# Deterministic green slope nudge (design §4.3).
-	if _surface_at(tile) == SURF_GREEN:
-		tile = _green_slope_nudge(tile, ctx.aim_dir)
+	if _surface_at(tile) == SURF_GREEN and tile != cup:
+		var nudged := _green_slope_nudge(tile, ctx.aim_dir)
+		if nudged != tile:
+			tile = nudged
+			rolled.append(tile)
 
 	# Water handling: if the final hex is water, flag it (drop logic lives in the
 	# loop; here we only tag so scoring/loop can react).
 	if _surface_at(tile) == SURF_WATER:
 		ctx.add_metadata("hit_water", true)
+
+	# The ball's actual journey, replayed exactly by the animation
+	ctx.add_metadata("carry_tile", landing)
+	ctx.add_metadata("roll_tiles", rolled)
 
 	# Mutate in place before scoring (R#1: landing terrain scored on this hex).
 	ctx.landing_tile = tile
@@ -315,6 +382,13 @@ func _modifier_manager():
 	if shot_manager == null:
 		return null
 	return shot_manager.modifier_manager
+
+
+func _cup() -> Vector2i:
+	if hex_grid == null:
+		return Vector2i(-1, -1)
+	var f = hex_grid.get("flag_position")
+	return f if f is Vector2i else Vector2i(-1, -1)
 
 
 func _write_band_from_club(ctx: ShotContext, club: int) -> void:
@@ -415,6 +489,9 @@ func _green_slope_nudge(tile: Vector2i, aim_dir: int) -> Vector2i:
 		var n: Vector2i = aoe_system._get_neighbor_in_direction(tile, dir, is_odd)
 		if not _in_bounds(n):
 			continue
+		# The slope only moves the ball along the green (or into the cup)
+		if _surface_at(n) != SURF_GREEN and _surface_at(n) != SURF_FLAG and n != _cup():
+			continue
 		var drop := here_elev - _elevation_at(n)
 		if drop > best_drop:
 			best_drop = drop
@@ -459,7 +536,7 @@ func _terrain_roll(surface: int) -> int:
 	"""Additive roll contribution from the landing surface."""
 	match surface:
 		SURF_FAIRWAY, SURF_TEE:
-			return 1
+			return 0
 		SURF_GREEN:
 			return 0
 		SURF_ROUGH:

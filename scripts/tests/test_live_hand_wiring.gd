@@ -112,7 +112,9 @@ func _run() -> void:
 		return
 	var flag_tile: Vector2i = hex_grid.get("flag_position")
 	var open_plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {})
-	_check(hex_grid.get("turn_aim_target") == flag_tile or int(open_plan.get("carry", 0)) == int(open_plan.get("power", -1)), "(c) opening shot aims at the flag, or as far toward it as the club reaches")
+	var open_stats: Dictionary = hex_grid.CLUB_STATS.get(hex_grid.current_club, {})
+	var open_carry := int(open_plan.get("carry", -1))
+	_check(open_carry >= int(open_stats.get("band_min", 99)) and open_carry <= int(open_stats.get("band_max", -1)), "(c) the caddie's opening target is inside the suggested club's carry (%d in %d-%d)" % [open_carry, int(open_stats.get("band_min", 0)), int(open_stats.get("band_max", 0))])
 	_check(int(open_plan.get("over", 1)) == 0, "(c) the default aim never overspends (%d/%d)" % [int(open_plan.get("cost", 0)), int(open_plan.get("power", 0))])
 	_check(int(hex_grid.get("current_club")) >= 0 and shoot_button.disabled == false, "(c) a legal club is suggested and Shoot is ready (club=%d)" % int(hex_grid.get("current_club")))
 
@@ -247,7 +249,12 @@ func _run() -> void:
 	var shot_ui = main_ui.get_node_or_null("ShotUI")
 	_check(run_state != null and shot_ui != null, "(f) RunStateManager and ShotUI available")
 	if run_state and shot_ui:
-		run_state.adjust_score(run_state.blowout_limit, "test: force blowout")
+		# Let the last shot's ball land first: no turn starts mid-flight
+		var waited := 0
+		while shot_manager.is_animating and waited < 600:
+			await get_tree().process_frame
+			waited += 1
+		run_state.adjust_score(run_state.blowout_limit - run_state.get_live_vs_par(), "test: force blowout")
 		_check(run_state.is_blown_out, "(f) run is blown out at the limit")
 		hex_grid._start_new_shot()
 		_check(shot_ui.hole_complete_popup.visible, "(f) run-over popup shown instead of a new shot")

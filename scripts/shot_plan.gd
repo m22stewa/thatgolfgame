@@ -21,13 +21,15 @@ const HEX_STEP := 1.7320508          # world distance between neighbouring hex c
 const SAMPLES_PER_HEX := 4
 const WIND_LATERAL_PER_HEX := 0.05   # sideways push (hexes) per air hex per wind strength
 const WIND_ALONG_PER_HEX := 0.025    # head/tail push (hexes) per air hex per wind strength
-const EXACT_USAGE := 0.7             # at or under this share of power the shot lands exactly
+const EXACT_USAGE := 0.5             # at or under this share of power the shot lands exactly
+const PUTT_EXACT_USAGE := 0.0        # putts always carry a ring (make odds live in TurnController)
 
 
 static func build(hole, ball: Vector2i, target: Vector2i, opts: Dictionary = {}) -> Dictionary:
 	"""opts: power:int, bulge:float (hexes, + bows right / curves left),
 	   loft:bool, ignore_wind:bool, wind_vec:Vector2 (world x,z), wind_strength:int,
-	   extra_cost:int (shape cards), ring_mod:int.
+	   extra_cost:int (shape cards), spread:int (club scatter, default 1), ring_mod:int,
+	   exact_usage:float (share of power at or under which the ring shrinks).
 	   Returns {tiles, points, end, blocked, carry, cost, power, over, ring, tangent}."""
 	var power: int = maxi(1, int(opts.get("power", 1)))
 	var bulge: float = float(opts.get("bulge", 0.0))
@@ -64,9 +66,10 @@ static func build(hole, ball: Vector2i, target: Vector2i, opts: Dictionary = {})
 			tiles.append(tile)
 
 	# Trees on the flight stop a shot that isn't lofted (the ball drops there).
+	# The hex next to the ball is exempt: the ball can always chip out.
 	var blocked := false
 	if not loft:
-		for i in range(1, tiles.size() - 1):
+		for i in range(2, tiles.size() - 1):
 			if hole.get_cell(tiles[i].x, tiles[i].y) == SURF_TREE:
 				tiles = tiles.slice(0, i + 1)
 				blocked = true
@@ -83,8 +86,11 @@ static func build(hole, ball: Vector2i, target: Vector2i, opts: Dictionary = {})
 
 	var cost := carry + int(opts.get("extra_cost", 0))
 	var over := maxi(0, cost - power)
+	# Landing ring: the club's spread, one tighter for an easy swing, one wider
+	# when overswinging; cards and the lie add or remove rings.
+	var spread := int(opts.get("spread", 1))
 	var usage := float(cost) / float(power)
-	var ring := 0 if usage <= EXACT_USAGE else (1 if over == 0 else 2)
+	var ring := spread - 1 if usage <= float(opts.get("exact_usage", EXACT_USAGE)) else (spread if over == 0 else spread + 1)
 	ring = maxi(0, ring + int(opts.get("ring_mod", 0)))
 	if blocked:
 		ring = 0

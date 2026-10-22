@@ -10,7 +10,11 @@ signal club_card_selected(card_instance)
 signal modifier_card_selected(card_instance)
 
 # Lightweight card control size inside the strip (Button + card name).
-const HAND_CARD_MIN_SIZE := Vector2(104, 72)
+const CLUB_BUTTON_MIN_SIZE := Vector2(104, 52)
+const SHOT_CARD_SIZE := Vector2(136, 150)
+const CARD_PAPER := Color(0.97, 0.95, 0.89)
+const CARD_INK := Color(0.13, 0.13, 0.11)
+const CARD_BRASS := Color(0.86, 0.62, 0.2)
 var _selected_club_instance = null
 
 @onready var shot_ui: Control = $ShotUI
@@ -267,11 +271,12 @@ func set_card_pressed(card_instance, pressed: bool) -> void:
 			c.set_pressed_no_signal(pressed)
 
 
-func set_hand(club_cards: Array, modifier_cards: Array) -> void:
+func set_hand(club_cards: Array, modifier_cards: Array, club_subtitles: Dictionary = {}) -> void:
 	"""Build the 2D club + modifier rows from dealt CardInstances.
 	   Clears any existing controls first. A caller may pass a mixed list in
 	   either argument; cards are routed to the club row vs modifier row by
-	   card_type so the strip stays correct regardless of source."""
+	   card_type so the strip stays correct regardless of source.
+	   club_subtitles: CardInstance -> second line on a club (its carry range)."""
 	_selected_club_instance = null
 	clear_hand()
 	if hand_club_row == null or hand_modifier_row == null:
@@ -285,8 +290,82 @@ func set_hand(club_cards: Array, modifier_cards: Array) -> void:
 			continue
 		var is_club: bool = instance.data.card_type == CardData.CardType.CLUB
 		var row: HBoxContainer = hand_club_row if is_club else hand_modifier_row
-		var card_control := _make_hand_card(instance, is_club)
+		var card_control := _make_hand_card(instance, is_club, club_subtitles.get(instance, ""))
 		row.add_child(card_control)
+
+
+func _build_shot_card(btn: Button, instance) -> void:
+	"""Card face: tag + cost row, name, drawn icon, one-line effect."""
+	var info := ShotCardFace.kind_for(instance.data)
+	var is_curse: bool = info.kind == "strain"
+	btn.custom_minimum_size = SHOT_CARD_SIZE
+	btn.tooltip_text = instance.get_full_description()
+	btn.disabled = is_curse  # Strain: dead weight in the hand
+	var paper := Color(0.78, 0.76, 0.72) if is_curse else CARD_PAPER
+	btn.add_theme_stylebox_override("normal", _card_box(paper, CARD_INK, 2))
+	btn.add_theme_stylebox_override("hover", _card_box(paper, CARD_BRASS, 3))
+	btn.add_theme_stylebox_override("disabled", _card_box(paper, Color(0.4, 0.38, 0.35), 2))
+	btn.add_theme_stylebox_override("pressed", _card_box(Color(1.0, 0.88, 0.6), CARD_BRASS, 5))
+	btn.add_theme_stylebox_override("hover_pressed", _card_box(Color(1.0, 0.88, 0.6), CARD_BRASS, 5))
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+	var col := VBoxContainer.new()
+	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	col.offset_left = 10
+	col.offset_right = -10
+	col.offset_top = 8
+	col.offset_bottom = -8
+	col.add_theme_constant_override("separation", 2)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	btn.add_child(col)
+
+	var top := HBoxContainer.new()
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(top)
+	top.add_child(_card_label(info.tag, 11, Color(0.4, 0.38, 0.33)))
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(spacer)
+	var cost := ShotCardFace.cost_for(instance.data)
+	if not is_curse:
+		top.add_child(_card_label("%d" % cost if cost > 0 else "free", 13, CARD_BRASS.darkened(0.3)))
+
+	var title := _card_label(instance.data.card_name, 16, CARD_INK)
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title.clip_text = true
+	col.add_child(title)
+
+	var face := ShotCardFace.new()
+	face.kind = info.kind
+	face.strength = info.strength
+	face.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	face.custom_minimum_size = Vector2(0, 40)
+	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(face)
+
+	var blurb := _card_label(instance.data.description.split(" (")[0], 11, Color(0.3, 0.29, 0.26))
+	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(blurb)
+
+
+func _card_label(text: String, font_size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return label
+
+
+func _card_box(bg: Color, border: Color, border_width: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.border_color = border
+	box.set_border_width_all(border_width)
+	box.set_corner_radius_all(8)
+	return box
 
 
 func clear_hand() -> void:
@@ -311,32 +390,25 @@ func set_selected_club(card_instance) -> void:
 		c.button_pressed = (bound == card_instance)
 
 
-func _make_hand_card(instance, is_club: bool) -> Button:
+func _make_hand_card(instance, is_club: bool, subtitle: String = "") -> Button:
 	"""Build a lightweight, clickable card control bound to a CardInstance.
-	   Kept deliberately cheap (Button, no per-card 3D SubViewport) so a full
-	   club bag + modifier hand costs little. Emits the appropriate selection
-	   signal on press."""
+	   Clubs are compact two-line buttons (name + carry range); shot cards are
+	   card faces (tag, cost, drawn icon, effect). Both toggle: a club stays
+	   selected, a shot card is played/unplayed for this shot."""
 	var btn := Button.new()
-	btn.custom_minimum_size = HAND_CARD_MIN_SIZE
-	btn.clip_text = true
-	btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	btn.text = instance.data.card_name
-	btn.toggle_mode = true  # clubs stay selected; shot cards toggle on/off for this shot
-	if instance.data.card_type == CardData.CardType.NEGATIVE:
-		btn.disabled = true  # Strain: dead weight in the hand
+	btn.toggle_mode = true
 	btn.set_meta("card_instance", instance)
-	if instance.data.card_type != CardData.CardType.CLUB:
-		btn.tooltip_text = instance.get_full_description()
-	# Selected/played reads as "active" (brass), not the theme's greyed pressed look
-	var selected := StyleBoxFlat.new()
-	selected.bg_color = Color(0.86, 0.66, 0.28)
-	selected.border_color = Color(1.0, 0.95, 0.8)
-	selected.set_border_width_all(3)
-	selected.set_corner_radius_all(6)
-	btn.add_theme_stylebox_override("pressed", selected)
-	btn.add_theme_stylebox_override("hover_pressed", selected)
-	btn.add_theme_color_override("font_pressed_color", Color(0.12, 0.1, 0.05))
-	btn.add_theme_color_override("font_hover_pressed_color", Color(0.12, 0.1, 0.05))
+	if is_club:
+		btn.custom_minimum_size = CLUB_BUTTON_MIN_SIZE
+		btn.text = instance.data.card_name if subtitle == "" else "%s\n%s" % [instance.data.card_name, subtitle]
+		btn.add_theme_font_size_override("font_size", 15)
+		# Selected reads as "active" (brass), not the theme's greyed pressed look
+		btn.add_theme_stylebox_override("pressed", _card_box(Color(0.86, 0.66, 0.28), Color(1.0, 0.95, 0.8), 3))
+		btn.add_theme_stylebox_override("hover_pressed", _card_box(Color(0.86, 0.66, 0.28), Color(1.0, 0.95, 0.8), 3))
+		btn.add_theme_color_override("font_pressed_color", Color(0.12, 0.1, 0.05))
+		btn.add_theme_color_override("font_hover_pressed_color", Color(0.12, 0.1, 0.05))
+	else:
+		_build_shot_card(btn, instance)
 	btn.pressed.connect(func() -> void:
 		var bound = btn.get_meta("card_instance")
 		if is_club:

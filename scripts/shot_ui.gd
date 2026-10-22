@@ -772,8 +772,6 @@ func _show_golf_bonus_popup(bonus_name: String, bonus_points: int) -> void:
 	tween.tween_interval(1.0)
 	tween.tween_property(popup, "modulate:a", 0.0, 0.5)
 	tween.tween_callback(popup.queue_free)
-	# Emit signal for hex_grid to handle hole transition
-	next_hole_requested.emit()
 
 
 func set_hole_display(display_text: String) -> void:
