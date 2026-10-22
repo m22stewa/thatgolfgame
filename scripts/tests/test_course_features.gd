@@ -1,0 +1,173 @@
+extends Node
+
+## test_course_features.gd - Headless harness for course features: placement,
+## fire spreading and burning out, and how TurnController's roll-out treats
+## ice, sprinklers and fire. Exits 0 on success, 1 on any failure.
+
+const FAIRWAY := 1
+const ROUGH := 2
+const TREE := 7
+
+var _failures: int = 0
+var _checks: int = 0
+
+
+## Course stand-in: all fairway, flag far away, real odd-q neighbours.
+class StubHole extends Node3D:
+	var grid_width := 12
+	var grid_height := 30
+	var flag_position := Vector2i(6, 28)
+	var current_par := 4
+	var grid: Array = []
+
+	func _init() -> void:
+		for c in range(grid_width):
+			var col: Array = []
+			col.resize(grid_height)
+			col.fill(1)
+			grid.append(col)
+
+	func get_cell(col: int, row: int) -> int:
+		if col >= 0 and col < grid_width and row >= 0 and row < grid_height:
+			return grid[col][row]
+		return -1
+
+	func get_grid_width() -> int:
+		return grid_width
+
+	func get_grid_height() -> int:
+		return grid_height
+
+	func get_elevation(_c: int, _r: int) -> float:
+		return 0.0
+
+	func get_adjacent_cells(col: int, row: int) -> Array[Vector2i]:
+		var out: Array[Vector2i] = []
+		var odd := col % 2 == 1
+		var offs := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0)] if odd \
+			else [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(-1, -1)]
+		for o in offs:
+			var n: Vector2i = Vector2i(col, row) + o
+			if get_cell(n.x, n.y) >= 0:
+				out.append(n)
+		return out
+
+
+var hole: StubHole
+var aoe: AOESystem
+var tc: TurnController
+
+
+func _ready() -> void:
+	print("=== course features test ===")
+	hole = StubHole.new()
+	add_child(hole)
+	aoe = AOESystem.new()
+	add_child(aoe)
+	tc = TurnController.new()
+	add_child(tc)
+	tc.aoe_system = aoe
+	tc.hex_grid = hole
+	tc.course_features = CourseFeatures.new()
+
+	_test_ice()
+	_test_sprinkler()
+	_test_fire_penalty()
+	_test_fire_spread()
+	_test_placement()
+	print("=== course features test complete: %d checks, %d failures ===" % [_checks, _failures])
+	get_tree().quit(1 if _failures > 0 else 0)
+
+
+func _roll(landing: Vector2i, base_roll: int) -> ShotContext:
+	"""Resolve a roll-out straight down column 4 (hex direction 3 = +row)."""
+	var ctx := ShotContext.new()
+	ctx.add_metadata("footprint_built", true)
+	ctx.landing_tile = landing
+	ctx.base_roll = base_roll
+	ctx.aim_dir = 3
+	tc.apply_board_resolution(ctx)
+	return ctx
+
+
+func _test_ice() -> void:
+	print("-- ice --")
+	var f: CourseFeatures = tc.course_features
+	f.tiles.clear()
+	_check(_roll(Vector2i(4, 5), 1).landing_tile == Vector2i(4, 6), "no ice: roll 1 moves one hex")
+	f.tiles[Vector2i(4, 5)] = {"kind": "ice", "dir": 0, "age": 0}
+	_check(_roll(Vector2i(4, 5), 1).landing_tile == Vector2i(4, 8), "landing on ice skids +2 (roll 1 -> 3 hexes)")
+	f.tiles.clear()
+	for r in [6, 7, 8]:
+		f.tiles[Vector2i(4, r)] = {"kind": "ice", "dir": 0, "age": 0}
+	var run := _roll(Vector2i(4, 5), 2)
+	_check(run.landing_tile == Vector2i(4, 10), "crossing 3 ice hexes costs no roll (roll 2 -> 5 hexes, at %s)" % str(run.landing_tile))
+	_check(run.has_metadata("ice_run"), "3+ ice hexes rolled over is an Ice Run")
+
+
+func _test_sprinkler() -> void:
+	print("-- sprinkler --")
+	var f: CourseFeatures = tc.course_features
+	f.tiles.clear()
+	f.tiles[Vector2i(4, 6)] = {"kind": "sprinkler", "dir": 0, "age": 0}  # knocks it back up
+	_check(_roll(Vector2i(4, 5), 1).landing_tile == Vector2i(4, 5), "stopping on a sprinkler knocks the ball one hex its way")
+	_check(_roll(Vector2i(4, 4), 3).landing_tile == Vector2i(4, 7), "rolling over a sprinkler doesn't trigger it")
+
+
+func _test_fire_penalty() -> void:
+	print("-- fire --")
+	var f: CourseFeatures = tc.course_features
+	f.tiles.clear()
+	f.tiles[Vector2i(4, 6)] = {"kind": "fire", "dir": 0, "age": 0}
+	_check(_roll(Vector2i(4, 5), 1).get_metadata("hit_fire", false), "a ball ending in fire is a fire penalty")
+	_check(not _roll(Vector2i(4, 5), 2).get_metadata("hit_fire", false), "rolling through fire and out is fine")
+
+
+func _test_fire_spread() -> void:
+	print("-- fire spreading --")
+	var f := CourseFeatures.new()
+	for r in range(0, 30):
+		hole.grid[3][r] = ROUGH
+		hole.grid[4][r] = ROUGH
+	f.tiles[Vector2i(4, 10)] = {"kind": "fire", "dir": 0, "age": 0}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var max_fire := 1
+	var only_rough := true
+	for turn in range(12):
+		f.spread_fire(hole, rng)
+		max_fire = maxi(max_fire, f.count("fire"))
+		for cell in f.tiles:
+			if f.tiles[cell].kind == "fire" and hole.get_cell(cell.x, cell.y) != ROUGH:
+				only_rough = false
+	_check(max_fire > 1, "fire spreads (up to %d burning)" % max_fire)
+	_check(only_rough, "fire only catches rough / deep rough / trees")
+	_check(f.count("scorched") > 0, "burnt-out fire leaves scorched ground (%d)" % f.count("scorched"))
+	_check(f.count("fire") <= CourseFeatures.FIRE_MAX_BURNING, "fire stays within its cap")
+	for r in range(0, 30):
+		hole.grid[3][r] = FAIRWAY
+		hole.grid[4][r] = FAIRWAY
+
+
+func _test_placement() -> void:
+	print("-- placement --")
+	var f := CourseFeatures.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	f.place(hole, rng)
+	_check(f.count("ice") >= 3 and f.count("sprinkler") >= 2, "a hole gets ice patches and sprinklers (ice %d, sprinklers %d)" % [f.count("ice"), f.count("sprinkler")])
+	_check(not f.tiles.has(hole.flag_position), "nothing on the cup")
+	var again := CourseFeatures.new()
+	var rng2 := RandomNumberGenerator.new()
+	rng2.seed = 11
+	again.place(hole, rng2)
+	_check(again.tiles == f.tiles, "same seed, same features")
+
+
+func _check(cond: bool, label: String) -> void:
+	_checks += 1
+	if cond:
+		print("  [PASS] %s" % label)
+	else:
+		_failures += 1
+		printerr("  [FAIL] %s" % label)

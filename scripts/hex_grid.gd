@@ -1217,7 +1217,7 @@ func _caddie_pick() -> Dictionary:
 				if hex_distance(tile, flag_position) - 6.0 + 0.01 * hi >= best_score:
 					continue
 				var plan := ShotPlan.build(self, ball, tile, {
-					"power": hi + lie_distance, "wind_vec": wind_vec, "wind_strength": wind_strength,
+					"power": hi + TurnController.lie_power(lie_distance), "wind_vec": wind_vec, "wind_strength": wind_strength,
 					"spread": int(stats.get("base_spread", 1)), "ring_mod": lie_spread,
 					"exact_usage": ShotPlan.PUTT_EXACT_USAGE if club == ClubType.PUTTER else ShotPlan.EXACT_USAGE})
 				# Missed putts stay on the green, so a putt's ring carries no hazard risk
@@ -1226,6 +1226,7 @@ func _caddie_pick() -> Dictionary:
 					score -= 3.0  # always putt at the hole
 				if plan.blocked:
 					score += 20.0
+				score += 50.0 * plan.over  # the default shot never overspends (Strain)
 				if score < best_score:
 					best_score = score
 					best = {"card": card, "target": tile}
@@ -1238,13 +1239,15 @@ func _caddie_landing_score(center: Vector2i, ring: int) -> float:
 	if surface < 0:
 		return 1000.0
 	var score: float = hex_distance(center, flag_position) + float(CADDIE_SURFACE_COST.get(surface, 2.0))
+	if course_features and course_features.kind_at(center) == "fire":
+		score += 1000.0
 	if ring > 0:
 		score += ring
 		for t in aoe_system.compute_circle_aoe(center, ring, self):
 			if t == center:
 				continue
 			var s2 := get_cell(t.x, t.y)
-			if s2 == SurfaceType.WATER or s2 < 0:
+			if s2 == SurfaceType.WATER or s2 < 0 or (course_features and course_features.kind_at(t) == "fire"):
 				score += 2.0
 			elif s2 == SurfaceType.TREE or s2 == SurfaceType.SAND:
 				score += 0.5
@@ -1584,6 +1587,7 @@ func _clear_planned_cards() -> void:
 
 func _begin_shot() -> void:
 	"""Every shot: a fresh hand, then aim at the flag with a suggested club."""
+	_spread_fire_for_turn()
 	_deal_shot_hand()
 	putting_active = false
 	if green_overlay:
@@ -3514,6 +3518,9 @@ func _on_shot_completed(context: ShotContext) -> void:
 				await _animate_ball_roll(golf_ball.position, get_tile_surface_position(t), false)
 			if context.landing_tile == flag_position:
 				_trigger_hole_complete()
+			elif context.get_metadata("hit_fire", false):
+				hit_water = true  # same penalty: a stroke, and back where it was hit from
+				await _handle_water_hazard()
 		if golf_ball:
 			golf_ball.set_meta("is_spinning", false)
 	
@@ -3698,6 +3705,12 @@ func _handle_out_of_bounds() -> void:
 var hole_complete_triggered: bool = false  # Prevent multiple triggers
 var blowout_shown: bool = false  # Run-over popup already displayed
 var shot_serial: int = 0  # Bumped per shot and per hole; stale shot coroutines check it
+var run_shop: RunShop = null      # Pro Shop rules + this visit's offers
+var course_features: CourseFeatures = null           # ice / fire / sprinklers on this hole
+var feature_overlay: CourseFeatureOverlay = null
+var _feature_rng := RandomNumberGenerator.new()      # seeded per hole; drives fire spread
+var _fire_spread_at_stroke := -1                     # fire spreads once per stroke
+var shop_panel: ShopPanel = null  # Pro Shop overlay
 var green_overlay: GreenOverlay = null  # Height tint + arrows, shown on the green
 var _green_overlay_dirty: bool = true   # Rebuilt once per hole, the first time the ball reaches the green
 var green_board: GreenBoard = null       # The small-hex putting surface for this hole
@@ -3825,13 +3838,103 @@ func _on_next_hole_requested() -> void:
 
 
 func _open_shop() -> void:
-	"""Open the between-hole shop"""
-	if shop_ui:
-		shop_ui.set_managers(shop_manager, currency_manager, deck_manager)
-		shop_ui.open()
-	else:
-		# No shop UI - skip directly to next hole
+	"""Open the Pro Shop between holes (points buy, remove and upgrade cards)."""
+	if main_ui_ref == null or currency_manager == null:
 		_proceed_to_next_hole()
+		return
+	if run_shop == null:
+		run_shop = RunShop.new()
+	if shop_panel == null:
+		shop_panel = ShopPanel.new()
+		shop_panel.name = "ShopPanel"
+		main_ui_ref.add_child(shop_panel)
+	var rng: RandomNumberGenerator = hole_context.rng if hole_context else RandomNumberGenerator.new()
+	run_shop.roll_offers(rng)
+	shop_panel.open(run_shop, self, main_ui_ref, (run_state.current_hole + 1) if run_state else 1)
+
+
+# --- Pro Shop actions (called by ShopPanel) ---
+
+func shop_balance() -> int:
+	return currency_manager.get_balance() if currency_manager else 0
+
+
+func shop_deck_cards() -> Array:
+	"""Every card in the run's decks (shot + green); Strain first."""
+	var cards: Array = []
+	for pile in [shot_deck, shot_discard, shot_hand, putt_deck, putt_discard, putt_hand]:
+		cards.append_array(pile)
+	cards.sort_custom(func(a, b):
+		var sa: bool = a.data.card_type == CardData.CardType.NEGATIVE
+		var sb: bool = b.data.card_type == CardData.CardType.NEGATIVE
+		if sa != sb:
+			return sa
+		return a.get_display_name() < b.get_display_name())
+	return cards
+
+
+func _shop_spend(price: int, reason: String) -> bool:
+	if currency_manager == null or not currency_manager.remove_chips(price, reason):
+		return false
+	_refresh_hole_label()
+	return true
+
+
+func shop_buy(index: int) -> void:
+	if index < 0 or index >= run_shop.offers.size():
+		return
+	var data: CardData = run_shop.offers[index]
+	if not _shop_spend(RunShop.price_of(data), "Bought %s" % data.card_name):
+		return
+	var card := CardInstance.create_from_data(data)
+	if RunShop.is_green_card(data):
+		putt_discard.append(card)
+	else:
+		shot_discard.append(card)
+	run_shop.offers.remove_at(index)
+	shop_panel.refresh()
+
+
+func shop_buy_eraser() -> void:
+	if not run_shop.eraser_available or not _shop_spend(RunShop.ERASER_PRICE, "Eraser"):
+		return
+	run_shop.eraser_available = false
+	if run_state:
+		run_state.adjust_score(-1, "Eraser")
+	shop_panel.refresh()
+
+
+func shop_reroll() -> void:
+	if not _shop_spend(RunShop.REROLL_PRICE, "Shop reroll"):
+		return
+	var rng: RandomNumberGenerator = hole_context.rng if hole_context else RandomNumberGenerator.new()
+	var eraser := run_shop.eraser_available
+	run_shop.roll_offers(rng)
+	run_shop.eraser_available = eraser
+	shop_panel.refresh()
+
+
+func shop_remove(card) -> void:
+	if card == null or not _shop_spend(RunShop.REMOVE_PRICE, "Removed %s" % card.get_display_name()):
+		return
+	for pile in [shot_deck, shot_discard, shot_hand, putt_deck, putt_discard, putt_hand]:
+		pile.erase(card)
+	shop_panel.clear_selection()
+	shop_panel.refresh()
+
+
+func shop_upgrade(card) -> void:
+	if card == null or not RunShop.can_upgrade(card):
+		return
+	if not _shop_spend(RunShop.UPGRADE_PRICE, "Upgraded %s" % card.get_display_name()):
+		return
+	card.upgrade()
+	shop_panel.refresh()
+
+
+func shop_continue() -> void:
+	shop_panel.visible = false
+	_proceed_to_next_hole()
 
 
 func _proceed_to_next_hole() -> void:
@@ -4076,8 +4179,37 @@ func _green_frame() -> Dictionary:
 	return {"center": center, "extent": extent, "yaw": yaw}
 
 
+func _place_course_features() -> void:
+	"""Seed this hole's ice, sprinklers and (sometimes) fire, and draw them."""
+	if course_features == null:
+		course_features = CourseFeatures.new()
+	if feature_overlay == null:
+		feature_overlay = CourseFeatureOverlay.new()
+		feature_overlay.name = "CourseFeatureOverlay"
+		add_child(feature_overlay)
+	_feature_rng.seed = (hole_context.seed if hole_context else randi()) ^ 0xF17E
+	course_features.place(self, _feature_rng)
+	_fire_spread_at_stroke = 0
+	feature_overlay.show_features(course_features, self)
+	if turn_controller:
+		turn_controller.course_features = course_features
+
+
+func _spread_fire_for_turn() -> void:
+	"""Fire spreads once per stroke taken on this hole."""
+	if course_features == null or run_state == null:
+		return
+	var strokes: int = run_state.strokes_this_hole
+	if strokes == 0 or strokes == _fire_spread_at_stroke:
+		return
+	_fire_spread_at_stroke = strokes
+	if course_features.spread_fire(self, _feature_rng):
+		feature_overlay.show_features(course_features, self)
+
+
 func _on_run_hole_started() -> void:
 	"""New hole: clear the points log and the trick streak."""
+	_place_course_features()
 	_green_overlay_dirty = true
 	if green_overlay:
 		green_overlay.visible = false
@@ -4202,6 +4334,12 @@ func _regenerate_hole() -> void:
 	# Cancel any in-progress shot
 	if shot_manager:
 		shot_manager.cancel_shot()
+	
+	# Every new hole gets its own seed (authored holes keep theirs); the shot,
+	# wind and green systems share this RNG object, so they follow along
+	if hole_context and hole_context.definition == null:
+		hole_context.seed = randi()
+		hole_context.rng.seed = hole_context.seed
 	
 	_clear_course_nodes()
 	_generate_course()

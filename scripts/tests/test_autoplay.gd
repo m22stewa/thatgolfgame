@@ -21,6 +21,13 @@ var _results: Array = []  # {par, strokes, putts, blown}
 var _putts_this_hole := 0
 var _shots_this_hole := 0
 var _green_turns := 0
+var _shop_visits := 0
+var _fire_hits := 0
+var _ice_runs := 0
+var _ice_touches := 0
+var _fires_seen := 0
+var _bought := 0
+var _removed := 0
 
 
 func _ready() -> void:
@@ -39,6 +46,10 @@ func _ready() -> void:
 		_putts_this_hole = 0
 		_shots_this_hole = 0
 		var par: int = hg.current_par
+		if hg.course_features and hg.course_features.count("fire") > 0:
+			_fires_seen += 1
+		if OS.get_environment("AUTOPLAY_SHOW_FEATURES") != "":
+			print("  SEED %d ice %d sprinklers %d fire %d tc_has_features %s" % [hg.hole_context.seed, hg.course_features.count("ice"), hg.course_features.count("sprinkler"), hg.course_features.count("fire"), hg.turn_controller.course_features != null])
 		print("  LENGTH par %d: %d hexes tee->flag" % [par, hg.hex_distance(hg.world_to_grid(hg.golf_ball.position), hg.flag_position)])
 		await _play_hole(hole + 1)
 		if _shots_this_hole == 0:
@@ -55,13 +66,14 @@ func _ready() -> void:
 		if hg.run_state.is_final_hole() or hg.run_state.is_blown_out:
 			hg._show_run_complete()  # what "Finish Round" / "New Run" does
 		else:
-			hg._proceed_to_next_hole()
+			_visit_shop(hole + 1)
 		# The next hole is generated behind a loading transition
 		if not await _wait(func(): return hg.shot_serial != serial_before and not hg.hole_complete_triggered and _ready_to_shoot(), 15.0):
 			_problems.append("hole %d: next hole never became playable (%s)" % [hole + 2, _state()])
 
 	_print_balance()
-	print("--- %d shots fired (%d from the green view), %d problems ---" % [_shots_fired, _green_turns, _problems.size()])
+	print("FEATURES fires seen %d, fire hits %d, ice hexes rolled over %d, ice runs %d" % [_fires_seen, _fire_hits, _ice_touches, _ice_runs])
+	print("--- %d shots fired (%d from the green view), %d shop visits (%d bought, %d removed), %d problems ---" % [_shots_fired, _green_turns, _shop_visits, _bought, _removed, _problems.size()])
 	for p in _problems:
 		printerr("  [PROBLEM] %s" % p)
 	print("=== autoplay complete: %d problems ===" % _problems.size())
@@ -121,6 +133,13 @@ func _play_hole(n: int) -> void:
 		var aim: Vector2i = hg.turn_aim_target
 		var on_done := func(ctx):
 			fired[0] = true
+			if ctx.get_metadata("hit_fire", false):
+				_fire_hits += 1
+			if ctx.has_metadata("ice_run"):
+				_ice_runs += 1
+			for t in ctx.get_metadata("roll_tiles", []):
+				if hg.course_features and hg.course_features.kind_at(t) == "ice":
+					_ice_touches += 1
 			print("    %s from %s(%d) aim %s -> landing %s(%d), %d from flag" % [club_name, from, hg.get_cell(from.x, from.y), aim, ctx.landing_tile, hg.get_cell(ctx.landing_tile.x, ctx.landing_tile.y), hg.hex_distance(ctx.landing_tile, hg.flag_position)])
 			if club_name == "Putter" and ctx.landing_tile != hg.flag_position and hg.hex_distance(from, hg.flag_position) <= 1:
 				var pl: Dictionary = ctx.get_metadata("shot_plan", {})
@@ -178,6 +197,36 @@ func _print_balance() -> void:
 			sum += x
 			dist[x] = dist.get(x, 0) + 1
 		print("BALANCE  par %d: n=%d avg=%+.2f spread=%s" % [par, d.size(), float(sum) / d.size(), dist])
+
+
+func _visit_shop(n: int) -> void:
+	"""Next Hole goes through the Pro Shop: buy what we can afford, strip a
+	Strain card, then continue (which starts the next hole)."""
+	hg._open_shop()
+	if hg.shop_panel == null or not hg.shop_panel.visible or hg.run_shop.offers.size() != RunShop.OFFER_COUNT:
+		_problems.append("hole %d: Pro Shop didn't open with %d offers" % [n, RunShop.OFFER_COUNT])
+		hg._proceed_to_next_hole()
+		return
+	_shop_visits += 1
+	if OS.get_environment("AUTOPLAY_SHOW_DECK") != "":
+		print("  DECK ", hg.shop_deck_cards().map(func(c): return "%s(%d)" % [c.data.card_id, c.data.card_type]))
+	var balance: int = hg.shop_balance()
+	var deck_size: int = hg.shop_deck_cards().size()
+	var price := RunShop.price_of(hg.run_shop.offers[0])
+	if balance >= price:
+		hg.shop_buy(0)
+		if hg.shop_balance() != balance - price or hg.shop_deck_cards().size() != deck_size + 1:
+			_problems.append("hole %d: buying a card didn't charge %d / add it to the deck" % [n, price])
+		_bought += 1
+	for card in hg.shop_deck_cards():
+		if card.data.card_type == CardData.CardType.NEGATIVE and hg.shop_balance() >= RunShop.REMOVE_PRICE:
+			var before: int = hg.shop_deck_cards().size()
+			hg.shop_remove(card)
+			if hg.shop_deck_cards().size() != before - 1:
+				_problems.append("hole %d: removing Strain didn't shrink the deck" % n)
+			_removed += 1
+			break
+	hg.shop_continue()
 
 
 func _read_the_green() -> void:

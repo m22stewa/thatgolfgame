@@ -32,6 +32,7 @@ const TRICKS := {
 	"hole_in_one": {"name": "Hole in One!", "points": 300},
 	"chip_in": {"name": "Chip-in", "points": 100},
 	"long_putt": {"name": "Long Putt", "points": 50},
+	"ice_run": {"name": "Ice Run", "points": 20},
 }
 
 const COIN_POINTS := 25
@@ -73,6 +74,8 @@ func score_shot(ctx: ShotContext) -> Array:
 		tricks.append(_trick("great_escape"))
 	if on_green and start_surf != SURF_GREEN and shot_len >= STUCK_GREEN_MIN_DIST:
 		tricks.append(_trick("stuck_green"))
+	if ctx.has_metadata("ice_run"):
+		tricks.append(_trick("ice_run"))
 	var flag := _flag()
 	if flag.x >= 0 and hex_distance(landing, flag) <= PIN_SEEKER_RADIUS and hex_distance(start, flag) >= PIN_SEEKER_MIN_DIST:
 		tricks.append(_trick("pin_seeker"))

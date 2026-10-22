@@ -25,6 +25,7 @@ var aoe_system: AOESystem = null
 var wind_system: WindSystem = null
 var lie_system: LieSystem = null
 var hole_context: HoleContext = null
+var course_features: CourseFeatures = null  # ice / fire / sprinklers on the course
 var hex_grid: Node3D = null            # Hole controller (get_cell/get_tile_surface_position/...)
 
 # --- Tuning constants ---
@@ -221,7 +222,7 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 	if ctx.band_min > 0 and _hex_distance(ball_tile, target) < ctx.band_min:
 		target = _point_along(ball_tile, aim_target, ctx.band_min)
 	var plan := ShotPlan.build(hex_grid, ball_tile, target, {
-		"power": ctx.band_max + ctx.distance_mod,
+		"power": ctx.band_max + lie_power(ctx.distance_mod),
 		"bulge": float(ctx.get_metadata("shape_bulge", 0.0)),
 		"loft": ctx.get_metadata("loft", false),
 		"ignore_wind": ctx.get_metadata("ignore_wind", false) or played_club == int(hex_grid.ClubType.PUTTER),
@@ -247,6 +248,12 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 	if played_club == int(hex_grid.ClubType.PUTTER) and center == _cup() and plan.ring > 0:
 		_weigh_putt(ctx, center, int(plan.carry))
 	ctx.add_metadata("footprint_built", true)
+
+
+static func lie_power(lie_distance_mod: int) -> int:
+	"""Power a bad lie costs: half its (legacy) distance penalty, so rough -1,
+	deep rough -2, sand -3 (chipping out stays possible)."""
+	return int(lie_distance_mod / 2)
 
 
 func _weigh_putt(ctx: ShotContext, cup: Vector2i, length: int) -> void:
@@ -329,10 +336,19 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 			rolled.append(tile)
 		roll = 0
 
-	# R#2: step along aim_dir `roll` times, recomputing parity each step; stop
-	# before OOB / WATER, and (unless Punch/Stinger) before TREE. A ball rolling
-	# over the cup drops only if it is slow (1 hex of roll or less left).
-	for i in range(roll):
+	# Ice: a ball landing on ice skids on further
+	if not on_cup and _feature_at(landing) == "ice":
+		roll += CourseFeatures.ICE_LANDING_ROLL
+
+	# R#2: step along aim_dir while roll is left, recomputing parity each step;
+	# stop before OOB / WATER, and (unless Punch/Stinger) before TREE. Crossing
+	# ice costs no roll. A ball rolling over the cup drops only if it is slow
+	# (1 hex of roll or less left).
+	var budget := roll
+	var ice_crossed := 0
+	for _step in range(40):
+		if budget <= 0:
+			break
 		var is_odd := tile.x % 2 == 1
 		var next: Vector2i = aoe_system._get_neighbor_in_direction(tile, ctx.aim_dir, is_odd)
 		if not _in_bounds(next):
@@ -344,8 +360,12 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 			break
 		tile = next
 		rolled.append(tile)
+		if _feature_at(tile) == "ice":
+			ice_crossed += 1
+		else:
+			budget -= 1
 		# Rolling over the cup: only a slow ball can drop, and it can lip out
-		if (tile == cup or next_surface == SURF_FLAG) and roll - i - 1 <= 1:
+		if (tile == cup or next_surface == SURF_FLAG) and budget <= 1:
 			var rng: RandomNumberGenerator = hole_context.rng if hole_context else null
 			if (rng.randf() if rng else randf()) < ROLL_IN_CHANCE:
 				break
@@ -357,10 +377,23 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 			tile = nudged
 			rolled.append(tile)
 
+	# Sprinkler head: a ball stopping on it is knocked one hex its facing way
+	if _feature_at(tile) == "sprinkler" and tile != cup:
+		var dir: int = course_features.tiles[tile].dir
+		var knocked: Vector2i = aoe_system._get_neighbor_in_direction(tile, dir, tile.x % 2 == 1)
+		if _in_bounds(knocked) and _surface_at(knocked) != SURF_WATER and _surface_at(knocked) != SURF_TREE:
+			tile = knocked
+			rolled.append(tile)
+
 	# Water handling: if the final hex is water, flag it (drop logic lives in the
 	# loop; here we only tag so scoring/loop can react).
 	if _surface_at(tile) == SURF_WATER:
 		ctx.add_metadata("hit_water", true)
+	# Fire: penalty stroke, returned like water (the loop handles it)
+	if _feature_at(tile) == "fire":
+		ctx.add_metadata("hit_fire", true)
+	if ice_crossed >= 3:
+		ctx.add_metadata("ice_run", ice_crossed)
 
 	# The ball's actual journey, replayed exactly by the animation
 	ctx.add_metadata("carry_tile", landing)
@@ -382,6 +415,10 @@ func _modifier_manager():
 	if shot_manager == null:
 		return null
 	return shot_manager.modifier_manager
+
+
+func _feature_at(tile: Vector2i) -> String:
+	return course_features.kind_at(tile) if course_features else ""
 
 
 func _cup() -> Vector2i:
