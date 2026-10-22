@@ -96,6 +96,13 @@ var hovered_tile: Vector2i = Vector2i(-999, -999)
 
 # Putting mode state
 var is_putting_mode: bool = false
+# Green view: on the green the camera frames the whole green (ball at the
+# bottom, cup ahead) and holds still; tap-to-aim works as normal.
+var is_green_view: bool = false
+const GREEN_VIEW_PITCH: float = 66.0
+const GREEN_VIEW_MARGIN: float = 1.05
+var _pre_green_view := {}
+var _green_frame: Array = []  # [center, extent, yaw] for Reset View on the green
 var putting_system: Node = null
 var normal_camera_angle: float = 55.0  # Store normal angle to restore
 var normal_zoom: float = 40.0  # Store normal zoom to restore
@@ -279,6 +286,9 @@ func _center_on_hole() -> void:
 func _on_viewport_resized() -> void:
 	"""Re-frame the hole on a band/window resize, but only when the camera is idle
 	(not following the ball and not mid-gesture) so play isn't disrupted."""
+	if is_green_view and _green_frame.size() == 3:
+		enter_green_view(_green_frame[0], _green_frame[1], _green_frame[2])
+		return
 	if is_tracking_ball:
 		return
 	if is_panning or is_rotating or is_pitching:
@@ -288,7 +298,7 @@ func _on_viewport_resized() -> void:
 
 func _process(delta: float) -> void:
 	# Skip ball tracking in putting mode - camera stays fixed on green
-	if not is_putting_mode:
+	if not is_putting_mode and not is_green_view:
 		_handle_ball_tracking(delta)
 	_process_keyboard_camera(delta)
 	_smooth_camera_movement(delta)
@@ -448,8 +458,9 @@ func _update_camera_transform() -> void:
 	var offset_z = -cos(camera_yaw) * horizontal_dist  # Negative to look from behind
 	
 	# Shift camera forward (positive Z) to put tee at bottom of view
-	# This offset moves the camera's view forward toward the green
-	var forward_shift = horizontal_dist * 0.5  # Shift forward by 50% of view distance
+	# This offset moves the camera's view forward toward the green.
+	# The green view frames its own centre, so no shift there.
+	var forward_shift = 0.0 if is_green_view else horizontal_dist * 0.5
 	
 	var cam_pos = Vector3(
 		target_position.x + offset_x,
@@ -897,6 +908,11 @@ func _handle_tile_click(screen_pos: Vector2) -> void:
 	AOE / trajectory preview on a valid tile even when ShotUI is absent (it fires
 	_update_aoe_for_cell + _update_trajectory before the shot_ui guard). An invalid
 	tap returns false, locks nothing, and leaves the preview on the last valid aim."""
+	# Green view: putts aim at small hexes on the green's surface
+	if is_green_view and hex_grid and hex_grid.has_method("putt_aim_ray") and camera and viewport:
+		var vp_pos := screen_pos * (Vector2(viewport.size) / viewport_container.size)
+		if hex_grid.putt_aim_ray(camera.project_ray_origin(vp_pos), camera.project_ray_normal(vp_pos)):
+			return
 	var world_pos = _screen_to_world(screen_pos)
 	if world_pos == null:
 		return
@@ -1038,6 +1054,9 @@ func stop_tracking_ball() -> void:
 
 func reset_view() -> void:
 	"""Reset camera to show the ball with default rotation and pitch"""
+	if is_green_view and _green_frame.size() == 3:
+		enter_green_view(_green_frame[0], _green_frame[1], _green_frame[2])
+		return
 	target_yaw = 0.0
 	camera_angle = DEFAULT_PITCH
 	target_pitch = DEFAULT_PITCH
@@ -1106,6 +1125,39 @@ func add_to_viewport(node: Node3D) -> void:
 	"""Add a 3D node to be rendered in this viewport"""
 	if viewport:
 		viewport.add_child(node)
+
+
+# --- Green View ---
+
+func enter_green_view(center: Vector3, extent: float, yaw: float) -> void:
+	"""Frame the whole green: look at its centre from yaw (radians, ball side),
+	pitched down, zoomed so a circle of diameter extent fits the band."""
+	if not is_green_view:
+		_pre_green_view = {"angle": camera_angle, "pitch": target_pitch, "zoom": target_zoom, "yaw": target_yaw}
+	_green_frame = [center, extent, yaw]
+	is_green_view = true
+	is_tracking_ball = false
+	camera_angle = GREEN_VIEW_PITCH
+	target_pitch = GREEN_VIEW_PITCH
+	target_yaw = yaw
+	target_position = Vector3(center.x, 0, center.z)
+	# The band is wider than tall: fit the green's extent to the vertical FOV
+	var half_fov := deg_to_rad((camera.fov if camera else 50.0) * 0.5)
+	var fit := extent * GREEN_VIEW_MARGIN / (2.0 * tan(half_fov))
+	target_zoom = clamp(fit / sin(deg_to_rad(GREEN_VIEW_PITCH)), 6.0, max_zoom)
+
+
+func exit_green_view() -> void:
+	"""Back to the shot view: restore the previous camera and follow the ball."""
+	if not is_green_view:
+		return
+	is_green_view = false
+	camera_angle = _pre_green_view.get("angle", DEFAULT_PITCH)
+	target_pitch = _pre_green_view.get("pitch", DEFAULT_PITCH)
+	target_zoom = _pre_green_view.get("zoom", target_zoom)
+	target_yaw = _pre_green_view.get("yaw", 0.0)
+	is_tracking_ball = true
+	center_on_ball(true)
 
 
 # --- Putting Mode ---

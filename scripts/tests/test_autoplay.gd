@@ -20,6 +20,7 @@ var _shots_fired := 0
 var _results: Array = []  # {par, strokes, putts, blown}
 var _putts_this_hole := 0
 var _shots_this_hole := 0
+var _green_turns := 0
 
 
 func _ready() -> void:
@@ -60,7 +61,7 @@ func _ready() -> void:
 			_problems.append("hole %d: next hole never became playable (%s)" % [hole + 2, _state()])
 
 	_print_balance()
-	print("--- %d shots fired, %d problems ---" % [_shots_fired, _problems.size()])
+	print("--- %d shots fired (%d from the green view), %d problems ---" % [_shots_fired, _green_turns, _problems.size()])
 	for p in _problems:
 		printerr("  [PROBLEM] %s" % p)
 	print("=== autoplay complete: %d problems ===" % _problems.size())
@@ -84,6 +85,19 @@ func _play_hole(n: int) -> void:
 		if shoot_button.disabled:
 			_problems.append("hole %d stroke %d: Shoot disabled (%s)" % [n, stroke + 1, _state()])
 			return
+		# Green view: on the green the camera frames it and the overlay shows; off it, neither
+		var bt: Vector2i = hg.world_to_grid(hg.golf_ball.position)
+		var on_green: bool = hg.get_cell(bt.x, bt.y) == 4
+		var viewing: bool = hg.hole_viewer != null and hg.hole_viewer.is_green_view
+		var overlay_on: bool = hg.green_overlay != null and hg.green_overlay.visible
+		if on_green != viewing or on_green != overlay_on:
+			_problems.append("hole %d stroke %d: green view %s / overlay %s while ball %s the green" % [n, stroke + 1, viewing, overlay_on, "on" if on_green else "off"])
+		if on_green and hg.putting_active:
+			_read_the_green()
+		if on_green:
+			_green_turns += 1
+			if hg.green_board == null or not hg.green_board.tiles.has(hg.green_board.cup) or not hg.putting_active:
+				_problems.append("hole %d stroke %d: on the green but no putting board/turn" % [n, stroke + 1])
 		var fired := [false]
 		var club_name: String = hg.CLUB_STATS.get(hg.current_club, {}).get("name", "?")
 		if club_name == "Putter":
@@ -100,9 +114,14 @@ func _play_hole(n: int) -> void:
 			if club_name == "Putter" and ctx.landing_tile != hg.flag_position and hg.hex_distance(from, hg.flag_position) <= 1:
 				var pl: Dictionary = ctx.get_metadata("shot_plan", {})
 				print("      MISSED SHORT PUTT flag %s surface %d | plan end %s ring %s carry %s blocked %s | make %s | aoe %s weights %s" % [hg.flag_position, hg.get_cell(hg.flag_position.x, hg.flag_position.y), pl.get("end"), pl.get("ring"), pl.get("carry"), pl.get("blocked"), ctx.get_metadata("putt_make_chance", "-"), ctx.aoe_tiles, ctx.aoe_weights])
+		var on_putt := func(result):
+			fired[0] = true
+			print("    Putt from %s -> %s, %d hexes, holed %s, off green %s" % [from, result.end, result.touched, result.holed, result.off_green])
 		hg.shot_manager.shot_completed.connect(on_done)
+		hg.putt_resolved.connect(on_putt)
 		shoot_button.emit_signal("pressed")
 		hg.shot_manager.shot_completed.disconnect(on_done)
+		hg.putt_resolved.disconnect(on_putt)
 		if not fired[0]:
 			_problems.append("hole %d stroke %d: Shoot pressed but no shot resolved (%s)" % [n, stroke + 1, _state()])
 			return
@@ -148,6 +167,32 @@ func _print_balance() -> void:
 			sum += x
 			dist[x] = dist.get(x, 0) + 1
 		print("BALANCE  par %d: n=%d avg=%+.2f spread=%s" % [par, d.size(), float(sum) / d.size(), dist])
+
+
+func _read_the_green() -> void:
+	"""A sensible putter: simulate every hex in reach; hole it if any route
+	does (the longest route, for points), else leave it closest to the cup."""
+	var board: GreenBoard = hg.green_board
+	var ball: Vector2i = hg._ball_small()
+	var best := Vector2i.ZERO
+	var best_score := INF
+	for a in board.tiles:
+		var d := GreenBoard.distance(ball, a)
+		if d == 0 or d > GreenBoard.PUTT_REACH:
+			continue
+		var r: Dictionary = board.roll(ball, a)
+		var score: float
+		if r.holed:
+			score = -100.0 - r.touched
+		elif r.off_green:
+			score = 50.0
+		else:
+			score = GreenBoard.distance(r.end, board.cup)
+		if score < best_score:
+			best_score = score
+			best = a
+	if best_score < INF:
+		hg.set_putt_target(best)
 
 
 func _ready_to_shoot() -> bool:

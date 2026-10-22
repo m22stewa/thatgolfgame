@@ -224,7 +224,7 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 		"power": ctx.band_max + ctx.distance_mod,
 		"bulge": float(ctx.get_metadata("shape_bulge", 0.0)),
 		"loft": ctx.get_metadata("loft", false),
-		"ignore_wind": ctx.get_metadata("ignore_wind", false),
+		"ignore_wind": ctx.get_metadata("ignore_wind", false) or played_club == int(hex_grid.ClubType.PUTTER),
 		"wind_vec": wind_vec,
 		"wind_strength": strength,
 		"extra_cost": int(ctx.get_metadata("power_cost", 0)),

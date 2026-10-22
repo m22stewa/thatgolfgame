@@ -1,5 +1,8 @@
 extends Node3D
 
+## Emitted when a putt resolves on the green board (before it animates).
+signal putt_resolved(result: Dictionary)
+
 enum SurfaceType {
 	TEE, FAIRWAY, ROUGH, DEEP_ROUGH, GREEN, SAND, WATER, TREE, FLAG
 }
@@ -1135,6 +1138,9 @@ func rebuild_turn_plan() -> void:
 	# between shots either, so there is no plan to build.
 	if (shot_manager and shot_manager.is_animating) or turn_aim_target.x < 0:
 		return
+	if putting_active:
+		_update_shoot_button_state()
+		return
 	var ball_tile := world_to_grid(golf_ball.position)
 	turn_controller.ball_tile = ball_tile
 	turn_controller.played_club = current_club
@@ -1336,7 +1342,7 @@ func _show_turn_footprint() -> void:
 			color = Color(1.0, 0.35, 0.3, 0.85)
 		elif int(plan.over) > 0:
 			color = Color(1.0, 0.65, 0.2, 0.85)
-		_draw_path_ribbon(trajectory_mesh, plan.points, golf_ball.position.y, locked_target_pos.y, color)
+		_draw_path_ribbon(trajectory_mesh, plan.points, golf_ball.position.y, locked_target_pos.y, color, 0.0 if ctx.get_metadata("all_ground", false) else trajectory_height)
 	trajectory_mesh.visible = true
 	# The straight ground shadow only matches an unshaped arc
 	trajectory_shadow_mesh.visible = plan.is_empty()
@@ -1346,7 +1352,7 @@ func _show_turn_footprint() -> void:
 		shot_ui.update_target_info(get_cell(center.x, center.y), carry_yards)
 
 
-func _draw_path_ribbon(mesh: MeshInstance3D, points: Array, start_y: float, end_y: float, color: Color) -> void:
+func _draw_path_ribbon(mesh: MeshInstance3D, points: Array, start_y: float, end_y: float, color: Color, arc_height: float) -> void:
 	"""Ribbon along a ShotPlan's sampled flight (world x,z), lifted into an arc."""
 	var im: ImmediateMesh = mesh.mesh
 	im.clear_surfaces()
@@ -1363,7 +1369,7 @@ func _draw_path_ribbon(mesh: MeshInstance3D, points: Array, start_y: float, end_
 		var nxt: Vector2 = points[mini(i + 1, last)] if i < last else p + (p - points[i - 1])
 		var dir := (nxt - p).normalized()
 		var side := Vector3(-dir.y, 0.0, dir.x) * ribbon_width
-		var center := Vector3(p.x, lerpf(start_y, end_y, t) + sin(t * PI) * trajectory_height, p.y)
+		var center := Vector3(p.x, lerpf(start_y, end_y, t) + sin(t * PI) * arc_height + 0.08, p.y)
 		im.surface_add_vertex(center - side)
 		im.surface_add_vertex(center + side)
 	im.surface_end()
@@ -1382,6 +1388,9 @@ func set_turn_aim_dir(dir: int) -> void:
 
 func _on_shoot_pressed() -> void:
 	"""Shoot button handler: confirm the planned shot through TurnController."""
+	if putting_active:
+		_execute_putt()
+		return
 	if turn_controller == null:
 		return
 	if not _is_shoot_legal():
@@ -1481,6 +1490,10 @@ func _allowed_clubs_for_tile(tile: Vector2i) -> Array:
 
 func _update_shoot_button_state() -> void:
 	"""Enable/disable the Shoot button based on shot legality."""
+	if shoot_button and putting_active:
+		shoot_button.disabled = false
+		shoot_button.text = "Putt"
+		return
 	if shoot_button:
 		shoot_button.disabled = not _is_shoot_legal()
 		var plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {}) if shot_manager and shot_manager.current_context else {}
@@ -1568,7 +1581,14 @@ func _clear_planned_cards() -> void:
 func _begin_shot() -> void:
 	"""Every shot: a fresh hand, then aim at the flag with a suggested club."""
 	_deal_shot_hand()
-	_auto_aim_new_shot()
+	putting_active = false
+	if green_overlay:
+		green_overlay.hide_target()
+	if _ball_on_green():
+		_begin_putt()
+	else:
+		_auto_aim_new_shot()
+	_update_green_view()
 	_refresh_hole_label()
 
 
@@ -1593,7 +1613,10 @@ func _deal_shot_hand() -> void:
 		_reset_shot_deck_for_hole()
 	shot_discard.append_array(shot_hand)
 	shot_hand.clear()
-	for i in range(SHOT_HAND_SIZE):
+	# Shot cards don't apply to putts: the green gets its own game, so deal nothing
+	var ball_tile := world_to_grid(golf_ball.position) if golf_ball else Vector2i(-1, -1)
+	var putting := get_cell(ball_tile.x, ball_tile.y) == SurfaceType.GREEN
+	for i in range(0 if putting else SHOT_HAND_SIZE):
 		if shot_deck.is_empty():
 			if shot_discard.is_empty():
 				break
@@ -2397,6 +2420,8 @@ func refresh_aoe_display() -> void:
 ## Public function to set aim target from external sources (like HoleViewer)
 func set_aim_cell(cell: Vector2i) -> bool:
 	"""Set the aim target to a specific cell. Returns true if successful."""
+	if putting_active:
+		return false  # the green view aims putts through putt_aim_ray
 	# Turn loop: aim at any hex on the board; the club band caps the carry.
 	if turn_controller and golf_ball:
 		if shot_manager and shot_manager.is_animating:
@@ -3142,8 +3167,12 @@ func _start_new_shot() -> void:
 		var lie_name = _surface_to_lie_name(ball_surface)
 		lie_view.set_lie(lie_name)
 	
-	# Check if ball is in the hole - don't start a new shot, trigger hole complete
-	if ball_tile == flag_position:
+	# Check if ball is in the hole - don't start a new shot, trigger hole complete.
+	# On the green board only the cup's own small hex is the hole.
+	var in_cup: bool = ball_tile == flag_position
+	if in_cup and green_board and green_board.tiles.has(_ball_small()):
+		in_cup = _ball_small() == green_board.cup
+	if in_cup:
 		_trigger_hole_complete()
 		return
 	
@@ -3466,7 +3495,7 @@ func _on_shot_completed(context: ShotContext) -> void:
 		var carry_tile: Vector2i = context.get_metadata("carry_tile")
 		var carry_surface := get_cell(carry_tile.x, carry_tile.y)
 		var plan: Dictionary = context.get_metadata("shot_plan", {})
-		await _animate_ball_along_plan(plan.get("points", []), get_tile_surface_position(carry_tile))
+		await _animate_ball_along_plan(plan.get("points", []), get_tile_surface_position(carry_tile), context.get_metadata("all_ground", false))
 		if carry_surface < 0:
 			hit_oob = true
 			await _handle_out_of_bounds()
@@ -3665,6 +3694,14 @@ func _handle_out_of_bounds() -> void:
 var hole_complete_triggered: bool = false  # Prevent multiple triggers
 var blowout_shown: bool = false  # Run-over popup already displayed
 var shot_serial: int = 0  # Bumped per shot and per hole; stale shot coroutines check it
+var green_overlay: GreenOverlay = null  # Height tint + arrows, shown on the green
+var _green_overlay_dirty: bool = true   # Rebuilt once per hole, the first time the ball reaches the green
+var green_board: GreenBoard = null       # The small-hex putting surface for this hole
+
+# Putting: on the green a turn is a putt on the green board
+const PUTT_POINTS_PER_HEX := 5           # a holed putt pays per small hex it touched
+var putting_active: bool = false
+var putt_target: Vector2i = Vector2i.ZERO   # small hex the putt is struck to
 var trick_detector: TrickShotDetector = null  # Awards points for trick shots
 var hole_points_log: Array = []  # [{label, points}] earned this hole, for the hole-complete breakdown
 
@@ -3674,6 +3711,7 @@ func _trigger_hole_complete() -> void:
 		return  # Already triggered
 	
 	hole_complete_triggered = true
+	_update_green_view()
 	
 	# End animation state
 	if shot_manager:
@@ -3794,8 +3832,181 @@ func _proceed_to_next_hole() -> void:
 	)
 
 
+func _update_green_view() -> void:
+	"""On the green: show the slope overlay and frame the whole green. Anywhere
+	else (incl. after putting off the green): back to the shot view."""
+	var on_green := _ball_on_green()
+	# The club/yards label is huge this close in and covers the read
+	if target_highlight_mesh and target_highlight_mesh.get("label"):
+		target_highlight_mesh.label.visible = not on_green
+	if not on_green:
+		if green_overlay:
+			green_overlay.visible = false
+		if hole_viewer and hole_viewer.get("is_green_view"):
+			hole_viewer.exit_green_view()
+		return
+	_ensure_green_board()
+	green_overlay.visible = true
+	if hole_viewer and hole_viewer.has_method("enter_green_view"):
+		var frame := _green_frame()
+		hole_viewer.enter_green_view(frame.center, frame.extent, frame.yaw)
+
+
+func _ball_on_green() -> bool:
+	"""Ball at rest on the green (incl. the cup's course hex) during play."""
+	if golf_ball == null or hole_complete_triggered:
+		return false
+	var ball := world_to_grid(golf_ball.position)
+	var surface := get_cell(ball.x, ball.y)
+	return surface == SurfaceType.GREEN or surface == SurfaceType.FLAG or ball == flag_position
+
+
+func _ensure_green_board() -> void:
+	"""Build this hole's green board + overlay once (seeded from the hole)."""
+	if green_overlay == null:
+		green_overlay = GreenOverlay.new()
+		green_overlay.name = "GreenOverlay"
+		add_child(green_overlay)
+	if not _green_overlay_dirty and green_board != null:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (hole_context.seed if hole_context else randi()) ^ 0x5EED
+	green_board = GreenBoard.new()
+	green_board.build(self, rng)
+	green_overlay.show_board(green_board, self)
+	_green_overlay_dirty = false
+
+
+func _ball_small() -> Vector2i:
+	"""The green-board hex under the ball."""
+	return GreenBoard.from_world(Vector2(golf_ball.position.x, golf_ball.position.z))
+
+
+func _begin_putt() -> void:
+	"""A putting turn: aim straight at the cup (within reach); tap to re-aim."""
+	_ensure_green_board()
+	putting_active = true
+	club_chosen_by_player = false
+	current_club = ClubType.PUTTER
+	if main_ui_ref and main_ui_ref.has_method("set_hand"):
+		var clubs := _legal_club_cards()
+		main_ui_ref.set_hand(clubs, [], _club_subtitles(clubs))
+		for card in clubs:
+			if card.data.target_club == "PUTTER" and main_ui_ref.has_method("set_selected_club"):
+				main_ui_ref.set_selected_club(card)
+	turn_aim_target = flag_position  # a turn is aimed (the real aim is putt_target)
+	target_locked = true
+	set_putt_target(green_board.cup)
+
+
+func set_putt_target(small: Vector2i) -> void:
+	"""Strike the putt toward small (clamped to reach) and preview it: the
+	struck line only. Reading the arrows beyond is the player's plan."""
+	if not putting_active or green_board == null:
+		return
+	var ball := _ball_small()
+	if small == ball:
+		return
+	putt_target = green_board.clamp_target(ball, small)
+	_hide_all_aoe_highlights()
+	highlight_mesh.visible = false
+	target_highlight_mesh.visible = false
+	modifier_trajectory_mesh.visible = false
+	curved_trajectory_mesh.visible = false
+	trajectory_shadow_mesh.visible = false
+	var line := GreenBoard.line(ball, putt_target)
+	var points: Array = []
+	for a in line:
+		points.append(GreenBoard.to_world(a))
+	var end_y := green_overlay.surface_point(putt_target, self).y
+	_draw_path_ribbon(trajectory_mesh, points, golf_ball.position.y, end_y, Color(1, 1, 1, 0.85), 0.0)
+	trajectory_mesh.visible = true
+	green_overlay.show_target(putt_target, self)
+	_update_shoot_button_state()
+
+
+func putt_aim_ray(from: Vector3, dir: Vector3) -> bool:
+	"""Tap on the green view: aim the putt at the small hex under the ray
+	(intersected with the green's surface height)."""
+	if not putting_active or green_board == null or absf(dir.y) < 0.001:
+		return false
+	var plane_y := green_overlay.surface_point(green_board.cup, self).y
+	var t := (plane_y - from.y) / dir.y
+	if t < 0.0:
+		return false
+	var hit := from + dir * t
+	set_putt_target(GreenBoard.from_world(Vector2(hit.x, hit.z)))
+	return true
+
+
+func _execute_putt() -> void:
+	"""Roll the putt on the green board: struck line, then arrow pushes. Holed
+	putts pay per hex touched; off the green it's back to the shot view."""
+	var result := green_board.roll(_ball_small(), putt_target)
+	putting_active = false
+	green_overlay.hide_target()
+	trajectory_mesh.visible = false
+	previous_valid_tile = world_to_grid(golf_ball.position)
+	if run_state:
+		run_state.record_stroke(0)
+	putt_resolved.emit(result)
+	shot_serial += 1
+	var my_serial := shot_serial
+	if shot_manager:
+		shot_manager.start_animation()
+	var speed: float = shot_manager.get_animation_speed() if shot_manager else 1.0
+	for a in result.path:
+		var to: Vector3
+		if green_board.tiles.has(a):
+			to = green_overlay.surface_point(a, self) + Vector3(0, BALL_RADIUS_OFFSET, 0)
+		else:
+			# Off the green: the ball stops on the fringe course hex it ran onto
+			var w := GreenBoard.to_world(a)
+			to = get_tile_surface_position(world_to_grid(Vector3(w.x, 0.0, w.y)))
+		current_ball_tween = create_tween()
+		current_ball_tween.tween_property(golf_ball, "position", to, 0.12 / speed)
+		await current_ball_tween.finished
+	if shot_manager:
+		shot_manager.end_animation()
+	if my_serial != shot_serial:
+		return
+	if result.holed:
+		var points: int = result.touched * PUTT_POINTS_PER_HEX
+		_award_points(points, "Putt: %d hexes" % result.touched)
+		if shot_ui:
+			shot_ui.show_bonus("%d-hex putt" % result.touched, points)
+		_trigger_hole_complete()
+	else:
+		_start_new_shot()
+
+
+func _green_frame() -> Dictionary:
+	"""World centre + extent of the green (and the ball), and the camera yaw
+	that puts the ball at the bottom with the cup ahead."""
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	var points: Array[Vector3] = [golf_ball.position]
+	for a in (green_board.tiles.keys() if green_board else []):
+		var w := GreenBoard.to_world(a)
+		points.append(Vector3(w.x, 0.0, w.y))
+	for p in points:
+		lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.z))
+		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.z))
+	var center := Vector3((lo.x + hi.x) / 2.0, 0.0, (lo.y + hi.y) / 2.0)
+	var extent := maxf(hi.x - lo.x, hi.y - lo.y) + TILE_SIZE
+	var cup := get_tile_world_position(flag_position)
+	var dir := Vector2(cup.x - golf_ball.position.x, cup.z - golf_ball.position.z)
+	# hole_viewer places the camera at target + (sin(yaw), -cos(yaw)) * dist:
+	# put it behind the ball, looking at the cup
+	var yaw := atan2(-dir.x, dir.y) if dir.length() > 0.01 else 0.0
+	return {"center": center, "extent": extent, "yaw": yaw}
+
+
 func _on_run_hole_started() -> void:
 	"""New hole: clear the points log and the trick streak."""
+	_green_overlay_dirty = true
+	if green_overlay:
+		green_overlay.visible = false
 	hole_points_log.clear()
 	if trick_detector:
 		trick_detector.reset_hole()
@@ -4393,7 +4604,7 @@ func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
 	await _animate_ball_bounce(end_pos)
 
 
-func _animate_ball_along_plan(points: Array, end_pos: Vector3) -> void:
+func _animate_ball_along_plan(points: Array, end_pos: Vector3, rolling: bool = false) -> void:
 	"""Fly the ball along a ShotPlan's curve (world x,z samples) in an arc,
 	easing onto end_pos (the drawn carry hex, which the ring may have moved)."""
 	if golf_ball == null:
@@ -4409,7 +4620,9 @@ func _animate_ball_along_plan(points: Array, end_pos: Vector3) -> void:
 		length += (points[i] - points[i - 1]).length()
 	var speed_mult: float = shot_manager.get_animation_speed() if shot_manager else 1.0
 	var duration: float = clampf(length * 0.08, 0.5, 2.5) / speed_mult
-	var peak: float = clampf(trajectory_height * 1.25 + length * 0.05, 2.0, 18.0)
+	var peak: float = 0.0 if rolling else clampf(trajectory_height * 1.25 + length * 0.05, 2.0, 18.0)
+	if rolling:
+		duration *= 1.6  # a putt rolls slower than a ball flies
 	golf_ball.set_meta("spin_axis", Vector3.RIGHT)
 	golf_ball.set_meta("spin_speed", TAU * 3.0 / duration * speed_mult)
 	golf_ball.set_meta("is_spinning", true)
@@ -4417,7 +4630,10 @@ func _animate_ball_along_plan(points: Array, end_pos: Vector3) -> void:
 		var f := t * float(points.size() - 1)
 		var i := mini(int(f), points.size() - 2)
 		var p: Vector2 = (points[i] as Vector2).lerp(points[i + 1], f - i) + miss * t * t
-		golf_ball.position = Vector3(p.x, lerpf(start_pos.y, end_pos.y, t) + sin(t * PI) * peak, p.y)
+		var y := lerpf(start_pos.y, end_pos.y, t) + sin(t * PI) * peak
+		if rolling:
+			y = get_tile_surface_position(world_to_grid(Vector3(p.x, 0.0, p.y))).y  # hug the green
+		golf_ball.position = Vector3(p.x, y, p.y)
 	current_ball_tween = create_tween()
 	current_ball_tween.tween_method(fly, 0.0, 1.0, duration)
 	await current_ball_tween.finished
