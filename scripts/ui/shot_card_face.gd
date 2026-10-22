@@ -16,6 +16,13 @@ static func kind_for(data: CardData) -> Dictionary:
 	if data.card_type == CardData.CardType.NEGATIVE:
 		return {"kind": "strain", "tag": "CURSE", "strength": 1.0}
 	for e in data.effects:
+		if e is EffectPuttCard:
+			if e.read_green:
+				return {"kind": "read", "tag": "GREEN", "strength": 1.0}
+			if e.reach_bonus > 0:
+				return {"kind": "firm", "tag": "GREEN", "strength": 1.0}
+			if e.dead_weight:
+				return {"kind": "dead", "tag": "GREEN", "strength": 1.0}
 		if e is EffectShotShape:
 			if e.bulge > 0.0:
 				return {"kind": "draw", "tag": "SHAPE", "strength": 2.0 if e.bulge > 2.0 else 1.0}
@@ -88,6 +95,26 @@ func _draw() -> void:
 			draw_arc(c, h * 0.9, 0, TAU, 32, INK, 2.0, true)
 			draw_arc(c, h * 0.55, 0, TAU, 32, INK, 2.0, true)
 			draw_circle(c, h * 0.2, ACCENT)
+		"read":
+			# An eye
+			var eye := PackedVector2Array()
+			for i in range(17):
+				var t := i / 16.0
+				eye.append(Vector2(c.x - h + 2.0 * h * t, c.y - sin(t * PI) * h * 0.55))
+			for i in range(17):
+				var t := 1.0 - i / 16.0
+				eye.append(Vector2(c.x - h + 2.0 * h * t, c.y + sin(t * PI) * h * 0.55))
+			draw_polyline(eye, INK, 2.0, true)
+			draw_circle(c, h * 0.28, ACCENT)
+			draw_circle(c, h * 0.12, INK)
+		"firm":
+			draw_circle(c + Vector2(-h * 0.9, 0), 5.0, INK)
+			draw_line(c + Vector2(-h * 0.6, 0), c + Vector2(h * 0.7, 0), INK, 4.0, true)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(h, 0), c + Vector2(h * 0.6, -9), c + Vector2(h * 0.6, 9)]), ACCENT)
+		"dead":
+			# A ball sitting on a weight
+			draw_rect(Rect2(c + Vector2(-h * 0.6, h * 0.1), Vector2(h * 1.2, h * 0.55)), ACCENT)
+			draw_circle(c + Vector2(0, -h * 0.25), 7.0, INK)
 		"strain":
 			var pts := PackedVector2Array([c + Vector2(-h, -h * 0.3), c + Vector2(-h * 0.4, h * 0.3), c + Vector2(0, -h * 0.3), c + Vector2(h * 0.4, h * 0.3), c + Vector2(h, -h * 0.3)])
 			draw_polyline(pts, Color(0.75, 0.25, 0.2), 3.0, true)

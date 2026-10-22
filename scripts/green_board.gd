@@ -12,6 +12,13 @@ class_name GreenBoard
 ## Rolling off the green ends the putt on the fringe. The more hexes a holed
 ## putt touches, the more it scores.
 ##
+## Features on the green (seeded with the board):
+##   coin    - collected when the ball rolls over it (the putt carries on)
+##   spike   - spike marks: the ball stops dead on them
+##   putter  - a forgotten putter lying across two hexes: the ball bounces off
+##             it and rolls back the way it came for the hexes it had left
+##             (a bank shot)
+##
 ## Small hexes use axial coords (q, r), flat-top like the course grid:
 ##   x = SIZE * 1.5 * q,  z = SIZE * sqrt(3) * (r + q / 2)
 ## With SIZE = 0.5 every course hex centre is also a small hex centre, and each
@@ -35,7 +42,9 @@ const DIRS: Array[Vector2i] = [
 const STRENGTH_SHARE := [0.2, 0.4, 0.28, 0.12]
 
 var tiles: Dictionary = {}   # Vector2i axial -> {height: float, dir: int, strength: int}
+var features: Dictionary = {}  # Vector2i axial -> {kind: "coin" | "spike" | "putter", dir: int}
 var cup: Vector2i = Vector2i.ZERO
+var style: String = "rolling"  # rolling | two-tier | crowned | punchbowl
 var low := 0.0               # height range, for tinting
 var high := 1.0
 
@@ -127,11 +136,14 @@ func build(hole, rng: RandomNumberGenerator) -> void:
 
 	_shape_surface(rng)
 	_set_arrows()
+	_place_features(rng)
 
 
 func _shape_surface(rng: RandomNumberGenerator) -> void:
 	"""Height field: a tilt across the green, 2-3 mounds or bowls, and half the
-	time a tier (a step between two levels)."""
+	time a tier (a step between two levels), plus the green's style: rolling
+	(as is), two-tier (a strong step), crowned (sheds to the edges) or
+	punchbowl (runs to the middle)."""
 	var center := Vector2.ZERO
 	for a in tiles:
 		center += to_world(a)
@@ -149,13 +161,18 @@ func _shape_surface(rng: RandomNumberGenerator) -> void:
 			"amp": rng.randf_range(0.18, 0.4) * (1.0 if rng.randf() < 0.5 else -1.0),
 			"sigma": rng.randf_range(0.35, 0.6) * radius,
 		})
+	style = ["rolling", "two-tier", "crowned", "punchbowl"][rng.randi_range(0, 3)]
 	var tier := {}
-	if rng.randf() < 0.5:
+	if rng.randf() < 0.5 or style == "two-tier":
 		tier = {
 			"normal": Vector2.from_angle(rng.randf() * TAU),
 			"offset": rng.randf_range(-0.3, 0.3) * radius,
-			"amp": rng.randf_range(0.2, 0.35),
+			"amp": rng.randf_range(0.35, 0.5) if style == "two-tier" else rng.randf_range(0.2, 0.35),
 		}
+	if style == "crowned":
+		bumps.append({"at": center, "amp": rng.randf_range(0.35, 0.5), "sigma": 0.55 * radius})
+	elif style == "punchbowl":
+		bumps.append({"at": center, "amp": -rng.randf_range(0.35, 0.5), "sigma": 0.6 * radius})
 
 	# The cup sits in a slight dip, so the green tends to feed it
 	bumps.append({"at": to_world(cup), "amp": -0.12, "sigma": 0.9})
@@ -218,38 +235,88 @@ func _set_arrows() -> void:
 	tiles[cup].strength = 0
 
 
+func _place_features(rng: RandomNumberGenerator) -> void:
+	"""Seeded green clutter: usually a forgotten putter, 2-4 spike marks and
+	1-2 coins, kept off the cup and its neighbours."""
+	features.clear()
+	var open: Array[Vector2i] = []
+	for a in tiles:
+		if distance(a, cup) >= 2:
+			open.append(a)
+	open.sort()  # the seed must give the same green every time
+	if open.is_empty():
+		return
+	if rng.randf() < 0.7:
+		for _try in range(20):
+			var a: Vector2i = open[rng.randi_range(0, open.size() - 1)]
+			var d := rng.randi_range(0, 5)
+			var b: Vector2i = a + DIRS[d]
+			if tiles.has(b) and distance(b, cup) >= 2 and not features.has(a) and not features.has(b):
+				features[a] = {"kind": "putter", "dir": d}
+				features[b] = {"kind": "putter", "dir": d}
+				break
+	for kind in ["spike", "coin"]:
+		var count := rng.randi_range(2, 4) if kind == "spike" else rng.randi_range(1, 2)
+		for _i in range(count):
+			for _try in range(20):
+				var a: Vector2i = open[rng.randi_range(0, open.size() - 1)]
+				if not features.has(a):
+					features[a] = {"kind": kind, "dir": 0}
+					break
+
+
 # --- Putting ---
 
-func clamp_target(ball: Vector2i, target: Vector2i) -> Vector2i:
-	"""Pull a tapped hex back along the line to within PUTT_REACH. Aiming at
-	the cup from further than a tap-in stops the ball just short of it."""
+func clamp_target(ball: Vector2i, target: Vector2i, reach: int = PUTT_REACH) -> Vector2i:
+	"""Pull a tapped hex back along the line to within reach. Aiming at the cup
+	from further than a tap-in stops the ball just short of it."""
 	var d := distance(ball, target)
-	if d > PUTT_REACH:
-		target = line(ball, target)[PUTT_REACH]
-		d = PUTT_REACH
+	if d > reach:
+		target = line(ball, target)[reach]
+		d = reach
 	if target == cup and d > 1:
 		target = line(ball, target)[d - 1]
 	return target
 
 
-func roll(ball: Vector2i, target: Vector2i) -> Dictionary:
-	"""Resolve a putt. Returns {path: Array[Vector2i] (hexes entered, in order),
-	holed, off_green, end, touched (unique hexes entered)}."""
+func roll(ball: Vector2i, target: Vector2i, opts: Dictionary = {}) -> Dictionary:
+	"""Resolve a putt. opts: reach (int, default PUTT_REACH), dead_weight (the
+	green doesn't push it: the ball stays where it's struck).
+	Returns {path: Array[Vector2i] (hexes entered, in order), holed, off_green,
+	end, touched (unique hexes entered), coins (collected), banked, spiked}."""
 	var path: Array[Vector2i] = []
-	var result := {"path": path, "holed": false, "off_green": false, "end": ball, "touched": 0}
-	var cur := ball
+	var result := {"path": path, "holed": false, "off_green": false, "end": ball, "touched": 0,
+		"coins": [], "banked": false, "spiked": false}
+	var reach := int(opts.get("reach", PUTT_REACH))
 	# The struck roll: straight to the target; arrows don't act mid-roll and
-	# the ball rolls over the cup (only a 1-hex tap-in drops)
-	var struck := line(ball, clamp_target(ball, target))
-	for i in range(1, struck.size()):
-		var tap_in := struck.size() == 2
-		if struck[i] == cup and not tap_in:
-			path.append(struck[i])
-			cur = struck[i]
+	# the ball rolls over the cup (only a 1-hex tap-in drops). Off a putter it
+	# rolls back along its line for the hexes it had left.
+	var struck := line(ball, clamp_target(ball, target, reach))
+	var steps: Array[Vector2i] = struck.slice(1)
+	var tap_in := steps.size() == 1
+	var cur := ball
+	var i := 0
+	while i < steps.size():
+		var nxt: Vector2i = steps[i]
+		if _is_putter(nxt):
+			if result.banked:
+				break  # a second bounce kills it
+			result.banked = true
+			steps = _rebound(struck, struck.find(cur), steps.size() - i)
+			i = 0
 			continue
-		if _enter(struck[i], path, result):
+		if nxt == cup and not tap_in:
+			path.append(nxt)  # too quick to drop: over the cup
+			cur = nxt
+			i += 1
+			continue
+		if _enter(nxt, path, result):
 			return _finish(result)
-		cur = struck[i]
+		cur = nxt
+		i += 1
+	if opts.get("dead_weight", false):
+		result.end = cur
+		return _finish(result)
 	# Then the green takes over: each landing hex pushes the ball on
 	var seen := {}
 	for _push in range(MAX_PUSHES):
@@ -259,8 +326,16 @@ func roll(ball: Vector2i, target: Vector2i) -> Dictionary:
 		if seen.get(cur, 0) >= 2:
 			break  # caught in a loop: the ball settles
 		seen[cur] = seen.get(cur, 0) + 1
+		var dir: int = t.dir
 		for _s in range(t.strength):
-			var nxt: Vector2i = cur + DIRS[t.dir]
+			var nxt: Vector2i = cur + DIRS[dir]
+			if _is_putter(nxt):
+				# Bank off the putter: reverse for the rest of this push
+				result.banked = true
+				dir = (dir + 3) % 6
+				nxt = cur + DIRS[dir]
+				if _is_putter(nxt):
+					break
 			if _enter(nxt, path, result):
 				return _finish(result)
 			cur = nxt
@@ -268,8 +343,26 @@ func roll(ball: Vector2i, target: Vector2i) -> Dictionary:
 	return _finish(result)
 
 
+func _rebound(struck: Array[Vector2i], at: int, remaining: int) -> Array[Vector2i]:
+	"""Bounced off a putter while at struck[at]: retrace the struck line back
+	toward (and past) the ball for the remaining hexes."""
+	var out: Array[Vector2i] = []
+	var pos: Vector2i = struck[at]
+	var back := struck[0] - struck[1] if struck.size() > 1 else Vector2i.ZERO
+	for j in range(remaining):
+		var idx := at - 1 - j
+		pos = struck[idx] if idx >= 0 else pos + back
+		out.append(pos)
+	return out
+
+
+func _is_putter(a: Vector2i) -> bool:
+	return features.has(a) and features[a].kind == "putter"
+
+
 func _enter(a: Vector2i, path: Array[Vector2i], result: Dictionary) -> bool:
-	"""Move the ball onto a; true when the putt ends here (cup or off green)."""
+	"""Move the ball onto a; true when the putt ends here (cup, off the green,
+	spike marks)."""
 	path.append(a)
 	result.end = a
 	if a == cup:
@@ -277,6 +370,12 @@ func _enter(a: Vector2i, path: Array[Vector2i], result: Dictionary) -> bool:
 		return true
 	if not tiles.has(a):
 		result.off_green = true
+		return true
+	var f: Dictionary = features.get(a, {})
+	if f.get("kind", "") == "coin" and not result.coins.has(a):
+		result.coins.append(a)
+	if f.get("kind", "") == "spike":
+		result.spiked = true
 		return true
 	return false
 

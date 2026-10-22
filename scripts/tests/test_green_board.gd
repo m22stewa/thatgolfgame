@@ -52,6 +52,7 @@ func _ready() -> void:
 	_test_geometry()
 	_test_build()
 	_test_putts()
+	_test_features()
 	print("=== green board test complete: %d checks, %d failures ===" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
 
@@ -100,6 +101,14 @@ func _test_build() -> void:
 		if not again.tiles.has(a) or again.tiles[a].dir != board.tiles[a].dir or again.tiles[a].strength != board.tiles[a].strength:
 			same = false
 	_check(same, "same seed, same green")
+	var styles := {}
+	for seed in range(40):
+		var g := GreenBoard.new()
+		var r := RandomNumberGenerator.new()
+		r.seed = seed
+		g.build(hole, r)
+		styles[g.style] = true
+	_check(styles.size() == 4, "greens come in all four styles %s" % str(styles.keys()))
 
 
 func _flat_board(radius: int) -> GreenBoard:
@@ -167,6 +176,56 @@ func _test_putts() -> void:
 	var far := _flat_board(8)
 	var clamped := far.roll(Vector2i(-8, 0), Vector2i(8, 0))
 	_check(GreenBoard.distance(Vector2i(-8, 0), clamped.end) == GreenBoard.PUTT_REACH, "a putt is struck at most %d hexes" % GreenBoard.PUTT_REACH)
+
+
+func _test_features() -> void:
+	print("-- green features --")
+	var b := _flat_board(5)
+	var start := Vector2i(-4, 0)
+
+	b.features[Vector2i(-2, 0)] = {"kind": "coin", "dir": 0}
+	var coin := b.roll(start, Vector2i(-1, 0))
+	_check(coin.coins == [Vector2i(-2, 0)] and coin.end == Vector2i(-1, 0), "rolling over a coin collects it and carries on")
+
+	var s := _flat_board(5)
+	s.features[Vector2i(-2, 0)] = {"kind": "spike", "dir": 0}
+	var spiked := s.roll(start, Vector2i(0, 0))
+	_check(spiked.spiked and spiked.end == Vector2i(-2, 0), "spike marks stop the ball dead")
+
+	var p := _flat_board(5)
+	p.features[Vector2i(-1, 0)] = {"kind": "putter", "dir": 2}
+	p.features[Vector2i(-1, 1)] = {"kind": "putter", "dir": 2}
+	var bounce := p.roll(start, Vector2i(0, 0))  # stops short of the cup at (-1,0)... blocked by the putter
+	_check(bounce.banked and bounce.end.x < -2, "a struck ball bounces off the putter and rolls back (%s)" % str(bounce.end))
+
+	var bank := _flat_board(5)
+	bank.features[Vector2i(1, 0)] = {"kind": "putter", "dir": 2}
+	bank.features[Vector2i(1, 1)] = {"kind": "putter", "dir": 2}
+	bank.tiles[Vector2i(-1, 0)].dir = 1      # push east x3: (0,0) is the cup on the first step
+	bank.tiles[Vector2i(-1, 0)].strength = 3
+	bank.cup = Vector2i(-2, 0)               # cup behind: only a bank can reach it
+	var banked := bank.roll(Vector2i(-1, -1), Vector2i(-1, 0))
+	_check(banked.banked and banked.holed, "an arrow push banks off the putter back into the cup (%s)" % str(banked.path))
+
+	var dead := _flat_board(5)
+	dead.tiles[Vector2i(-2, 0)].dir = 1
+	dead.tiles[Vector2i(-2, 0)].strength = 2
+	_check(dead.roll(start, Vector2i(-2, 0), {"dead_weight": true}).end == Vector2i(-2, 0), "Dead Weight: the green doesn't push the ball")
+	var far := _flat_board(9)
+	_check(GreenBoard.distance(Vector2i(-9, 0), far.roll(Vector2i(-9, 0), Vector2i(9, 0), {"reach": 8}).end) == 8, "Firm Putt: reach 8")
+
+	var hole := StubHole.new()
+	var built := GreenBoard.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	built.build(hole, rng)
+	var kinds := {}
+	var near_cup := false
+	for a in built.features:
+		kinds[built.features[a].kind] = true
+		if GreenBoard.distance(a, built.cup) < 2:
+			near_cup = true
+	_check(kinds.has("spike") and kinds.has("coin") and not near_cup, "a built green has spikes and coins, none next to the cup %s" % str(kinds.keys()))
 
 
 func _check(cond: bool, label: String) -> void:

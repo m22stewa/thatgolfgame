@@ -393,12 +393,31 @@ func _register_path_cards() -> void:
 	_register_path_card("dart", "Dart", "Tighter landing ring.", 1, {"ring_mod": -1})
 	_register_path_card("knockdown", "Knockdown", "Low flight: wind can't move it.", 1, {"ignore_wind": true})
 
+	# Green cards: dealt on the green from their own deck
+	_register_putt_card("read_green", "Read the Green", "See where the ball will end up.", {"read_green": true})
+	_register_putt_card("firm_putt", "Firm Putt", "Strike it 2 hexes further.", {"reach_bonus": 2})
+	_register_putt_card("dead_weight", "Dead Weight", "Stops where it's struck.", {"dead_weight": true})
+
 	# Strain: added to your deck when you overspend power. Dead weight in hand.
 	if not _cards.has("strain"):
 		var strain = CardData.create("strain", "Strain", CardData.Rarity.COMMON)
 		strain.card_type = CardData.CardType.NEGATIVE
 		strain.description = "Unplayable. From overswinging."
 		_register(strain)
+
+
+func _register_putt_card(id: String, card_name: String, description: String, fields: Dictionary) -> void:
+	if _cards.has(id):
+		return
+	var card = CardData.create(id, card_name, CardData.Rarity.COMMON)
+	card.card_type = CardData.CardType.SHOT
+	card.description = description
+	var effect := EffectPuttCard.new()
+	effect.effect_name = card_name
+	for key in fields:
+		effect.set(key, fields[key])
+	card.effects.append(effect)
+	_register(card)
 
 
 func _register_path_card(id: String, card_name: String, description: String, cost: int, fields: Dictionary) -> void:

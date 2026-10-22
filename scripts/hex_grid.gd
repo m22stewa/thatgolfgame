@@ -1556,6 +1556,10 @@ func _on_modifier_card_selected(card_instance) -> void:
 	MAX_PLANNED_CARDS). Strain cards can't be played."""
 	if card_instance == null or card_instance.data == null:
 		return
+	if putting_active:
+		if putt_hand.has(card_instance):
+			_toggle_putt_card(card_instance)
+		return
 	if planned_cards.has(card_instance):
 		if modifier_manager:
 			modifier_manager.remove_modifier(planned_cards[card_instance])
@@ -3700,8 +3704,17 @@ var green_board: GreenBoard = null       # The small-hex putting surface for thi
 
 # Putting: on the green a turn is a putt on the green board
 const PUTT_POINTS_PER_HEX := 5           # a holed putt pays per small hex it touched
+const BANK_SHOT_POINTS := 30             # holed after bouncing off a forgotten putter
 var putting_active: bool = false
 var putt_target: Vector2i = Vector2i.ZERO   # small hex the putt is struck to
+
+# Green cards: their own deck (lasts the run), a fresh hand each putt
+const PUTT_DECK_IDS := ["read_green", "read_green", "firm_putt", "firm_putt", "dead_weight", "dead_weight"]
+const PUTT_HAND_SIZE := 2
+var putt_deck: Array = []
+var putt_discard: Array = []
+var putt_hand: Array = []
+var putt_cards: Dictionary = {}  # green cards played on this putt -> true
 var trick_detector: TrickShotDetector = null  # Awards points for trick shots
 var hole_points_log: Array = []  # [{label, points}] earned this hole, for the hole-complete breakdown
 
@@ -3888,15 +3901,57 @@ func _begin_putt() -> void:
 	putting_active = true
 	club_chosen_by_player = false
 	current_club = ClubType.PUTTER
+	_deal_putt_hand()
 	if main_ui_ref and main_ui_ref.has_method("set_hand"):
 		var clubs := _legal_club_cards()
-		main_ui_ref.set_hand(clubs, [], _club_subtitles(clubs))
+		main_ui_ref.set_hand(clubs, putt_hand, _club_subtitles(clubs))
 		for card in clubs:
 			if card.data.target_club == "PUTTER" and main_ui_ref.has_method("set_selected_club"):
 				main_ui_ref.set_selected_club(card)
 	turn_aim_target = flag_position  # a turn is aimed (the real aim is putt_target)
 	target_locked = true
 	set_putt_target(green_board.cup)
+
+
+func _deal_putt_hand() -> void:
+	"""Discard the last green hand and draw PUTT_HAND_SIZE fresh cards."""
+	putt_cards.clear()
+	if putt_deck.is_empty() and putt_discard.is_empty() and putt_hand.is_empty() and CardLibrary.instance:
+		for id in PUTT_DECK_IDS:
+			putt_deck.append(CardInstance.create_from_data(CardLibrary.instance.get_card(id)))
+		_shuffle_cards(putt_deck)
+	putt_discard.append_array(putt_hand)
+	putt_hand.clear()
+	for i in range(PUTT_HAND_SIZE):
+		if putt_deck.is_empty():
+			if putt_discard.is_empty():
+				break
+			putt_deck = putt_discard
+			putt_discard = []
+			_shuffle_cards(putt_deck)
+		putt_hand.append(putt_deck.pop_back())
+
+
+func _putt_opts() -> Dictionary:
+	"""The green cards played on this putt, as GreenBoard.roll() options."""
+	var opts := {"reach": GreenBoard.PUTT_REACH, "dead_weight": false, "read": false}
+	for card in putt_cards:
+		for e in card.data.effects:
+			if e is EffectPuttCard:
+				opts.reach += e.reach_bonus
+				opts.dead_weight = opts.dead_weight or e.dead_weight
+				opts.read = opts.read or e.read_green
+	return opts
+
+
+func _toggle_putt_card(card) -> void:
+	if putt_cards.has(card):
+		putt_cards.erase(card)
+	else:
+		putt_cards[card] = true
+	if main_ui_ref and main_ui_ref.has_method("set_card_pressed"):
+		main_ui_ref.set_card_pressed(card, putt_cards.has(card))
+	set_putt_target(putt_target)
 
 
 func set_putt_target(small: Vector2i) -> void:
@@ -3907,19 +3962,26 @@ func set_putt_target(small: Vector2i) -> void:
 	var ball := _ball_small()
 	if small == ball:
 		return
-	putt_target = green_board.clamp_target(ball, small)
+	var opts := _putt_opts()
+	putt_target = green_board.clamp_target(ball, small, opts.reach)
 	_hide_all_aoe_highlights()
 	highlight_mesh.visible = false
 	target_highlight_mesh.visible = false
 	modifier_trajectory_mesh.visible = false
 	curved_trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
-	var line := GreenBoard.line(ball, putt_target)
+	# The struck line; with Read the Green, the whole route the ball will take
+	var route: Array[Vector2i] = GreenBoard.line(ball, putt_target)
+	var color := Color(1, 1, 1, 0.85)
+	if opts.read:
+		route = [ball]
+		route.append_array(green_board.roll(ball, putt_target, opts).path)
+		color = Color(1.0, 0.75, 0.25, 0.95)
 	var points: Array = []
-	for a in line:
+	for a in route:
 		points.append(GreenBoard.to_world(a))
-	var end_y := green_overlay.surface_point(putt_target, self).y
-	_draw_path_ribbon(trajectory_mesh, points, golf_ball.position.y, end_y, Color(1, 1, 1, 0.85), 0.0)
+	var end_y := green_overlay.surface_point(route[route.size() - 1], self).y if green_board.tiles.has(route[route.size() - 1]) else golf_ball.position.y
+	_draw_path_ribbon(trajectory_mesh, points, golf_ball.position.y, end_y, color, 0.0)
 	trajectory_mesh.visible = true
 	green_overlay.show_target(putt_target, self)
 	_update_shoot_button_state()
@@ -3942,8 +4004,9 @@ func putt_aim_ray(from: Vector3, dir: Vector3) -> bool:
 func _execute_putt() -> void:
 	"""Roll the putt on the green board: struck line, then arrow pushes. Holed
 	putts pay per hex touched; off the green it's back to the shot view."""
-	var result := green_board.roll(_ball_small(), putt_target)
+	var result := green_board.roll(_ball_small(), putt_target, _putt_opts())
 	putting_active = false
+	putt_cards.clear()
 	green_overlay.hide_target()
 	trajectory_mesh.visible = false
 	previous_valid_tile = world_to_grid(golf_ball.position)
@@ -3970,11 +4033,22 @@ func _execute_putt() -> void:
 		shot_manager.end_animation()
 	if my_serial != shot_serial:
 		return
+	# Coins rolled over pay whether or not the putt drops, and leave the green
+	for c in result.coins:
+		green_board.features.erase(c)
+		green_overlay.remove_coin(c)
+		if run_state:
+			run_state.add_coins(1)
+		_award_points(TrickShotDetector.COIN_POINTS, "Coin")
+	if result.coins.size() > 0 and shot_ui:
+		shot_ui.show_bonus("Coin x%d" % result.coins.size() if result.coins.size() > 1 else "Coin", TrickShotDetector.COIN_POINTS * result.coins.size())
 	if result.holed:
 		var points: int = result.touched * PUTT_POINTS_PER_HEX
 		_award_points(points, "Putt: %d hexes" % result.touched)
+		if result.banked:
+			_award_points(BANK_SHOT_POINTS, "Bank shot")
 		if shot_ui:
-			shot_ui.show_bonus("%d-hex putt" % result.touched, points)
+			shot_ui.show_bonus("Bank shot! %d-hex putt" % result.touched if result.banked else "%d-hex putt" % result.touched, points + (BANK_SHOT_POINTS if result.banked else 0))
 		_trigger_hole_complete()
 	else:
 		_start_new_shot()
@@ -4063,6 +4137,8 @@ func _refresh_hole_label(extra: String = "") -> void:
 			run_state.format_vs_par(run_state.blowout_limit)]
 		if currency_manager:
 			holelabel.text += "  |  %d pts" % currency_manager.get_balance()
+		if putting_active and green_board:
+			holelabel.text += "  |  %s green" % green_board.style.capitalize()
 		return
 	var text := ""
 	if run_state:
@@ -4089,6 +4165,9 @@ func _show_run_complete() -> void:
 	shot_deck.clear()
 	shot_discard.clear()
 	shot_hand.clear()
+	putt_deck.clear()
+	putt_discard.clear()
+	putt_hand.clear()
 	blowout_shown = false
 	
 	_play_transition_loading(func():

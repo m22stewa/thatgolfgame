@@ -10,6 +10,8 @@ class_name GreenOverlay
 ##     chevrons IS how many hexes it pushes (1-3). They drift slowly that way,
 ##     faster when stronger. Flat hexes (the ball stops there) get a dot.
 ##   - The cup: a bright ring.
+##   - Features: spinning gold coins, spike marks (a pair of shoe prints) and
+##     a forgotten putter lying across two hexes.
 
 const LIFT := 0.04            # above the course tile surface
 const TINT_ALPHA := 0.5
@@ -30,6 +32,7 @@ var _chevron_mesh: ArrayMesh
 var _dot_mesh: CylinderMesh
 var _tint_mesh: CylinderMesh
 var _target: MeshInstance3D = null
+var _coins: Dictionary = {}  # small hex -> coin node (spins; removed when collected)
 
 
 func _init() -> void:
@@ -62,18 +65,34 @@ func show_board(green: GreenBoard, hole) -> void:
 		var t: Dictionary = board.tiles[a]
 		var at := surface_point(a, hole)
 		_add_tint(at, (float(t.height) - board.low) / span)
+		var kind: String = board.features.get(a, {}).get("kind", "")
 		if a == board.cup:
 			_add_cup_marker(at)
+		elif kind == "spike":
+			_add_spike_marks(at, a)
+		elif kind == "putter":
+			pass  # drawn once per putter below
 		elif t.strength == 0:
 			_add_dot(at)
 		else:
 			_add_arrow(at, t.dir, t.strength)
+		if kind == "coin":
+			_add_coin(at, a)
+	var drawn := {}
+	for a in board.features:
+		var f: Dictionary = board.features[a]
+		var other: Vector2i = a + GreenBoard.DIRS[f.dir]
+		if f.kind == "putter" and not drawn.has(a) and board.features.has(other):
+			drawn[a] = true
+			drawn[other] = true
+			_add_putter(surface_point(a, hole), surface_point(other, hole))
 
 
 func clear() -> void:
 	for c in get_children():
 		c.queue_free()
 	_arrows.clear()
+	_coins.clear()
 	_target = null
 	board = null
 
@@ -90,6 +109,9 @@ func _process(delta: float) -> void:
 	if not visible or _arrows.is_empty():
 		return
 	_time += delta
+	for c in _coins.values():
+		if is_instance_valid(c):
+			c.rotation.y = _time * 2.0
 	for a in _arrows:
 		var node: Node3D = a.node
 		if is_instance_valid(node):
@@ -157,6 +179,104 @@ func _add_cup_marker(at: Vector3) -> void:
 	mi.scale = Vector3(1.0, 0.15, 1.0)
 	mi.position = at + Vector3(0, 0.02, 0)
 	add_child(mi)
+
+
+func remove_coin(a: Vector2i) -> void:
+	"""A collected coin leaves the green."""
+	if _coins.has(a):
+		_coins[a].queue_free()
+		_coins.erase(a)
+
+
+func _add_coin(at: Vector3, a: Vector2i) -> void:
+	var disc := CylinderMesh.new()
+	disc.top_radius = 0.2
+	disc.bottom_radius = 0.2
+	disc.height = 0.05
+	disc.radial_segments = 16
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.78, 0.2)
+	mat.metallic = 0.8
+	mat.roughness = 0.3
+	mat.emission_enabled = true
+	mat.emission = Color(0.4, 0.28, 0.0)
+	var spin := Node3D.new()
+	spin.position = at + Vector3(0, 0.28, 0)
+	var mi := MeshInstance3D.new()
+	mi.mesh = disc
+	mi.material_override = mat
+	mi.rotation.x = PI / 2.0  # stand the disc up
+	spin.add_child(mi)
+	add_child(spin)
+	_coins[a] = spin
+
+
+func _add_spike_marks(at: Vector3, a: Vector2i) -> void:
+	"""A pair of shoe prints, turned by the hex so they don't all line up."""
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.22, 0.18, 0.12, 0.85)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.render_priority = 2
+	var sole := CylinderMesh.new()
+	sole.top_radius = 0.085
+	sole.bottom_radius = 0.085
+	sole.height = 0.01
+	sole.radial_segments = 12
+	var pair := Node3D.new()
+	pair.position = at + Vector3(0, 0.012, 0)
+	pair.rotation.y = float(abs(a.x * 7 + a.y * 13) % 6) * PI / 3.0
+	for side in [-1.0, 1.0]:
+		var print_mi := MeshInstance3D.new()
+		print_mi.mesh = sole
+		print_mi.material_override = mat
+		print_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		print_mi.scale = Vector3(1.0, 1.0, 2.1)
+		print_mi.position = Vector3(side * 0.09, 0, side * 0.05)
+		pair.add_child(print_mi)
+	add_child(pair)
+
+
+func _add_putter(a: Vector3, b: Vector3) -> void:
+	"""A putter lying on the green from hex a (head) to hex b (grip)."""
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.78, 0.8, 0.84)
+	steel.metallic = 0.9
+	steel.roughness = 0.25
+	var grip_mat := StandardMaterial3D.new()
+	grip_mat.albedo_color = Color(0.08, 0.08, 0.09)
+	var putter := Node3D.new()
+	var dir := (b - a)
+	putter.position = (a + b) / 2.0 + Vector3(0, 0.05, 0)
+	putter.rotation.y = atan2(dir.x, dir.z)
+	add_child(putter)
+	var length := Vector2(dir.x, dir.z).length() + 0.5
+	var shaft := MeshInstance3D.new()
+	var shaft_mesh := CylinderMesh.new()
+	shaft_mesh.top_radius = 0.035
+	shaft_mesh.bottom_radius = 0.035
+	shaft_mesh.height = length
+	shaft.mesh = shaft_mesh
+	shaft.material_override = steel
+	shaft.rotation.x = PI / 2.0  # lie along +Z
+	putter.add_child(shaft)
+	var grip := MeshInstance3D.new()
+	var grip_mesh := CylinderMesh.new()
+	grip_mesh.top_radius = 0.055
+	grip_mesh.bottom_radius = 0.055
+	grip_mesh.height = length * 0.3
+	grip.mesh = grip_mesh
+	grip.material_override = grip_mat
+	grip.rotation.x = PI / 2.0
+	grip.position = Vector3(0, 0, length * 0.35)
+	putter.add_child(grip)
+	var head := MeshInstance3D.new()
+	var head_mesh := BoxMesh.new()
+	head_mesh.size = Vector3(0.42, 0.12, 0.16)
+	head.mesh = head_mesh
+	head.material_override = steel
+	head.position = Vector3(0.1, 0, -length * 0.5)
+	putter.add_child(head)
 
 
 func show_target(a: Vector2i, hole) -> void:

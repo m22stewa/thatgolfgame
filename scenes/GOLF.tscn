@@ -1,4 +1,4 @@
-[gd_scene load_steps=52 format=3 uid="uid://i0lqex70w705"]
+[gd_scene format=3 uid="uid://i0lqex70w705"]
 
 [ext_resource type="Script" uid="uid://jbl3fajf0vir" path="res://scripts/hex_grid.gd" id="1_rp2c5"]
 [ext_resource type="Script" uid="uid://yue4t13aff0q" path="res://scripts/tree_spawner.gd" id="3_tryan"]
@@ -8,8 +8,8 @@
 [ext_resource type="Shader" uid="uid://dw8e21t3mum1l" path="res://scripts/weather-rain.gdshader" id="6_ynlb6"]
 [ext_resource type="Shader" uid="uid://chnhearr3oxlt" path="res://scripts/screenTransition.gdshader" id="7_mitcx"]
 [ext_resource type="Shader" uid="uid://cxfr44i8gar3k" path="res://scripts/clouds-topdown.gdshader" id="7_xe5jh"]
-[ext_resource type="Shader" uid="uid://d03cyebunvl18" path="res://scripts/floor.gdshader" id="8_q0ffo"]
 [ext_resource type="Shader" uid="uid://d0ig6thf42v6r" path="res://scripts/celebration.gdshader" id="9_06m3i"]
+[ext_resource type="Shader" uid="uid://bfc05qbojkipo" path="res://scripts/table_felt.gdshader" id="9_felt"]
 [ext_resource type="FontFile" uid="uid://csixfh5trj68q" path="res://theme/Unbounded-VariableFont_wght.ttf" id="9_pyvcl"]
 [ext_resource type="PackedScene" uid="uid://brd1rbth2tvmv" path="res://scenes/rolling-ball.tscn" id="10_fkwjp"]
 [ext_resource type="Shader" uid="uid://b4a5pybeu403q" path="res://scripts/ice.gdshader" id="10_jfa70"]
@@ -26,10 +26,10 @@ seamless = true
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cdobm"]
 sky_top_color = Color(0.68235296, 0.7490196, 0.7882353, 1)
-sky_horizon_color = Color(0.81960785, 0.80392158, 0.76470588, 1)
+sky_horizon_color = Color(0.81960785, 0.8039216, 0.7647059, 1)
 sky_cover = SubResource("NoiseTexture2D_nnrla")
-ground_bottom_color = Color(0.43137255, 0.43921569, 0.4627451, 1)
-ground_horizon_color = Color(0.6, 0.60784314, 0.6117647, 1)
+ground_bottom_color = Color(0.43137255, 0.4392157, 0.4627451, 1)
+ground_horizon_color = Color(0.6, 0.60784316, 0.6117647, 1)
 ground_curve = 0.09513669
 
 [sub_resource type="Sky" id="Sky_keddd"]
@@ -39,13 +39,12 @@ sky_material = SubResource("ProceduralSkyMaterial_cdobm")
 background_mode = 2
 sky = SubResource("Sky_keddd")
 ambient_light_source = 3
-ambient_light_color = Color(0.7490196, 0.7764706, 0.79843137, 1)
+ambient_light_color = Color(0.7490196, 0.7764706, 0.7984314, 1)
 ambient_light_energy = 0.6
 tonemap_mode = 2
 ssao_enabled = true
 ssao_radius = 0.5
 ssao_intensity = 1.0
-glow_enabled = false
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_par3"]
 transparency = 1
@@ -203,77 +202,61 @@ shader_parameter/noise_texture = SubResource("NoiseTexture2D_mitcx")
 shader_parameter/density = 0.25
 shader_parameter/speed = Vector2(0.007, 0.01)
 
-[sub_resource type="Gradient" id="Gradient_06m3i"]
-
-[sub_resource type="GradientTexture2D" id="GradientTexture2D_jfa70"]
-gradient = SubResource("Gradient_06m3i")
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_ynlb6"]
-noise_type = 2
-frequency = 0.0503
-offset = Vector3(0, 161.85, 0)
-
-[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_xe5jh"]
-noise = SubResource("FastNoiseLite_ynlb6")
-seamless = true
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_q0ffo"]
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_felt"]
 render_priority = 0
-shader = ExtResource("8_q0ffo")
-shader_parameter/texture_emission = SubResource("NoiseTexture2D_xe5jh")
-shader_parameter/emission_color = SubResource("GradientTexture2D_jfa70")
-shader_parameter/depth_scale = 0.025
-shader_parameter/discard_boundaries = false
-shader_parameter/emission_energy = 2.275
-shader_parameter/uv1_scale = Vector2(1, 1)
-shader_parameter/uv1_offset = Vector2(0, 0)
+shader = ExtResource("9_felt")
+shader_parameter/felt_dark = Color(0.07, 0.24, 0.17, 1)
+shader_parameter/felt_light = Color(0.1, 0.3, 0.21, 1)
+shader_parameter/weave_per_unit = 5.0
+shader_parameter/weave_contrast = 0.35
+shader_parameter/fuzz_strength = 0.035
+shader_parameter/mottle_strength = 0.015
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_q0ffo"]
 size = Vector2(400, 400)
 
-[node name="GOLF" type="Node3D"]
+[node name="GOLF" type="Node3D" unique_id=685787388]
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=368256668]
 environment = SubResource("Environment_rvr3e")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=171837541]
 transform = Transform3D(-0.8660254, -0.43301278, 0.25, 0, 0.49999997, 0.86602545, -0.50000006, 0.75, -0.43301266, 0, 0, 0)
-visible = true
-light_color = Color(1, 0.96078431, 0.90196078, 1)
+light_color = Color(1, 0.9607843, 0.9019608, 1)
 light_energy = 0.9
 light_angular_distance = 2.5
 shadow_enabled = true
 
-[node name="Camera3D" type="Camera3D" parent="."]
+[node name="Camera3D" type="Camera3D" parent="." unique_id=634229147]
 transform = Transform3D(-1, 8.742278e-08, 4.2322548e-15, 5.8304238e-08, 0.6669227, 0.7451269, 6.5141066e-08, 0.7451269, -0.6669227, 4.962555, 32.72398, -5.907792)
 visible = false
 current = true
 
-[node name="EditorHelpers" type="Node3D" parent="."]
+[node name="EditorHelpers" type="Node3D" parent="." unique_id=1816591392]
 unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.23413372, 0)
 visible = false
 
-[node name="EditorCamera" type="Camera3D" parent="EditorHelpers"]
+[node name="EditorCamera" type="Camera3D" parent="EditorHelpers" unique_id=1798082592]
 transform = Transform3D(-1, -7.571031e-08, 4.3711392e-08, 0, 0.50000024, 0.8660254, -8.742282e-08, 0.8660254, -0.50000024, 10, 40, -20)
 visible = false
 
-[node name="Par3Floor" type="CSGBox3D" parent="EditorHelpers"]
+[node name="Par3Floor" type="CSGBox3D" parent="EditorHelpers" unique_id=45626880]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, -0.5, 15)
 size = Vector3(18, 0.1, 30)
 material = SubResource("StandardMaterial3D_par3")
 
-[node name="Par4Floor" type="CSGBox3D" parent="EditorHelpers"]
+[node name="Par4Floor" type="CSGBox3D" parent="EditorHelpers" unique_id=1784838605]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 14, -0.5, 24)
 size = Vector3(28, 0.1, 48)
 material = SubResource("StandardMaterial3D_par4")
 
-[node name="Par5Floor" type="CSGBox3D" parent="EditorHelpers"]
+[node name="Par5Floor" type="CSGBox3D" parent="EditorHelpers" unique_id=334837189]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 17.5, -0.5, 32.5)
 size = Vector3(35, 0.1, 65)
 material = SubResource("StandardMaterial3D_par5")
 
-[node name="Control" type="Control" parent="."]
+[node name="Control" type="Control" parent="." unique_id=1866449991]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -281,14 +264,14 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="MainUI" parent="Control" instance=ExtResource("5_main_ui")]
+[node name="MainUI" parent="Control" unique_id=1323674299 instance=ExtResource("5_main_ui")]
 layout_mode = 1
 
-[node name="DebugOverlay" parent="Control" instance=ExtResource("11_debug_overlay")]
+[node name="DebugOverlay" parent="Control" unique_id=1005249382 instance=ExtResource("11_debug_overlay")]
 
-[node name="CanvasLayer" type="CanvasLayer" parent="Control"]
+[node name="CanvasLayer" type="CanvasLayer" parent="Control" unique_id=1930329445]
 
-[node name="shoteffects-water" type="ColorRect" parent="Control/CanvasLayer"]
+[node name="shoteffects-water" type="ColorRect" parent="Control/CanvasLayer" unique_id=745102522]
 unique_name_in_owner = true
 visible = false
 material = SubResource("ShaderMaterial_ynlb6")
@@ -300,7 +283,7 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(1, 1, 1, 0)
 
-[node name="sceen-transition" type="ColorRect" parent="Control/CanvasLayer"]
+[node name="sceen-transition" type="ColorRect" parent="Control/CanvasLayer" unique_id=590812993]
 unique_name_in_owner = true
 material = SubResource("ShaderMaterial_06m3i")
 anchors_preset = 15
@@ -310,7 +293,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="LoadingMessage" type="Control" parent="Control/CanvasLayer/sceen-transition"]
+[node name="LoadingMessage" type="Control" parent="Control/CanvasLayer/sceen-transition" unique_id=190304114]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -324,7 +307,7 @@ offset_bottom = 20.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Label" type="Label" parent="Control/CanvasLayer/sceen-transition/LoadingMessage"]
+[node name="Label" type="Label" parent="Control/CanvasLayer/sceen-transition/LoadingMessage" unique_id=416831939]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -342,7 +325,7 @@ theme_override_fonts/font = ExtResource("9_pyvcl")
 theme_override_font_sizes/font_size = 66
 text = "Generating new hole..."
 
-[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/CanvasLayer/sceen-transition/LoadingMessage"]
+[node name="SubViewportContainer" type="SubViewportContainer" parent="Control/CanvasLayer/sceen-transition/LoadingMessage" unique_id=759221159]
 visible = false
 layout_mode = 0
 offset_left = -116.0
@@ -350,7 +333,7 @@ offset_top = -177.0
 offset_right = 396.0
 offset_bottom = 335.0
 
-[node name="SubViewport" type="SubViewport" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer"]
+[node name="SubViewport" type="SubViewport" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer" unique_id=452696899]
 own_world_3d = true
 world_3d = SubResource("World3D_eulkx")
 transparent_bg = true
@@ -358,19 +341,19 @@ handle_input_locally = false
 size = Vector2i(200, 200)
 render_target_update_mode = 0
 
-[node name="Camera3D" type="Camera3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport"]
+[node name="Camera3D" type="Camera3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport" unique_id=2043676328]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.08075428, 100.4028, 4.5826488)
 
-[node name="RollingBall" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport" instance=ExtResource("10_fkwjp")]
+[node name="RollingBall" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport" unique_id=1593327059 instance=ExtResource("10_fkwjp")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 100.33403, 0)
 
-[node name="light" type="OmniLight3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport"]
+[node name="light" type="OmniLight3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport" unique_id=1447308517]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 101.359436, 2.96326)
 
-[node name="light2" type="OmniLight3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport"]
+[node name="light2" type="OmniLight3D" parent="Control/CanvasLayer/sceen-transition/LoadingMessage/SubViewportContainer/SubViewport" unique_id=2119505659]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 99.181526, 2.7580886)
 
-[node name="fireworks" type="ColorRect" parent="Control/CanvasLayer"]
+[node name="fireworks" type="ColorRect" parent="Control/CanvasLayer" unique_id=120921715]
 visible = false
 material = SubResource("ShaderMaterial_jfa70")
 anchors_preset = 15
@@ -379,7 +362,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Ice" type="ColorRect" parent="Control/CanvasLayer"]
+[node name="Ice" type="ColorRect" parent="Control/CanvasLayer" unique_id=1752000248]
 visible = false
 material = SubResource("ShaderMaterial_eulkx")
 anchors_preset = 15
@@ -389,13 +372,12 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="AnimationPlayer" type="AnimationPlayer" parent="Control/CanvasLayer/Ice"]
-libraries = {
-&"": SubResource("AnimationLibrary_fkwjp")
-}
-autoplay = "new_animation"
+[node name="AnimationPlayer" type="AnimationPlayer" parent="Control/CanvasLayer/Ice" unique_id=912707645]
+libraries/ = SubResource("AnimationLibrary_fkwjp")
+autoplay = &"new_animation"
 
-[node name="CloudsTopdown" type="ColorRect" parent="Control"]
+[node name="CloudsTopdown" type="ColorRect" parent="Control" unique_id=1748202694]
+visible = false
 material = SubResource("ShaderMaterial_1crsh")
 layout_mode = 1
 anchors_preset = 15
@@ -406,17 +388,17 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="HoleGenerator" parent="." instance=ExtResource("4_81eei")]
+[node name="HoleGenerator" parent="." unique_id=1952006759 instance=ExtResource("4_81eei")]
 
-[node name="HexGrid" type="Node3D" parent="HoleGenerator"]
+[node name="HexGrid" type="Node3D" parent="HoleGenerator" unique_id=1739969404]
 script = ExtResource("1_rp2c5")
 
-[node name="tree-spawner" type="Node3D" parent="HoleGenerator"]
+[node name="tree-spawner" type="Node3D" parent="HoleGenerator" unique_id=1976660208]
 visible = false
 script = ExtResource("3_tryan")
 
-[node name="textureFloor" type="MeshInstance3D" parent="."]
+[node name="textureFloor" type="MeshInstance3D" parent="." unique_id=257028709]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.1, 0)
-material_overlay = SubResource("ShaderMaterial_q0ffo")
+material_override = SubResource("ShaderMaterial_felt")
 gi_mode = 2
 mesh = SubResource("PlaneMesh_q0ffo")

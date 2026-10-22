@@ -93,6 +93,17 @@ func _play_hole(n: int) -> void:
 		if on_green != viewing or on_green != overlay_on:
 			_problems.append("hole %d stroke %d: green view %s / overlay %s while ball %s the green" % [n, stroke + 1, viewing, overlay_on, "on" if on_green else "off"])
 		if on_green and hg.putting_active:
+			if hg.putt_hand.size() != hg.PUTT_HAND_SIZE:
+				_problems.append("hole %d stroke %d: green hand has %d cards" % [n, stroke + 1, hg.putt_hand.size()])
+			for card in hg.putt_hand:
+				if card.data.card_id == "firm_putt":
+					hg.main_ui_ref.emit_signal("modifier_card_selected", card)
+					if hg._putt_opts().reach != GreenBoard.PUTT_REACH + 2:
+						_problems.append("hole %d: Firm Putt didn't add reach" % n)
+					hg.main_ui_ref.emit_signal("modifier_card_selected", card)
+					if hg._putt_opts().reach != GreenBoard.PUTT_REACH:
+						_problems.append("hole %d: Firm Putt didn't toggle off" % n)
+					break
 			_read_the_green()
 		if on_green:
 			_green_turns += 1
