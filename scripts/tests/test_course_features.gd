@@ -41,6 +41,10 @@ class StubHole extends Node3D:
 	func get_elevation(_c: int, _r: int) -> float:
 		return 0.0
 
+	func get_tile_world_position(cell: Vector2i) -> Vector3:
+		var hh := sqrt(3.0)
+		return Vector3(cell.x * 1.5, 0.0, cell.y * hh + (cell.x % 2) * (hh / 2.0))
+
 	func get_adjacent_cells(col: int, row: int) -> Array[Vector2i]:
 		var out: Array[Vector2i] = []
 		var odd := col % 2 == 1
@@ -126,7 +130,9 @@ func _test_fire_penalty() -> void:
 	f.tiles.clear()
 	f.tiles[Vector2i(4, 6)] = {"kind": "fire", "dir": 0, "age": 0}
 	_check(_roll(Vector2i(4, 5), 1).get_metadata("hit_fire", false), "a ball ending in fire is a fire penalty")
-	_check(not _roll(Vector2i(4, 5), 2).get_metadata("hit_fire", false), "rolling through fire and out is fine")
+	_check(_roll(Vector2i(4, 5), 2).get_metadata("hit_fire", false), "rolling through fire costs too")
+	f.tiles.clear()
+	_check(not _roll(Vector2i(4, 5), 2).get_metadata("hit_fire", false), "no fire on the way, no cost")
 
 
 func _test_fire_spread() -> void:
@@ -150,9 +156,48 @@ func _test_fire_spread() -> void:
 	_check(only_rough, "fire only catches rough / deep rough / trees")
 	_check(f.count("scorched") > 0, "burnt-out fire leaves scorched ground (%d)" % f.count("scorched"))
 	_check(f.count("fire") <= CourseFeatures.FIRE_MAX_BURNING, "fire stays within its cap")
+
+	# Wind: fire only spreads downwind (here toward +z, down the rows)
+	var down := true
+	var spread_any := false
+	for seed in range(10):
+		var g := CourseFeatures.new()
+		var start := Vector2i(4, 10)
+		g.tiles[start] = {"kind": "fire", "dir": 0, "age": 0}
+		var r := RandomNumberGenerator.new()
+		r.seed = seed
+		for i in range(4):
+			g.spread_fire(hole, r, 1, Vector2(0, 1), 2)
+		for cell in g.tiles:
+			if cell != start and g.tiles[cell].kind in ["fire", "scorched"]:
+				spread_any = true
+				if cell.y < start.y:
+					down = false
+	_check(spread_any, "wind still spreads fire")
+	_check(down, "fire only spreads downwind")
+
+	# Later strokes: the same fire spreads further when the hole drags on
+	var calm := _burn(func(_t): return 1)
+	var late := _burn(func(t): return t + 1)
+	_check(late > calm, "fire spreads more the longer the hole goes (%d burning late vs %d)" % [late, calm])
 	for r in range(0, 30):
 		hole.grid[3][r] = FAIRWAY
 		hole.grid[4][r] = FAIRWAY
+
+
+func _burn(turn_of: Callable) -> int:
+	"""Hexes that have burned after 6 strokes from one fire in a strip of rough,
+	averaged over 10 seeds. turn_of(i) = the stroke number passed for step i."""
+	var total := 0
+	for seed in range(10):
+		var f := CourseFeatures.new()
+		f.tiles[Vector2i(4, 10)] = {"kind": "fire", "dir": 0, "age": 0}
+		var rng := RandomNumberGenerator.new()
+		rng.seed = seed
+		for i in range(6):
+			f.spread_fire(hole, rng, turn_of.call(i))
+		total += f.count("fire") + f.count("scorched")
+	return total / 10
 
 
 func _test_tunnel() -> void:

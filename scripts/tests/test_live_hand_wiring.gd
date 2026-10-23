@@ -130,7 +130,13 @@ func _run() -> void:
 	_check(side_center != flag_center, "(h) re-aiming moves the footprint center (%s -> %s)" % [str(flag_center), str(side_center)])
 	_check(tc._hex_distance(side_center, side_target) < tc._hex_distance(flag_center, side_target), "(h) new center is nearer the tapped hex than the old one")
 	_check(shot_manager.current_context.aoe_tiles.has(side_center), "(h) footprint spread contains its center")
-	_check(hex_grid.set_aim_cell(flag_tile), "(h) re-aim back at the flag")
+	# Aim is capped at reach: the flag is accepted only when a club gets there
+	var reach: int = hex_grid.aim_reach()
+	var flag_dist: int = hex_grid.hex_distance(ball_now, flag_tile)
+	_check(hex_grid.set_aim_cell(flag_tile) == (flag_dist <= reach), "(h) re-aim at the flag only if in reach (%d hexes, reach %d)" % [flag_dist, reach])
+	var far_tile: Vector2i = tc._point_along(ball_now, flag_tile, reach + 1)
+	if hex_grid.hex_distance(ball_now, far_tile) > reach:
+		_check(not hex_grid.set_aim_cell(far_tile), "(h) a hex past the longest club's reach can't be picked")
 	var near_tile: Vector2i = tc._point_along(ball_now, flag_tile, 2)
 	hex_grid.set_aim_cell(near_tile)
 	var club_min: int = int(hex_grid.CLUB_STATS.get(hex_grid.current_club, {}).get("band_min", 0))
@@ -151,7 +157,8 @@ func _run() -> void:
 		var card_cost := int(costly.data.effects[0].power_cost)
 		main_ui.emit_signal("modifier_card_selected", costly)
 		_check(hex_grid.planned_cards.has(costly), "(i) playing %s marks it played" % costly.data.card_name)
-		_check(plan_cost.call() == base_cost + card_cost, "(i) %s adds its %d power (%d -> %d)" % [costly.data.card_name, card_cost, base_cost, plan_cost.call()])
+		_check(plan_cost.call() == base_cost, "(i) %s costs no power: cards are paid in Money (%d -> %d)" % [costly.data.card_name, base_cost, plan_cost.call()])
+		_check(hex_grid._planned_cost() == card_cost, "(i) %s puts %d Money on the mat" % [costly.data.card_name, card_cost])
 		main_ui.emit_signal("modifier_card_selected", costly)
 		_check(not hex_grid.planned_cards.has(costly) and plan_cost.call() == base_cost, "(i) tapping it again takes it back")
 	# Shot cards only: utility cards (Fire Extinguisher...) play at once and leave the hand

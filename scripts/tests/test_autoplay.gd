@@ -73,10 +73,16 @@ func _ready() -> void:
 		if hg.run_state.is_final_hole() or hg.run_state.is_blown_out:
 			hg._show_run_complete()  # what "Finish Round" / "New Run" does
 		else:
-			_visit_shop(hole + 1)
+			hg._proceed_to_next_hole()  # what "Next Hole" does
 		# The next hole is generated behind a loading transition
 		if not await _wait(func(): return hg.shot_serial != serial_before and not hg.hole_complete_triggered and _ready_to_shoot(), 15.0):
 			_problems.append("hole %d: next hole never became playable (%s)" % [hole + 2, _state()])
+		# Its flyover ends in the Pro Shop, where the bag is picked
+		else:
+			if await _wait(func(): return hg.shop_panel != null and hg.shop_panel.visible, 25.0):
+				_visit_shop(hole + 2)
+			else:
+				_problems.append("hole %d: the Pro Shop didn't open after the flyover" % (hole + 2))
 
 	_print_balance()
 	print("FEATURES fires seen %d, fire hits %d, ice hexes rolled over %d, ice runs %d, trampoline bounces %d, tunnel rides %d, extinguishers played %d" % [_fires_seen, _fire_hits, _ice_touches, _ice_runs, _bounces, _tunnel_rides, _extinguished])
@@ -215,14 +221,21 @@ func _print_balance() -> void:
 
 
 func _visit_shop(n: int) -> void:
-	"""Next Hole goes through the Pro Shop: buy what we can afford, strip a
-	Strain card, then continue (which starts the next hole)."""
-	hg._open_shop()
-	if hg.shop_panel == null or not hg.shop_panel.visible or hg.run_shop.offers.size() != RunShop.OFFER_COUNT:
+	"""The Pro Shop after a hole's flyover: pick the bag (buying a better club
+	if we can), buy a card we can afford, strip a Strain card, then tee off."""
+	if hg.run_shop.offers.size() != RunShop.OFFER_COUNT:
 		_problems.append("hole %d: Pro Shop didn't open with %d offers" % [n, RunShop.OFFER_COUNT])
-		hg._proceed_to_next_hole()
-		return
 	_shop_visits += 1
+	if not hg.run_shop.club_offers.is_empty() and hg.shop_balance() >= hg.run_shop.club_offers[0].price():
+		var item: ClubItem = hg.run_shop.club_offers[0]
+		hg.shop_buy_club(0)
+		if hg.owned_clubs[item.club] != item:
+			_problems.append("hole %d: buying a club didn't replace ours" % n)
+	for item in hg.shop_clubs():
+		if hg.shop_bag_needed() > 0 and not hg.shop_bag_has(item.club):
+			hg.shop_toggle_bag(item.club)
+	if hg.hole_bag.size() != hg.BAG_SIZE:
+		_problems.append("hole %d: picked %d clubs, not %d" % [n, hg.hole_bag.size(), hg.BAG_SIZE])
 	if OS.get_environment("AUTOPLAY_SHOW_DECK") != "":
 		print("  DECK ", hg.shop_deck_cards().map(func(c): return "%s(%d)" % [c.data.card_id, c.data.card_type]))
 	var balance: int = hg.shop_balance()
@@ -242,6 +255,12 @@ func _visit_shop(n: int) -> void:
 			_removed += 1
 			break
 	hg.shop_continue()
+	if hg.shop_panel.visible:
+		_problems.append("hole %d: Tee off didn't close the Pro Shop" % n)
+	for card in hg._legal_club_cards():
+		var club: int = hg.ClubType.get(card.data.target_club)
+		if club != hg.ClubType.PUTTER and not hg.hole_bag.has(club):
+			_problems.append("hole %d: %s offered but not in the bag" % [n, card.data.card_name])
 
 
 func _read_the_green() -> void:

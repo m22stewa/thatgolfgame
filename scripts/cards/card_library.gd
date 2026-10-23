@@ -446,7 +446,7 @@ func _register_path_card(id: String, card_name: String, description: String, cos
 		return
 	var card = CardData.create(id, card_name, rarity)
 	card.card_type = CardData.CardType.SHOT
-	card.description = "%s (%d power)" % [description, cost] if cost > 0 else description
+	card.description = "%s (costs %d Money)" % [description, cost] if cost > 0 else description
 	var effect := EffectShotShape.new()
 	effect.effect_name = card_name
 	effect.power_cost = cost

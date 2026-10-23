@@ -200,6 +200,37 @@ const CLUB_STATS = {
 # Current selected club
 var current_club: int = -1 # -1 = None
 
+# --- The bag -----------------------------------------------------------------
+# The clubs you own (one per type, each with a quality tier, see ClubItem) and
+# the BAG_SIZE you picked for this hole in the Pro Shop after the flyover. The
+# putter is always in the bag. An empty hole_bag (no pick made) allows every club.
+const BAG_SIZE := 4
+const STARTER_CLUBS := [ClubType.DRIVER, ClubType.WOOD_3, ClubType.IRON_3, ClubType.IRON_6, ClubType.IRON_8, ClubType.PITCHING_WEDGE]
+var owned_clubs: Dictionary = {}    # ClubType -> ClubItem
+var hole_bag: Array[int] = []       # ClubTypes picked for this hole (putter not listed)
+var _bag_pending := false           # open the Pro Shop when the flyover ends
+
+
+func _ensure_owned_clubs() -> void:
+	"""A new run starts with a Common version of each starter club."""
+	if not owned_clubs.is_empty():
+		return
+	for club in STARTER_CLUBS:
+		owned_clubs[club] = ClubItem.create(club, CLUB_STATS[club].name, ClubItem.Tier.COMMON)
+
+
+func get_club_stats(club, fallback: Dictionary = {}) -> Dictionary:
+	"""A club's stats as you own it: the type's CLUB_STATS plus its tier's
+	features (more distance, spin, forgiveness)."""
+	if club == null or not CLUB_STATS.has(club):
+		return fallback
+	var item: ClubItem = owned_clubs.get(club)
+	return item.apply(CLUB_STATS[club]) if item else CLUB_STATS[club]
+
+
+func _in_bag(club: int) -> bool:
+	return club == ClubType.PUTTER or hole_bag.is_empty() or hole_bag.has(club)
+
 func is_club_selected() -> bool:
 	return current_club != -1
 
@@ -406,7 +437,8 @@ var deck_manager: DeckManager = null
 var turn_controller: TurnController = null
 var hole_context: HoleContext = null
 var shoot_button: Button = null  # Turn-based confirm button (lives in MainUI)
-var pending_swing: Dictionary = {}  # a swing grade to use when Shoot fires with no hold (bot / tests)
+var pending_swing: Dictionary = {}
+const FLYOVER_DELAY := 0.4  # seconds into the loading fade before the flyover moves  # a swing grade to use when Shoot fires with no hold (bot / tests)
 var main_ui_ref: Control = null   # MainUI node (owns the 2D hand strip + Shoot button)
 var current_aim_dir: int = 3  # Dominant hex aim direction (0..5); 3 = Down = toward flag
 var turn_aim_target: Vector2i = Vector2i(-1, -1)  # Hex the player is aiming at this shot
@@ -420,6 +452,11 @@ var shot_deck: Array = []       # CardInstances, draw pile
 var shot_discard: Array = []
 var shot_hand: Array = []
 var planned_cards: Dictionary = {}  # CardInstance -> CardModifier, played on this shot
+# Money: what cards cost to play. Every hole starts with MONEY_PER_HOLE; coins
+# add to it, fire takes from it, and the cards on the playmat spend it when
+# the shot is taken.
+const MONEY_PER_HOLE := 6
+var money: int = MONEY_PER_HOLE
 
 
 # UI references for lie info panel
@@ -1205,7 +1242,7 @@ func _caddie_pick() -> Dictionary:
 		var club = ClubType.get(card.data.target_club)
 		if club == null or not _is_club_legal_at(club, ball):
 			continue
-		var stats: Dictionary = CLUB_STATS.get(club, {})
+		var stats: Dictionary = get_club_stats(club, {})
 		var lo: int = maxi(1, int(stats.get("band_min", 1)))
 		var hi: int = int(stats.get("band_max", 0))
 		for x in range(grid_width):
@@ -1255,6 +1292,43 @@ func _caddie_landing_score(center: Vector2i, ring: int) -> float:
 	return score
 
 
+func aim_reach() -> int:
+	"""How far (in hexes) a tap may aim: the club's top distance less what the
+	lie costs. A club you picked yourself sets it; otherwise the caddie will
+	switch clubs to fit the tap, so it's the longest club you can hit from here."""
+	if golf_ball == null:
+		return 0
+	var ball := world_to_grid(golf_ball.position)
+	var lie_cost := 0
+	if lie_system:
+		lie_cost = TurnController.lie_power(int(lie_system.get_lie_data(get_cell(ball.x, ball.y)).get("distance_mod", 0)))
+	var clubs: Array = []
+	if club_chosen_by_player and current_club >= 0:
+		clubs = [current_club]
+	else:
+		for c in CLUB_STATS:
+			if c != ClubType.PUTTER and _is_club_legal_at(c, ball):
+				clubs.append(c)
+	var best := 0
+	for c in clubs:
+		best = maxi(best, int(get_club_stats(c).get("band_max", 0)))
+	return best + lie_cost
+
+
+var _reach_note_at := -10000
+
+
+func _out_of_reach_feedback() -> void:
+	"""A short note when a tap is past the club's reach (at most once a second)."""
+	var now := Time.get_ticks_msec()
+	if now - _reach_note_at < 1000:
+		return
+	_reach_note_at = now
+	if shot_ui and shot_ui.has_method("show_callout"):
+		var club: String = get_club_stats(current_club, {}).get("name", "Your clubs") if club_chosen_by_player else "Your clubs"
+		shot_ui.show_callout("Out of reach for %s" % club)
+
+
 func _suggest_club_for_target() -> void:
 	"""Pick the legal club in the hand that best reaches turn_aim_target: the
 	shortest club whose band covers the distance, else the closest band."""
@@ -1270,7 +1344,7 @@ func _suggest_club_for_target() -> void:
 		var club_type = ClubType.get(card.data.target_club)
 		if club_type == null or not _is_club_legal_at(club_type, ball_tile):
 			continue
-		var stats: Dictionary = CLUB_STATS.get(club_type, {})
+		var stats: Dictionary = get_club_stats(club_type, {})
 		var lo: int = stats.get("band_min", 0)
 		var hi: int = stats.get("band_max", 0)
 		# Inside the band: prefer the shortest (most control). Outside: closest miss.
@@ -1338,20 +1412,33 @@ func _show_turn_footprint() -> void:
 	var carry_yards := int(hex_distance(ball_tile, center) * YARDS_PER_CELL)
 	var plan_blocked: bool = ctx.get_metadata("shot_plan", {}).get("blocked", false)
 	if target_highlight_mesh.has_method("set_distance_and_club"):
-		var caption: String = "Into the trees" if plan_blocked else CLUB_STATS.get(current_club, {}).get("name", "---")
+		var caption: String = "Into the trees" if plan_blocked else get_club_stats(current_club, {}).get("name", "---")
+		if not plan_blocked:
+			caption += {"high": " · High", "low": " · Low"}.get(_flight_kind(ctx), "")
 		target_highlight_mesh.set_distance_and_club(carry_yards, caption)
 	locked_target_pos = get_tile_surface_position(center)
 	var plan: Dictionary = ctx.get_metadata("shot_plan", {})
 	if plan.is_empty():
 		_draw_trajectory_arc(trajectory_mesh, golf_ball.position, locked_target_pos, Color(1.0, 1.0, 1.0, 0.6))
 	else:
-		# Over budget = orange, blocked by trees = red, otherwise white
+		# Over budget = orange, blocked by trees = red, high (Loft) = sky blue
+		# and swelling at its peak, low = sand and thin, otherwise white. Seen
+		# from behind the ball an arc's height barely shows, so the flight
+		# reads by colour and width.
 		var color := Color(1.0, 1.0, 1.0, 0.75)
+		var flight := _flight_kind(ctx)
+		var swell := 1.0
+		if flight == "high":
+			color = Color(0.55, 0.85, 1.0, 0.9)
+			swell = 2.6
+		elif flight == "low":
+			color = Color(0.95, 0.82, 0.55, 0.9)
+			swell = 0.7
 		if plan.blocked:
 			color = Color(1.0, 0.35, 0.3, 0.85)
 		elif int(plan.over) > 0:
 			color = Color(1.0, 0.65, 0.2, 0.85)
-		_draw_path_ribbon(trajectory_mesh, plan.points, golf_ball.position.y, locked_target_pos.y, color, 0.0 if ctx.get_metadata("all_ground", false) else trajectory_height)
+		_draw_path_ribbon(trajectory_mesh, plan.points, golf_ball.position.y, locked_target_pos.y, color, 0.0 if ctx.get_metadata("all_ground", false) else _flight_arc(trajectory_height, ctx), swell)
 	trajectory_mesh.visible = true
 	# The straight ground shadow only matches an unshaped arc
 	trajectory_shadow_mesh.visible = plan.is_empty()
@@ -1361,8 +1448,35 @@ func _show_turn_footprint() -> void:
 		shot_ui.update_target_info(get_cell(center.x, center.y), carry_yards)
 
 
-func _draw_path_ribbon(mesh: MeshInstance3D, points: Array, start_y: float, end_y: float, color: Color, arc_height: float) -> void:
-	"""Ribbon along a ShotPlan's sampled flight (world x,z), lifted into an arc."""
+const LOFT_ARC := 2.0  # Loft cards: the flight peaks twice as high (it clears the trees)
+const LOW_ARC := 0.45  # Knockdown / wind-proof cards: a low, boring flight
+
+
+func _flight_kind(ctx) -> String:
+	"""'high' (Loft), 'low' (Knockdown and other wind-proof cards) or ''."""
+	if ctx == null:
+		return ""
+	if ctx.get_metadata("loft", false):
+		return "high"
+	if ctx.get_metadata("ignore_wind", false):
+		return "low"
+	return ""
+
+
+func _flight_arc(base: float, ctx) -> float:
+	"""How high the flight peaks once the played cards have their say; used by
+	the preview and the ball's flight alike."""
+	match _flight_kind(ctx):
+		"high":
+			return base * LOFT_ARC
+		"low":
+			return base * LOW_ARC
+	return base
+
+
+func _draw_path_ribbon(mesh: MeshInstance3D, points: Array, start_y: float, end_y: float, color: Color, arc_height: float, swell: float = 1.0) -> void:
+	"""Ribbon along a ShotPlan's sampled flight (world x,z), lifted into an arc.
+	swell: how much wider (or thinner, < 1) it gets toward the peak."""
 	var im: ImmediateMesh = mesh.mesh
 	im.clear_surfaces()
 	if points.size() < 2:
@@ -1377,7 +1491,7 @@ func _draw_path_ribbon(mesh: MeshInstance3D, points: Array, start_y: float, end_
 		var p: Vector2 = points[i]
 		var nxt: Vector2 = points[mini(i + 1, last)] if i < last else p + (p - points[i - 1])
 		var dir := (nxt - p).normalized()
-		var side := Vector3(-dir.y, 0.0, dir.x) * ribbon_width
+		var side := Vector3(-dir.y, 0.0, dir.x) * ribbon_width * (1.0 + (swell - 1.0) * sin(t * PI))
 		var center := Vector3(p.x, lerpf(start_y, end_y, t) + sin(t * PI) * arc_height + 0.08, p.y)
 		im.surface_add_vertex(center - side)
 		im.surface_add_vertex(center + side)
@@ -1425,6 +1539,7 @@ func _on_shoot_pressed() -> void:
 	var plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {}) if shot_manager else {}
 	if int(plan.get("over", 0)) > 0:
 		_add_strain_cards(int(plan.over))
+	money -= _planned_cost()  # the playmat's cards are paid for as the shot is struck
 	turn_controller.execute_shot()
 
 
@@ -1446,7 +1561,7 @@ func _shoot_block_reason() -> String:
 	if not _is_club_legal_at(current_club, ball):
 		if get_cell(ball.x, ball.y) == SurfaceType.GREEN or current_club == ClubType.PUTTER:
 			return "Putter only\non the green"
-		return "%s can't be\nhit from %s" % [CLUB_STATS.get(current_club, {}).get("name", "Club"), _surface_to_lie_name(get_cell(ball.x, ball.y)).capitalize().replace("_", " ")]
+		return "%s can't be\nhit from %s" % [get_club_stats(current_club, {}).get("name", "Club"), _surface_to_lie_name(get_cell(ball.x, ball.y)).capitalize().replace("_", " ")]
 	return ""
 
 
@@ -1467,13 +1582,33 @@ func _club_subtitles(cards: Array) -> Dictionary:
 	"""Carry range per club card, e.g. "220-260 yd"."""
 	var subs := {}
 	for card in cards:
-		var stats: Dictionary = CLUB_STATS.get(ClubType.get(card.data.target_club), {})
+		var stats: Dictionary = get_club_stats(ClubType.get(card.data.target_club), {})
 		if not stats.is_empty():
 			subs[card] = "%d-%d yd" % [int(stats.get("band_min", 0) * YARDS_PER_CELL), int(stats.get("band_max", 0) * YARDS_PER_CELL)]
 	return subs
 
 
 func _is_club_legal_at(club: int, ball_tile: Vector2i) -> bool:
+	"""A club can be hit when it's in this hole's bag and the lie allows it. If
+	the lie allows none of the bag's clubs (say, sand with no wedge picked),
+	the shortest club in the bag can punch out instead, so you're never stuck."""
+	if not _in_bag(club):
+		return false
+	if _lie_allows_club(club, ball_tile):
+		return true
+	if hole_bag.is_empty() or get_cell(ball_tile.x, ball_tile.y) == SurfaceType.GREEN:
+		return false
+	for c in hole_bag:
+		if _lie_allows_club(c, ball_tile):
+			return false
+	var shortest: int = hole_bag[0]
+	for c in hole_bag:
+		if int(CLUB_STATS[c].band_max) < int(CLUB_STATS[shortest].band_max):
+			shortest = c
+	return club == shortest
+
+
+func _lie_allows_club(club: int, ball_tile: Vector2i) -> bool:
 	"""Lie legality for a club: Putter only (and always) on GREEN, otherwise the
 	lie's allowed_clubs."""
 	var ball_surface := get_cell(ball_tile.x, ball_tile.y)
@@ -1552,7 +1687,7 @@ func _swing_difficulty(plan: Dictionary) -> Vector2:
 	if golf_ball:
 		var ball := world_to_grid(golf_ball.position)
 		green -= {SurfaceType.ROUGH: 0.05, SurfaceType.DEEP_ROUGH: 0.1, SurfaceType.SAND: 0.1, SurfaceType.TREE: 0.12}.get(get_cell(ball.x, ball.y), 0.0)
-	var band_max: int = CLUB_STATS.get(current_club, {}).get("band_max", 0)
+	var band_max: int = get_club_stats(current_club, {}).get("band_max", 0)
 	if band_max >= 20:
 		green -= 0.06
 	elif band_max >= 15:
@@ -1575,7 +1710,7 @@ func _swing_difficulty(plan: Dictionary) -> Vector2:
 func _this_shot_text(plan: Dictionary) -> String:
 	"""THIS SHOT, pencilled: "3 Iron + Fade + Stop -> 150-170"."""
 	var parts: Array[String] = []
-	parts.append(CLUB_STATS.get(current_club, {}).get("name", "—"))
+	parts.append(get_club_stats(current_club, {}).get("name", "—"))
 	var cards: Array = putt_cards.keys() if putting_active else planned_cards.keys()
 	for card in cards:
 		parts.append(card.get_display_name())
@@ -1584,6 +1719,10 @@ func _this_shot_text(plan: Dictionary) -> String:
 		var lo := maxi(0, int(plan.carry) - int(plan.ring))
 		var hi := int(plan.carry) + int(plan.ring)
 		text += "  →  %d–%d" % [int(lo * YARDS_PER_CELL), int(hi * YARDS_PER_CELL)]
+	elif putting_active and green_board and golf_ball:
+		var ball := _ball_small()
+		text += "  →  %d of %d hexes · cup %d" % [GreenBoard.distance(ball, putt_target),
+			int(_putt_opts().reach), GreenBoard.distance(ball, green_board.cup)]
 	return text
 
 
@@ -1612,6 +1751,8 @@ func _refresh_tray() -> void:
 	var points: int = currency_manager.get_balance() if currency_manager else 0
 	var run_text := "RUN %s  ·  BLOWOUT %s" % [run_state.format_vs_par(run_state.get_live_vs_par()), run_state.format_vs_par(run_state.blowout_limit)]
 	main_ui_ref.set_tray_info(hand.size(), left, total, points, run_text)
+	if main_ui_ref.has_method("set_money"):
+		main_ui_ref.set_money(money, 0 if putting_active else _planned_cost())
 
 
 # --- FEAT-003: deal the hand into the live hand UI at hole start ----------
@@ -1643,6 +1784,7 @@ func _deal_hand_for_current_hole() -> void:
 	_reset_shot_deck_for_hole()
 	_begin_shot()
 	_update_shoot_button_state()
+	_play_hole_flyover()
 
 
 func _on_club_card_selected(card_instance) -> void:
@@ -1669,12 +1811,20 @@ func _on_modifier_card_selected(card_instance) -> void:
 		return
 	var utility := _utility_action(card_instance.data)
 	if utility != "" and shot_hand.has(card_instance):
+		if _card_cost(card_instance) > money - _planned_cost():
+			if main_ui_ref and main_ui_ref.has_method("flash_money"):
+				main_ui_ref.flash_money()
+			return
 		_play_utility_card(card_instance, utility)
 		return
 	if planned_cards.has(card_instance):
 		if modifier_manager:
 			modifier_manager.remove_modifier(planned_cards[card_instance])
 		planned_cards.erase(card_instance)
+	elif _card_cost(card_instance) > money - _planned_cost():
+		if main_ui_ref and main_ui_ref.has_method("flash_money"):
+			main_ui_ref.flash_money()
+		return
 	elif card_instance.data.card_type != CardData.CardType.NEGATIVE and planned_cards.size() < MAX_PLANNED_CARDS:
 		var mod := CardModifier.new(card_instance)
 		if modifier_manager:
@@ -1683,6 +1833,26 @@ func _on_modifier_card_selected(card_instance) -> void:
 	if main_ui_ref and main_ui_ref.has_method("set_card_pressed"):
 		main_ui_ref.set_card_pressed(card_instance, planned_cards.has(card_instance))
 	rebuild_turn_plan()
+
+
+static func _card_cost(card_instance) -> int:
+	return ShotCardFace.cost_for(card_instance.data, card_instance.upgrade_level)
+
+
+func _planned_cost() -> int:
+	"""Money the cards on the playmat will spend when the shot is taken."""
+	var total := 0
+	for card in planned_cards:
+		total += _card_cost(card)
+	return total
+
+
+func _change_money(amount: int, reason: String = "") -> void:
+	"""Coins add, fire takes (never below 0); shows a callout when reason is set."""
+	money = maxi(0, money + amount)
+	if reason != "" and shot_ui and shot_ui.has_method("show_callout"):
+		shot_ui.show_callout("%s  %+d Money" % [reason, amount])
+	_refresh_tray()
 
 
 func _utility_action(data: CardData) -> String:
@@ -1708,11 +1878,14 @@ func _play_utility_card(card_instance, action: String) -> void:
 						course_features.tiles.erase(cell)
 		if feature_overlay:
 			feature_overlay.show_features(course_features, self)
+	money -= _card_cost(card_instance)
 	shot_hand.erase(card_instance)
 	shot_discard.append(card_instance)
 	if main_ui_ref and main_ui_ref.has_method("set_hand"):
 		var clubs := _legal_club_cards()
 		main_ui_ref.set_hand(clubs, shot_hand, _club_subtitles(clubs))
+		for card in planned_cards:
+			main_ui_ref.set_card_pressed(card, true)
 	rebuild_turn_plan()
 	_refresh_hole_label()
 
@@ -1739,7 +1912,39 @@ func _begin_shot() -> void:
 	else:
 		_auto_aim_new_shot()
 	_update_green_view()
+	_frame_camera_for_shot()
 	_refresh_hole_label()
+
+
+func _frame_camera_for_shot() -> void:
+	"""Glide the camera to the ball, facing the shot (the green view frames
+	putts itself)."""
+	if hole_viewer == null or not hole_viewer.has_method("frame_shot") or golf_ball == null or _ball_on_green():
+		return
+	var aim := turn_aim_target if turn_aim_target.x >= 0 else flag_position
+	hole_viewer.frame_shot(golf_ball.global_position, to_global(get_tile_world_position(aim)))
+
+
+func _play_hole_flyover() -> void:
+	"""New hole: fly the hole tee to green and back, ending framed for the
+	opening shot. Starts while the loading screen fades out."""
+	if hole_viewer == null or not hole_viewer.has_method("play_flyover") or golf_ball == null or flag_position.x < 0:
+		return
+	var tee: Vector3 = golf_ball.global_position
+	var green := to_global(get_tile_world_position(flag_position))
+	var aim := turn_aim_target if turn_aim_target.x >= 0 else flag_position
+	# When the flyover ends, the Pro Shop opens to pick this hole's bag
+	_bag_pending = true
+	if hole_viewer.has_signal("flyover_finished") and not hole_viewer.flyover_finished.is_connected(_on_flyover_finished):
+		hole_viewer.flyover_finished.connect(_on_flyover_finished)
+	hole_viewer.play_flyover(tee, green, hole_viewer.shot_pose(tee, to_global(get_tile_world_position(aim))), FLYOVER_DELAY)
+
+
+func _on_flyover_finished() -> void:
+	# Not once the hole is under way (a shot taken during the flyover)
+	if _bag_pending and (run_state == null or run_state.strokes_this_hole == 0):
+		_open_shop()
+	_bag_pending = false
 
 
 func _reset_shot_deck_for_hole() -> void:
@@ -1887,7 +2092,7 @@ func get_shape_aoe_offset() -> int:
 func _on_club_button_pressed(club_type: ClubType) -> void:
 	"""Handle club button click - select the club"""
 	current_club = club_type
-	trajectory_height = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
+	trajectory_height = get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
 	# _update_club_button_visuals() # Deprecated
 	_hide_range_preview()
 	_update_dim_overlays()  # Update dim overlays for new club range
@@ -1896,7 +2101,7 @@ func _on_club_button_pressed(club_type: ClubType) -> void:
 func _on_club_button_hover(club_type: ClubType) -> void:
 	"""Show range preview when hovering over a club button"""
 	is_previewing_range = true
-	var max_dist = CLUB_STATS.get(club_type, CLUB_STATS[ClubType.IRON_7]).distance
+	var max_dist = get_club_stats(club_type, CLUB_STATS[ClubType.IRON_7]).distance
 	_show_range_preview(max_dist)
 
 
@@ -2000,7 +2205,7 @@ func _get_club_name(club: ClubType) -> String:
 
 func get_current_club_distance() -> int:
 	"""Get max distance in tiles for current club, modified by current lie"""
-	var base_distance = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).distance
+	var base_distance = get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).distance
 	
 	# Apply lie distance modifier if we have a shot context with lie info
 	if shot_manager and shot_manager.current_context:
@@ -2012,7 +2217,7 @@ func get_current_club_distance() -> int:
 
 func get_current_club_base_distance() -> int:
 	"""Get unmodified max distance in tiles for current club"""
-	return CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).distance
+	return get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).distance
 
 
 func get_club_for_tile_distance(tile_distance: int) -> Dictionary:
@@ -2041,7 +2246,7 @@ func get_club_for_tile_distance(tile_distance: int) -> Dictionary:
 		if club_type == ClubType.DRIVER and not ball_on_tee:
 			continue
 		
-		var stats = CLUB_STATS[club_type]
+		var stats = get_club_stats(club_type)
 		# Club can reach if its distance >= tile distance
 		if stats.distance >= tile_distance:
 			# Prefer the club with smallest distance that can still reach (shorter = more control)
@@ -2075,7 +2280,7 @@ func get_max_club_distance() -> int:
 
 func get_current_club_loft() -> int:
 	"""Get loft value for current club (1-5 scale)"""
-	return CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).loft
+	return get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).loft
 
 
 func get_current_shot_stats() -> Dictionary:
@@ -2093,7 +2298,7 @@ func get_current_shot_stats() -> Dictionary:
 			if club_info and club_info.has("type"):
 				club_type = club_info.type
 	
-	var club_stats = CLUB_STATS.get(club_type, CLUB_STATS[ClubType.IRON_7])
+	var club_stats = get_club_stats(club_type, CLUB_STATS[ClubType.IRON_7])
 	
 	# Base stats from club
 	var base = {
@@ -2146,7 +2351,7 @@ func get_current_shot_stats() -> Dictionary:
 func _set_club(club_type: ClubType) -> void:
 	"""Set the current club and update visuals."""
 	current_club = club_type
-	trajectory_height = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
+	trajectory_height = get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
 	_update_club_button_visuals()
 	_update_dim_overlays()
 	_refresh_stats_panel()
@@ -2207,13 +2412,16 @@ func is_tile_available(cell: Vector2i) -> bool:
 	return tile_dist <= max_dist and is_forward_from_ball(cell)
 
 
+const SHOW_OUT_OF_REACH_DIM := false  # the dark overlay past the club's reach (off: hidden, kept)
+
+
 func _update_dim_overlays() -> void:
 	"""Create or update dim overlays for unavailable tiles (only forward, out of range).
 	   Shows overlays for tiles beyond the max club range (Driver distance)."""
 	# Clear existing overlays
 	_clear_dim_overlays()
 	
-	if golf_ball == null:
+	if golf_ball == null or not SHOW_OUT_OF_REACH_DIM:
 		return
 	
 	var ball_tile = world_to_grid(golf_ball.position)
@@ -2395,7 +2603,7 @@ func _try_lock_target(cell: Vector2i) -> void:
 		var club_info = get_club_for_tile_distance(tile_dist)
 		if club_info and club_info.has("type"):
 			current_club = club_info.type
-			trajectory_height = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
+			trajectory_height = get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).arc_height
 	
 	# Calculate locked target position
 	var width = TILE_SIZE
@@ -2582,6 +2790,9 @@ func set_aim_cell(cell: Vector2i) -> bool:
 			return false
 		if cell == world_to_grid(golf_ball.position):
 			return false
+		if hex_distance(world_to_grid(golf_ball.position), cell) > aim_reach():
+			_out_of_reach_feedback()
+			return false  # past what the club can reach
 		turn_aim_target = cell
 		locked_cell = cell
 		target_locked = true
@@ -2789,6 +3000,9 @@ func set_external_camera(cam: Camera3D, vp: SubViewport, viewer: Node = null) ->
 		# Tell hole_viewer about putting system
 		if hole_viewer.has_method("set_putting_system"):
 			hole_viewer.set_putting_system(putting_system)
+		# The opening hole was dealt before the viewer registered: fly it now
+		if run_state and run_state.strokes_this_hole == 0 and golf_ball:
+			_play_hole_flyover.call_deferred()
 
 
 # Display debug information about a tile in the info label
@@ -3316,6 +3530,7 @@ func _start_new_shot() -> void:
 	if lie_view and lie_view.has_method("set_lie"):
 		var lie_name = _surface_to_lie_name(ball_surface)
 		lie_view.set_lie(lie_name)
+	_show_lie_in_tray(ball_surface)
 	
 	# Check if ball is in the hole - don't start a new shot, trigger hole complete.
 	# On the green board only the cup's own small hex is the hole.
@@ -3450,6 +3665,7 @@ func _on_shot_started(context: ShotContext) -> void:
 		if lie_view and lie_view.has_method("set_lie"):
 			var lie_name = lie_info.get("lie_name", "FAIRWAY")
 			lie_view.set_lie(lie_name)
+		_show_lie_in_tray(int(lie_info.get("surface_type", SurfaceType.FAIRWAY)))
 		
 		# Also update shot_ui if it has the method
 		if shot_ui and shot_ui.has_method("update_lie_info"):
@@ -3656,23 +3872,29 @@ func _on_shot_completed(context: ShotContext) -> void:
 			_trigger_hole_complete()
 		else:
 			# Only a ball that finishes on the cup drops (fast balls run over it)
+			# Roll each run of neighbouring hexes on one smooth curve; a
+			# trampoline bounce hops between runs
 			var prev := carry_tile
+			var run: Array[Vector3] = [golf_ball.position]
 			for t in context.get_metadata("roll_tiles", []):
 				if hex_distance(prev, t) > 1:  # a trampoline bounce
+					await _animate_ball_smooth_roll(run, 0.16)
 					await _animate_ball_hop(golf_ball.position, get_tile_surface_position(t))
+					run = [golf_ball.position]
 				else:
-					await _animate_ball_roll(golf_ball.position, get_tile_surface_position(t), false)
+					run.append(get_tile_surface_position(t))
 				prev = t
+			await _animate_ball_smooth_roll(run, 0.16)
 			if context.landing_tile == flag_position:
 				_trigger_hole_complete()
 			elif context.get_metadata("hit_water", false):  # blown or bounced into water
 				hit_water = true
 				await _handle_water_hazard()
 			elif context.get_metadata("hit_fire", false):
-				hit_water = true  # same penalty: a stroke, and back where it was hit from
-				await _handle_water_hazard()
+				_change_money(-1, "Fire")  # burnt: costs Money, the ball plays on from where it stopped
 		if golf_ball:
 			golf_ball.set_meta("is_spinning", false)
+			golf_ball.set_meta("is_rolling", false)
 	
 	# Animate ball flight to landing position, then bounces
 	elif golf_ball and context.landing_tile.x >= 0:
@@ -3686,7 +3908,7 @@ func _on_shot_completed(context: ShotContext) -> void:
 			hit_oob = true
 		
 		# Get base bounce count from club (drivers bounce more, wedges less)
-		var num_bounces = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).roll
+		var num_bounces = get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).roll
 		
 		# Calculate carry position (num_bounces tiles before target)
 		var carry_tile = _get_carry_position(ball_tile, context.landing_tile, num_bounces)
@@ -3732,6 +3954,7 @@ func _on_shot_completed(context: ShotContext) -> void:
 		# Stop ball spin after all bouncing is complete
 		if golf_ball:
 			golf_ball.set_meta("is_spinning", false)
+			golf_ball.set_meta("is_rolling", false)
 	
 	# Mark animation as ended
 	if shot_manager:
@@ -3896,6 +4119,7 @@ func _trigger_hole_complete() -> void:
 	# Stop ball spin
 	if golf_ball:
 		golf_ball.set_meta("is_spinning", false)
+		golf_ball.set_meta("is_rolling", false)
 	
 	# Hide trajectory
 	trajectory_mesh.visible = false
@@ -3984,15 +4208,17 @@ func _on_next_hole_requested() -> void:
 		_show_run_complete()
 		return
 	
-	# Show shop between holes
-	_open_shop()
+	# The Pro Shop opens after the next hole's flyover
+	_proceed_to_next_hole()
 
 
 func _open_shop() -> void:
-	"""Open the Pro Shop between holes (points buy, remove and upgrade cards)."""
+	"""Open the Pro Shop at the start of a hole, after its flyover: pick the
+	BAG_SIZE clubs for the hole; buy clubs and cards, remove and upgrade cards
+	with points."""
 	if main_ui_ref == null or currency_manager == null:
-		_proceed_to_next_hole()
 		return
+	_ensure_owned_clubs()
 	if run_shop == null:
 		run_shop = RunShop.new()
 	if shop_panel == null:
@@ -4001,10 +4227,107 @@ func _open_shop() -> void:
 		main_ui_ref.add_child(shop_panel)
 	var rng: RandomNumberGenerator = hole_context.rng if hole_context else RandomNumberGenerator.new()
 	run_shop.roll_offers(rng)
-	shop_panel.open(run_shop, self, main_ui_ref, (run_state.current_hole + 1) if run_state else 1)
+	run_shop.roll_club_offers(rng, owned_clubs)
+	# Start from last hole's picks (still owned), topped up longest first
+	var keep: Array[int] = []
+	for c in hole_bag:
+		if owned_clubs.has(c) and keep.size() < BAG_SIZE:
+			keep.append(c)
+	hole_bag = keep
+	shop_panel.open(run_shop, self, main_ui_ref, run_state.current_hole if run_state else 1)
 
 
 # --- Pro Shop actions (called by ShopPanel) ---
+
+func shop_clubs() -> Array:
+	"""Owned clubs, longest first (the putter isn't listed)."""
+	var out: Array = owned_clubs.values()
+	out.sort_custom(func(a, b): return int(CLUB_STATS[a.club].band_max) > int(CLUB_STATS[b.club].band_max))
+	return out
+
+
+func shop_hole_info() -> Dictionary:
+	"""The Pro Shop's header: {title: "HOLE 3  ·  PAR 4  ·  412 YDS", details}."""
+	var hole_no: int = run_state.current_hole if run_state else 1
+	var yards := 0
+	if golf_ball and flag_position.x >= 0:
+		yards = _calculate_distance_yards(world_to_grid(golf_ball.position), flag_position)
+	var details: Array[String] = []
+	if wind_system and wind_system.enabled and wind_system.strength > 0:
+		details.append("WIND %s %d KM/H" % [wind_system.get_strength_name().to_upper(), int(wind_system.speed_kmh)])
+	else:
+		details.append("NO WIND")
+	if course_features:
+		var fires := course_features.count("fire")
+		if fires > 0:
+			details.append("FIRE IN THE ROUGH")
+	var water := false
+	var sand := false
+	for x in range(grid_width):
+		for y in range(grid_height):
+			var s := get_cell(x, y)
+			water = water or s == SurfaceType.WATER
+			sand = sand or s == SurfaceType.SAND
+	if water:
+		details.append("WATER IN PLAY")
+	if sand:
+		details.append("BUNKERS")
+	return {"title": "HOLE %d  ·  PAR %d  ·  %d YDS" % [hole_no, current_par, yards], "details": "  ·  ".join(details)}
+
+
+func shop_putter() -> ClubItem:
+	return ClubItem.create(ClubType.PUTTER, "Putter", ClubItem.Tier.COMMON)
+
+
+func shop_bag_size() -> int:
+	return BAG_SIZE
+
+
+func shop_club_yards(club: int) -> String:
+	if club == ClubType.PUTTER:
+		return ""
+	var st := get_club_stats(club)
+	return "%d–%d yd" % [int(st.get("band_min", 0) * YARDS_PER_CELL), int(st.get("band_max", 0) * YARDS_PER_CELL)]
+
+
+func shop_bag_has(club: int) -> bool:
+	return hole_bag.has(club)
+
+
+func shop_bag_needed() -> int:
+	"""Clubs still to pick before teeing off."""
+	return mini(BAG_SIZE, owned_clubs.size()) - hole_bag.size()
+
+
+func shop_toggle_bag(club: int) -> void:
+	if hole_bag.has(club):
+		hole_bag.erase(club)
+	elif hole_bag.size() < BAG_SIZE:
+		hole_bag.append(club)
+	shop_panel.refresh()
+
+
+func shop_buy_club(index: int) -> void:
+	"""A better club replaces the one of its type (and keeps its bag spot)."""
+	if index < 0 or index >= run_shop.club_offers.size():
+		return
+	var item: ClubItem = run_shop.club_offers[index]
+	if not _shop_spend(item.price(), "Bought %s %s" % [item.tier_name().capitalize(), item.club_name]):
+		return
+	owned_clubs[item.club] = item
+	run_shop.club_offers.remove_at(index)
+	_refresh_club_tiers()
+	shop_panel.refresh()
+
+
+func _refresh_club_tiers() -> void:
+	"""Tier colours on the tray's club list."""
+	if main_ui_ref == null:
+		return
+	var colors := {}
+	for club in owned_clubs:
+		colors[ClubType.keys()[club]] = owned_clubs[club].color()
+	main_ui_ref.set("club_tier_colors", colors)
 
 func shop_balance() -> int:
 	return currency_manager.get_balance() if currency_manager else 0
@@ -4012,6 +4335,7 @@ func shop_balance() -> int:
 
 func shop_deck_cards() -> Array:
 	"""Every card in the run's decks (shot + green); Strain first."""
+	_ensure_putt_deck()
 	var cards: Array = []
 	for pile in [shot_deck, shot_discard, shot_hand, putt_deck, putt_discard, putt_hand]:
 		cards.append_array(pile)
@@ -4084,8 +4408,18 @@ func shop_upgrade(card) -> void:
 
 
 func shop_continue() -> void:
+	"""Tee off with the picked bag: the club list shows only those clubs, and
+	the caddie re-picks the opening shot from them."""
+	if shop_bag_needed() > 0:
+		return
 	shop_panel.visible = false
-	_proceed_to_next_hole()
+	_refresh_club_tiers()
+	if main_ui_ref and main_ui_ref.has_method("set_hand"):
+		var clubs := _legal_club_cards()
+		main_ui_ref.set_hand(clubs, shot_hand, _club_subtitles(clubs))
+	_auto_aim_new_shot()
+	_update_shoot_button_state()
+	_refresh_tray()
 
 
 func _proceed_to_next_hole() -> void:
@@ -4167,13 +4501,19 @@ func _begin_putt() -> void:
 	set_putt_target(green_board.cup)
 
 
-func _deal_putt_hand() -> void:
-	"""Discard the last green hand and draw PUTT_HAND_SIZE fresh cards."""
-	putt_cards.clear()
+func _ensure_putt_deck() -> void:
+	"""The green deck is built the first time it's needed (first putt or the
+	first Pro Shop visit)."""
 	if putt_deck.is_empty() and putt_discard.is_empty() and putt_hand.is_empty() and CardLibrary.instance:
 		for id in PUTT_DECK_IDS:
 			putt_deck.append(CardInstance.create_from_data(CardLibrary.instance.get_card(id)))
 		_shuffle_cards(putt_deck)
+
+
+func _deal_putt_hand() -> void:
+	"""Discard the last green hand and draw PUTT_HAND_SIZE fresh cards."""
+	putt_cards.clear()
+	_ensure_putt_deck()
 	putt_discard.append_array(putt_hand)
 	putt_hand.clear()
 	for i in range(PUTT_HAND_SIZE):
@@ -4238,6 +4578,9 @@ func set_putt_target(small: Vector2i) -> void:
 	_draw_path_ribbon(trajectory_mesh, points, golf_ball.position.y, end_y, color, 0.0)
 	trajectory_mesh.visible = true
 	green_overlay.show_target(putt_target, self)
+	green_overlay.show_gauge(putt_target, self, GreenBoard.distance(ball, putt_target), opts.reach,
+		GreenBoard.distance(ball, green_board.cup))
+	green_overlay.show_reach(ball, opts.reach, self)
 	_update_shoot_button_state()
 
 
@@ -4271,18 +4614,15 @@ func _execute_putt() -> void:
 	var my_serial := shot_serial
 	if shot_manager:
 		shot_manager.start_animation()
-	var speed: float = shot_manager.get_animation_speed() if shot_manager else 1.0
+	var route: Array[Vector3] = [golf_ball.position]
 	for a in result.path:
-		var to: Vector3
 		if green_board.tiles.has(a):
-			to = green_overlay.surface_point(a, self) + Vector3(0, BALL_RADIUS_OFFSET, 0)
+			route.append(green_overlay.surface_point(a, self) + Vector3(0, BALL_RADIUS_OFFSET, 0))
 		else:
 			# Off the green: the ball stops on the fringe course hex it ran onto
 			var w := GreenBoard.to_world(a)
-			to = get_tile_surface_position(world_to_grid(Vector3(w.x, 0.0, w.y)))
-		current_ball_tween = create_tween()
-		current_ball_tween.tween_property(golf_ball, "position", to, 0.12 / speed)
-		await current_ball_tween.finished
+			route.append(get_tile_surface_position(world_to_grid(Vector3(w.x, 0.0, w.y))))
+	await _animate_ball_smooth_roll(route, 0.11)
 	if shot_manager:
 		shot_manager.end_animation()
 	if my_serial != shot_serial:
@@ -4294,8 +4634,8 @@ func _execute_putt() -> void:
 		if run_state:
 			run_state.add_coins(1)
 		_award_points(TrickShotDetector.COIN_POINTS, "Coin")
-	if result.coins.size() > 0 and shot_ui:
-		shot_ui.show_bonus("Coin x%d" % result.coins.size() if result.coins.size() > 1 else "Coin", TrickShotDetector.COIN_POINTS * result.coins.size())
+	if result.coins.size() > 0:
+		_change_money(result.coins.size(), "Coin" if result.coins.size() == 1 else "Coins")
 	if result.holed:
 		var points: int = result.touched * PUTT_POINTS_PER_HEX
 		_award_points(points, "Putt: %d hexes" % result.touched)
@@ -4346,6 +4686,21 @@ func _place_course_features() -> void:
 		turn_controller.course_features = course_features
 
 
+func _show_lie_in_tray(surface: int) -> void:
+	"""The tray's LIE box: where the ball sits and what that does to the shot."""
+	if main_ui_ref == null or not main_ui_ref.has_method("set_lie") or lie_system == null:
+		return
+	var lie: Dictionary = lie_system.get_lie_data(surface)
+	var effects: Array[String] = []
+	if int(lie.get("distance_mod", 0)) != 0:
+		effects.append("%+d CARRY" % int(lie.distance_mod))
+	if int(lie.get("spread_mod", 0)) != 0:
+		effects.append("%+d RING" % int(lie.spread_mod))
+	if int(lie.get("roll_mod", 0)) != 0:
+		effects.append("%+d ROLL" % int(lie.roll_mod))
+	main_ui_ref.set_lie(lie.get("display_name", "Fairway"), "  ·  ".join(effects) if not effects.is_empty() else "CLEAN LIE")
+
+
 func _spread_fire_for_turn() -> void:
 	"""Fire spreads once per stroke taken on this hole."""
 	if course_features == null or run_state == null:
@@ -4354,12 +4709,16 @@ func _spread_fire_for_turn() -> void:
 	if strokes == 0 or strokes == _fire_spread_at_stroke:
 		return
 	_fire_spread_at_stroke = strokes
-	if course_features.spread_fire(self, _feature_rng):
+	var wind: Vector2 = wind_system.get_direction_vector() if wind_system else Vector2.ZERO
+	var wind_strength: int = wind_system.strength if wind_system else 0
+	if course_features.spread_fire(self, _feature_rng, strokes, wind, wind_strength):
 		feature_overlay.show_features(course_features, self)
 
 
 func _on_run_hole_started() -> void:
-	"""New hole: clear the points log and the trick streak."""
+	"""New hole: clear the points log and the trick streak; Money back to
+	MONEY_PER_HOLE."""
+	money = MONEY_PER_HOLE
 	_place_course_features()
 	_green_overlay_dirty = true
 	if green_overlay:
@@ -4391,8 +4750,7 @@ func _collect_coins_at_ball() -> void:
 		run_state.add_coins(count)
 	var points := count * TrickShotDetector.COIN_POINTS
 	_award_points(points, "Coin x%d" % count if count > 1 else "Coin")
-	if shot_ui:
-		shot_ui.show_bonus("Coin", points)
+	_change_money(count, "Coin" if count == 1 else "Coins")
 
 
 func _show_blowout() -> void:
@@ -4449,6 +4807,8 @@ func _show_run_complete() -> void:
 	shot_deck.clear()
 	shot_discard.clear()
 	shot_hand.clear()
+	owned_clubs.clear()
+	hole_bag.clear()
 	putt_deck.clear()
 	putt_discard.clear()
 	putt_hand.clear()
@@ -4508,6 +4868,7 @@ func _regenerate_hole() -> void:
 	# Set initial lie view to TEE
 	if lie_view and lie_view.has_method("set_lie"):
 		lie_view.set_lie("TEE")
+	_show_lie_in_tray(SurfaceType.TEE)
 	
 	# Start a fresh shot
 	_start_new_shot()
@@ -4690,16 +5051,8 @@ func _animate_ball_bounce_to_tile(start_pos: Vector3, end_pos: Vector3, bounce_n
 	var base_duration = clamp(distance * 0.15, 0.2, 0.5) / speed_mult
 	var duration = base_duration * (0.7 + 0.3 * height_factor)
 	
-	# Keep ball spinning during bounces
-	var travel_dir = (end_pos - start_pos).normalized()
-	var spin_axis = travel_dir.cross(Vector3.UP).normalized()
-	if spin_axis.length() < 0.1:
-		spin_axis = Vector3.RIGHT
-	
-	var spin_speed = 8.0 * height_factor * speed_mult  # Spin slows down with bounces
-	golf_ball.set_meta("spin_axis", spin_axis)
-	golf_ball.set_meta("spin_speed", spin_speed)
-	golf_ball.set_meta("is_spinning", true)
+	# The ball turns forward with the ground it covers between bounces
+	_set_ball_rolling(true)
 	
 	# Animate the bounce arc
 	current_ball_tween = create_tween()
@@ -4892,18 +5245,8 @@ func _animate_ball_roll(start_pos: Vector3, end_pos: Vector3, is_spin_roll: bool
 	else:
 		roll_duration = clamp(distance * 0.12, 0.15, 0.4) / speed_mult  # Quick natural roll
 	
-	# Calculate roll spin (ball rotates forward along ground) - MUCH slower
-	var travel_dir = (end_pos - start_pos).normalized()
-	var spin_axis = travel_dir.cross(Vector3.UP).normalized()
-	if spin_axis.length() < 0.1:
-		spin_axis = Vector3.RIGHT
-	
-	# Slower, more realistic spin - about 1 rotation per tile
-	var total_rotations = distance * 0.3  # Much slower spin
-	var spin_speed = (total_rotations * TAU) / roll_duration
-	golf_ball.set_meta("spin_axis", spin_axis)
-	golf_ball.set_meta("spin_speed", spin_speed * speed_mult)
-	golf_ball.set_meta("is_spinning", true)
+	# The ball turns with the distance it rolls
+	_set_ball_rolling(true)
 	
 	# Tween position along ground with smooth deceleration
 	current_ball_tween = create_tween()
@@ -4922,6 +5265,8 @@ func _animate_ball_roll(start_pos: Vector3, end_pos: Vector3, is_spin_roll: bool
 
 # Ball spin tracking
 var ball_spin_tween: Tween = null
+var _ball_last_pos := Vector3.ZERO  # for rolling: rotation follows the distance moved
+const BALL_ROLL_RADIUS := 0.46       # the ball model's radius in world units (mesh 1.53 x scale 0.3)
 
 func _animate_ball_flight(start_pos: Vector3, end_pos: Vector3) -> void:
 	"""Animate the golf ball along an arc from start to end position with spin"""
@@ -5003,12 +5348,12 @@ func _animate_ball_along_plan(points: Array, end_pos: Vector3, rolling: bool = f
 		length += (points[i] - points[i - 1]).length()
 	var speed_mult: float = shot_manager.get_animation_speed() if shot_manager else 1.0
 	var duration: float = clampf(length * 0.08, 0.5, 2.5) / speed_mult
-	var peak: float = 0.0 if rolling else clampf(trajectory_height * 1.25 + length * 0.05, 2.0, 18.0)
+	var peak: float = 0.0 if rolling else _flight_arc(clampf(trajectory_height * 1.25 + length * 0.05, 2.0, 18.0), shot_manager.current_context if shot_manager else null)
 	if rolling:
 		duration *= 1.6  # a putt rolls slower than a ball flies
-	golf_ball.set_meta("spin_axis", Vector3.RIGHT)
-	golf_ball.set_meta("spin_speed", TAU * 3.0 / duration * speed_mult)
-	golf_ball.set_meta("is_spinning", true)
+		_set_ball_rolling(true)
+	else:
+		_start_flight_spin(points, duration, length)
 	var fly := func(t: float) -> void:
 		var f := t * float(points.size() - 1)
 		var i := mini(int(f), points.size() - 2)
@@ -5021,6 +5366,92 @@ func _animate_ball_along_plan(points: Array, end_pos: Vector3, rolling: bool = f
 	current_ball_tween.tween_method(fly, 0.0, 1.0, duration)
 	await current_ball_tween.finished
 	golf_ball.position = end_pos
+
+
+func _start_flight_spin(points: Array, duration: float, length: float) -> void:
+	"""Backspin about the flight's right-hand axis, tilted by how far the
+	plan's curve bends off the straight line: a draw (bends left) leans the
+	axis one way, a fade (bends right) the other, more for a harder shape."""
+	var a: Vector2 = points[0]
+	var b: Vector2 = points[points.size() - 1]
+	var chord := b - a
+	var forward := Vector3(chord.x, 0.0, chord.y).normalized()
+	var right := forward.cross(Vector3.UP).normalized()
+	if right.length() < 0.1:
+		right = Vector3.RIGHT
+	# Signed bend: the furthest the curve strays right (+) or left (-) of the chord
+	var bend := 0.0
+	var right2 := Vector2(right.x, right.z)
+	for p in points:
+		var off: float = ((p as Vector2) - a).dot(right2)
+		if absf(off) > absf(bend):
+			bend = off
+	var tilt := clampf(bend / maxf(length, 0.001) * 4.0, -0.8, 0.8)
+	golf_ball.set_meta("spin_axis", right.rotated(forward, tilt) if tilt != 0.0 else right)
+	var speed_mult: float = shot_manager.get_animation_speed() if shot_manager else 1.0
+	var turns := clampf(length * 0.15, 2.0, 6.0)
+	golf_ball.set_meta("spin_speed", TAU * turns / duration * speed_mult)
+	golf_ball.set_meta("is_spinning", true)
+	golf_ball.set_meta("is_rolling", false)
+
+
+func _animate_ball_smooth_roll(points: Array[Vector3], per_step: float) -> void:
+	"""Roll the ball through points (its own position first) on one smooth
+	curve: quick off the face, easing to a stop. Catmull-Rom through the hex
+	centres, sharp only where the ball turns right back (a bank)."""
+	if golf_ball == null or points.size() < 2:
+		return
+	var speed_mult: float = shot_manager.get_animation_speed() if shot_manager else 1.0
+	var samples := _smooth_path(points, 8)
+	var lengths: Array[float] = [0.0]
+	for i in range(1, samples.size()):
+		lengths.append(lengths[i - 1] + samples[i].distance_to(samples[i - 1]))
+	var total: float = lengths[lengths.size() - 1]
+	if total < 0.001:
+		return
+	_set_ball_rolling(true)
+	var roll := func(u: float) -> void:
+		# Mostly ease-out (the ball loses pace), with some constant speed so a
+		# long chain doesn't crawl at the end
+		var d := total * lerpf(u, 1.0 - (1.0 - u) * (1.0 - u), 0.7)
+		var i := clampi(lengths.bsearch(d), 1, samples.size() - 1)
+		var seg := lengths[i] - lengths[i - 1]
+		var f := 0.0 if seg < 0.0001 else (d - lengths[i - 1]) / seg
+		golf_ball.position = samples[i - 1].lerp(samples[i], f)
+	current_ball_tween = create_tween()
+	var steps := points.size() - 1
+	current_ball_tween.tween_method(roll, 0.0, 1.0, clampf(per_step * steps, 0.3, 4.0) / speed_mult)
+	await current_ball_tween.finished
+	golf_ball.position = points[points.size() - 1]
+
+
+static func _smooth_path(points: Array[Vector3], per_segment: int) -> Array[Vector3]:
+	"""Catmull-Rom samples through points. Where the path reverses (a bank off
+	the putter) the tangent is zero, so the ball stops and comes back rather
+	than looping."""
+	var n := points.size()
+	var tangents: Array[Vector3] = []
+	for i in range(n):
+		var prev: Vector3 = points[maxi(i - 1, 0)]
+		var next: Vector3 = points[mini(i + 1, n - 1)]
+		var m := (next - prev) * 0.5
+		if i > 0 and i < n - 1:
+			var din := points[i] - prev
+			var dout := next - points[i]
+			if din.length() > 0.001 and dout.length() > 0.001 and din.normalized().dot(dout.normalized()) < -0.3:
+				m = Vector3.ZERO
+		tangents.append(m)
+	var out: Array[Vector3] = [points[0]]
+	for i in range(n - 1):
+		var p1 := points[i]
+		var p2 := points[i + 1]
+		for k in range(1, per_segment + 1):
+			var t := float(k) / float(per_segment)
+			var t2 := t * t
+			var t3 := t2 * t
+			out.append(p1 * (2.0 * t3 - 3.0 * t2 + 1.0) + tangents[i] * (t3 - 2.0 * t2 + t)
+				+ p2 * (-2.0 * t3 + 3.0 * t2) + tangents[i + 1] * (t3 - t2))
+	return out
 
 
 func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> void:
@@ -5046,7 +5477,7 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 		var start_tile := ctx.start_tile
 		var aim_tile := ctx.aim_tile
 		if start_tile.x >= 0 and aim_tile.x >= 0:
-			var num_bounces = CLUB_STATS.get(current_club, CLUB_STATS[ClubType.IRON_7]).roll
+			var num_bounces = get_club_stats(current_club, CLUB_STATS[ClubType.IRON_7]).roll
 			var uncurved_target_tile := _calculate_uncurved_target_tile(start_tile, aim_tile, ctx.distance_mod)
 			var uncurved_carry_tile := _get_carry_position(start_tile, uncurved_target_tile, num_bounces)
 			var uncurved_carry_pos := get_tile_surface_position(uncurved_carry_tile)
@@ -5090,6 +5521,7 @@ func _animate_ball_flight_with_bounce(start_pos: Vector3, end_pos: Vector3) -> v
 	golf_ball.set_meta("spin_axis", spin_axis)
 	golf_ball.set_meta("spin_speed", spin_speed * speed_mult)  # Speed up spin too
 	golf_ball.set_meta("is_spinning", true)
+	golf_ball.set_meta("is_rolling", false)
 	
 	# Create tween for flight arc
 	current_ball_tween = create_tween()
@@ -5155,6 +5587,7 @@ func _start_ball_spin(spin_axis: Vector3, duration: float, distance: float) -> v
 	golf_ball.set_meta("spin_axis", spin_axis)
 	golf_ball.set_meta("spin_speed", spin_speed)
 	golf_ball.set_meta("is_spinning", true)
+	golf_ball.set_meta("is_rolling", false)
 
 
 func _stop_ball_spin() -> void:
@@ -5163,6 +5596,7 @@ func _stop_ball_spin() -> void:
 		return
 	
 	golf_ball.set_meta("is_spinning", false)
+	golf_ball.set_meta("is_rolling", false)
 	
 	if ball_spin_tween and ball_spin_tween.is_valid():
 		ball_spin_tween.kill()
@@ -5170,8 +5604,18 @@ func _stop_ball_spin() -> void:
 
 
 func _process_ball_spin(delta: float) -> void:
-	"""Update ball spin rotation each frame"""
+	"""Update ball spin rotation each frame. On the ground (is_rolling) the
+	ball turns by exactly how far it moved, so it rolls without slipping; in
+	the air it spins about spin_axis (backspin, tilted for draw / fade)."""
 	if golf_ball == null:
+		return
+	var pos := golf_ball.position
+	var moved := pos - _ball_last_pos
+	_ball_last_pos = pos
+	if golf_ball.get_meta("is_rolling", false):
+		moved.y = 0.0
+		if moved.length() > 0.0001 and moved.length() < 5.0:
+			golf_ball.rotate(Vector3.UP.cross(moved.normalized()), moved.length() / BALL_ROLL_RADIUS)
 		return
 	
 	if not golf_ball.has_meta("is_spinning") or not golf_ball.get_meta("is_spinning"):
@@ -5182,6 +5626,15 @@ func _process_ball_spin(delta: float) -> void:
 	
 	# Rotate around the spin axis
 	golf_ball.rotate(spin_axis, spin_speed * delta)
+
+
+func _set_ball_rolling(rolling: bool) -> void:
+	"""Ground mode (turn with the distance moved) or air mode (spin_axis)."""
+	if golf_ball == null:
+		return
+	golf_ball.set_meta("is_rolling", rolling)
+	if rolling:
+		golf_ball.set_meta("is_spinning", false)
 
 
 func _update_ball_shadow() -> void:
@@ -6776,11 +7229,15 @@ func _generate_course_features() -> void:
 				and not _is_adjacent_to_type(col, row, SurfaceType.GREEN):
 					fairway_hazard_candidates.append(Vector2i(col, row))
 	
+	# A narrow-fairway hole already has its trees: random ones would plug the gaps
+	if current_unique_type == UniqueHoleType.NARROW_FAIRWAY:
+		fairway_hazard_candidates.clear()
 	if fairway_hazard_candidates.size() > 0:
 		# 1. Large single tree on fairway (30% chance)
 		if randf() < 0.3:
 			var tree_pos = fairway_hazard_candidates[randi() % fairway_hazard_candidates.size()]
-			set_cell(tree_pos.x, tree_pos.y, SurfaceType.TREE)
+			if _fairway_row_open(tree_pos.y) > MIN_OPEN_FAIRWAY:
+				set_cell(tree_pos.x, tree_pos.y, SurfaceType.TREE)
 			# Remove this tile from candidates
 			fairway_hazard_candidates.erase(tree_pos)
 		
@@ -6793,8 +7250,10 @@ func _generate_course_features() -> void:
 				var group_start = fairway_hazard_candidates[randi() % fairway_hazard_candidates.size()]
 				var group_size = 2 + randi() % 3  # 2-4 trees
 				var tree_tiles: Array = [group_start]
-				set_cell(group_start.x, group_start.y, SurfaceType.TREE)
 				fairway_hazard_candidates.erase(group_start)
+				if _fairway_row_open(group_start.y) <= MIN_OPEN_FAIRWAY:
+					continue
+				set_cell(group_start.x, group_start.y, SurfaceType.TREE)
 				
 				var tree_dirs = [
 					Vector2i(1, 0), Vector2i(-1, 0),
@@ -6812,6 +7271,7 @@ func _generate_course_features() -> void:
 						var ny = base.y + dir.y
 						if nx > 0 and nx < grid_width - 1 and ny > 0 and ny < grid_height - 1:
 							if get_cell(nx, ny) == SurfaceType.FAIRWAY \
+							and _fairway_row_open(ny) > MIN_OPEN_FAIRWAY \
 							and not _is_adjacent_to_type(nx, ny, SurfaceType.TEE) \
 							and not _is_adjacent_to_type(nx, ny, SurfaceType.GREEN):
 								set_cell(nx, ny, SurfaceType.TREE)
@@ -7254,8 +7714,20 @@ func _generate_s_curve_hole(tee_col: int, tee_row: int, green_col: int, green_ro
 	return fairway_cells
 
 
+const MIN_OPEN_FAIRWAY := 4  # random fairway trees never leave a row with fewer open fairway hexes
+
+
+func _fairway_row_open(row: int) -> int:
+	"""Open fairway hexes across a row."""
+	var n := 0
+	for col in range(grid_width):
+		if get_cell(col, row) == SurfaceType.FAIRWAY:
+			n += 1
+	return n
+
+
 func _apply_narrow_fairway_trees(fairway_cells: Dictionary) -> void:
-	"""Add trees encroaching aggressively on the fairway to create very narrow (3-tile) choke points.
+	"""Add trees encroaching on the fairway to create 2-3 narrow (4-tile) choke points.
 	Called after standard fairway is generated.
 	"""
 	if fairway_cells.is_empty():
@@ -7297,10 +7769,11 @@ func _apply_narrow_fairway_trees(fairway_cells: Dictionary) -> void:
 	# Sort rows
 	rows_to_narrow.sort()
 	
-	# Create 4-6 choke points, evenly distributed
-	var num_chokes = 4 + randi() % 3  # 4-6 chokes
+	# 2-3 choke points, evenly distributed (4-6 long ones walled off most of
+	# the fairway and left few clean landing spots)
+	var num_chokes = 2 + randi() % 2  # 2-3 chokes
 	var spacing = rows_to_narrow.size() / (num_chokes + 1)
-	var choke_length = 4 + randi() % 3  # 4-6 rows long each choke
+	var choke_length = 3 + randi() % 2  # 3-4 rows long each choke
 	
 	for i in range(num_chokes):
 		var target_idx = int((i + 1) * spacing)
@@ -7324,9 +7797,9 @@ func _apply_narrow_fairway_trees(fairway_cells: Dictionary) -> void:
 			var max_col = cols[cols.size() - 1]
 			var center_col = (min_col + max_col) / 2
 			
-			# Keep only 3 tiles centered
+			# Keep a 4-wide gap round the centre
 			var keep_min = center_col - 1
-			var keep_max = center_col + 1
+			var keep_max = center_col + 2
 			
 			# Convert excess fairway to trees
 			for col in cols:

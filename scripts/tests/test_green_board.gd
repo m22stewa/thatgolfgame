@@ -53,6 +53,7 @@ func _ready() -> void:
 	_test_build()
 	_test_putts()
 	_test_features()
+	_test_puzzle_pieces()
 	print("=== green board test complete: %d checks, %d failures ===" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
 
@@ -109,6 +110,45 @@ func _test_build() -> void:
 		g.build(hole, r)
 		styles[g.style] = true
 	_check(styles.size() == 4, "greens come in all four styles %s" % str(styles.keys()))
+	_test_variety(hole)
+
+
+func _test_variety(hole) -> void:
+	"""Greens should read in many directions and offer several long routes in:
+	plenty of hexes whose arrow chain feeds the cup, some of them long."""
+	var dirs_total := 0
+	var feeders_total := 0
+	var longest_total := 0
+	var seeds := 30
+	for seed in range(seeds):
+		var g := GreenBoard.new()
+		var r := RandomNumberGenerator.new()
+		r.seed = seed
+		g.build(hole, r)
+		var dirs := {}
+		for a in g.tiles:
+			if g.tiles[a].strength > 0:
+				dirs[g.tiles[a].dir] = true
+		dirs_total += dirs.size()
+		# A ball resting on hex a after its struck roll: does the green take it in?
+		var feeders := 0
+		var longest := 0
+		for a in g.tiles:
+			if a == g.cup or g.tiles[a].strength == 0:
+				continue
+			var res := g.roll(a + GreenBoard.DIRS[0], a)  # struck one hex onto a
+			if res.holed:
+				feeders += 1
+				longest = maxi(longest, res.touched)
+		feeders_total += feeders
+		longest_total += longest
+	var avg_dirs := float(dirs_total) / seeds
+	var avg_feeders := float(feeders_total) / seeds
+	var avg_longest := float(longest_total) / seeds
+	print("   variety: %.1f arrow directions, %.1f feeder hexes, longest holed chain %.1f hexes (avg of %d greens)" % [avg_dirs, avg_feeders, avg_longest, seeds])
+	_check(avg_dirs >= 5.5, "arrows point many ways (%.1f of 6 directions)" % avg_dirs)
+	_check(avg_feeders >= 6.0, "several routes feed the cup (%.1f hexes)" % avg_feeders)
+	_check(avg_longest >= 6.0, "long holed chains exist (%.1f hexes)" % avg_longest)
 
 
 func _flat_board(radius: int) -> GreenBoard:
@@ -226,6 +266,64 @@ func _test_features() -> void:
 		if GreenBoard.distance(a, built.cup) < 2:
 			near_cup = true
 	_check(kinds.has("spike") and kinds.has("coin") and not near_cup, "a built green has spikes and coins, none next to the cup %s" % str(kinds.keys()))
+
+
+func _test_puzzle_pieces() -> void:
+	print("-- lips and slick patches --")
+	var start := Vector2i(-4, 0)
+	# A lip between (-2,0) and (-1,0): the struck ball stops against it
+	var b := _flat_board(5)
+	b.walls[GreenBoard.edge_key(Vector2i(-2, 0), Vector2i(-1, 0))] = [Vector2i(-2, 0), Vector2i(-1, 0)]
+	var stop := b.roll(start, Vector2i(0, 0))
+	_check(stop.end == Vector2i(-2, 0), "a lip stops the struck ball (got %s)" % str(stop.end))
+	# An arrow pushing into the lip: the ball rests against it
+	b.tiles[Vector2i(-3, 0)].dir = 1
+	b.tiles[Vector2i(-3, 0)].strength = 3
+	var push := b.roll(Vector2i(-3, 1), Vector2i(-3, 0))
+	_check(push.end == Vector2i(-2, 0), "an arrow push stops at a lip (got %s)" % str(push.end))
+
+	# Slick: struck onto (-2,0) with (-1,0) slick too -> slides east to the cup and drops
+	var ice := _flat_board(5)
+	ice.tiles[Vector2i(-2, 0)].slick = true
+	ice.tiles[Vector2i(-1, 0)].slick = true
+	var slide := ice.roll(start, Vector2i(-2, 0))
+	_check(slide.holed and slide.path.size() == 4, "a ball struck onto a slick patch slides on and drops (path %s)" % str(slide.path))
+	# Slick ending on grippy green: stops there, then that hex's arrow acts
+	var ice2 := _flat_board(5)
+	ice2.tiles[Vector2i(-3, 1)].slick = true
+	ice2.tiles[Vector2i(-2, 1)].dir = 5  # (0,-1)
+	ice2.tiles[Vector2i(-2, 1)].strength = 1
+	var on := ice2.roll(Vector2i(-5, 1), Vector2i(-3, 1))
+	_check(on.end == Vector2i(-2, 0), "a slide stops on grippy green and its arrow takes over (got %s)" % str(on.end))
+	# A lip ends the slide on the ice
+	ice2.walls[GreenBoard.edge_key(Vector2i(-3, 1), Vector2i(-2, 1))] = [Vector2i(-3, 1), Vector2i(-2, 1)]
+	var held := ice2.roll(Vector2i(-5, 1), Vector2i(-3, 1))
+	_check(held.end == Vector2i(-3, 1), "a lip holds the ball on the slick patch (got %s)" % str(held.end))
+
+	# Built greens carry both, never touching the cup
+	var hole := StubHole.new()
+	var with_walls := 0
+	var with_slick := 0
+	var clean := true
+	for seed in range(30):
+		var g := GreenBoard.new()
+		var r := RandomNumberGenerator.new()
+		r.seed = seed
+		g.build(hole, r)
+		if not g.walls.is_empty():
+			with_walls += 1
+		for a in g.tiles:
+			if g.is_slick(a):
+				with_slick += 1
+				if GreenBoard.distance(a, g.cup) < 2:
+					clean = false
+				break
+		for key in g.walls:
+			if g.walls[key].has(g.cup):
+				clean = false
+	_check(with_walls >= 20, "most greens have lips (%d of 30)" % with_walls)
+	_check(with_slick >= 25, "greens have slick patches (%d of 30)" % with_slick)
+	_check(clean, "no lip or slick hex touches the cup")
 
 
 func _check(cond: bool, label: String) -> void:

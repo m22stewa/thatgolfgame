@@ -12,6 +12,8 @@ class_name GreenOverlay
 ##   - The cup: a bright ring.
 ##   - Features: spinning gold coins, spike marks (a pair of shoe prints) and
 ##     a forgotten putter lying across two hexes.
+##   - Puzzle pieces: lips are raised cream bars on the edge between two hexes;
+##     slick patches are glossy pale-blue hexes with streaks, no arrow.
 
 const LIFT := 0.04            # above the course tile surface
 const TINT_MIX := 0.6         # how much height colour over the turf green
@@ -34,6 +36,9 @@ var _chevron_mesh: ArrayMesh
 var _dot_mesh: CylinderMesh
 var _tint_mesh: CylinderMesh
 var _target: MeshInstance3D = null
+var _gauge: Label3D = null      # pips over the target ring: how far of the putt's reach
+var _reach_marks: Node3D = null  # faint hex outlines at the edge of reach
+var _reach_key := ""            # ball + reach the marks were laid for
 var _coins: Dictionary = {}  # small hex -> coin node (spins; removed when collected)
 
 
@@ -74,12 +79,17 @@ func show_board(green: GreenBoard, hole) -> void:
 			_add_spike_marks(at, a)
 		elif kind == "putter":
 			pass  # drawn once per putter below
+		elif t.get("slick", false):
+			_add_slick(at)
 		elif t.strength == 0:
 			_add_dot(at)
 		else:
 			_add_arrow(at, t.dir, t.strength)
 		if kind == "coin":
 			_add_coin(at, a)
+	for key in board.walls:
+		var pair: Array = board.walls[key]
+		_add_lip(surface_point(pair[0], hole), surface_point(pair[1], hole))
 	var drawn := {}
 	for a in board.features:
 		var f: Dictionary = board.features[a]
@@ -96,6 +106,9 @@ func clear() -> void:
 	_arrows.clear()
 	_coins.clear()
 	_target = null
+	_gauge = null
+	_reach_marks = null
+	_reach_key = ""
 	board = null
 
 
@@ -143,6 +156,52 @@ func _add_tint(at: Vector3, height: float) -> void:
 	mi.position = at - Vector3(0, TINT_DEPTH / 2.0, 0)  # top face at the surface
 	mi.rotation.y = PI / 6.0
 	add_child(mi)
+
+
+func _add_slick(at: Vector3) -> void:
+	"""A glossy pale-blue hex with two streaks: the ball slides straight across."""
+	var hex := MeshInstance3D.new()
+	var m := CylinderMesh.new()
+	m.top_radius = GreenBoard.SIZE * 0.92
+	m.bottom_radius = GreenBoard.SIZE * 0.92
+	m.height = 0.01
+	m.radial_segments = 6
+	hex.mesh = m
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.75, 0.92, 1.0, 0.7)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.roughness = 0.05
+	mat.metallic_specular = 1.0
+	mat.render_priority = 1
+	hex.material_override = mat
+	hex.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	hex.position = at + Vector3(0, 0.01, 0)
+	add_child(hex)
+	for k in [-1.0, 1.0]:
+		var streak := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(0.36, 0.005, 0.03)
+		streak.mesh = box
+		streak.material_override = _mark_material
+		streak.position = at + Vector3(k * 0.06, 0.02, k * 0.1)
+		streak.rotation.y = 0.5
+		add_child(streak)
+
+
+func _add_lip(a: Vector3, b: Vector3) -> void:
+	"""A raised cream bar on the edge shared by two hexes."""
+	var lip := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(GreenBoard.SIZE * 0.95, 0.09, 0.07)
+	lip.mesh = box
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.96, 0.92, 0.78)
+	lip.material_override = mat
+	var mid := (a + b) * 0.5
+	lip.position = Vector3(mid.x, maxf(a.y, b.y) + 0.04, mid.z)
+	var across := Vector3(b.x - a.x, 0.0, b.z - a.z)
+	lip.rotation.y = atan2(-across.z, across.x) + PI / 2.0  # the bar runs along the edge
+	add_child(lip)
 
 
 func _add_dot(at: Vector3) -> void:
@@ -310,9 +369,70 @@ func show_target(a: Vector2i, hole) -> void:
 	_target.visible = true
 
 
+func show_gauge(a: Vector2i, hole, struck: int, reach: int, to_cup: int) -> void:
+	"""Distance gauge over the target ring: one pip per hex of reach, filled up
+	to how far the putt is struck, and the distance left to the cup."""
+	if _gauge == null:
+		_gauge = Label3D.new()
+		_gauge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_gauge.no_depth_test = true
+		_gauge.fixed_size = true
+		_gauge.pixel_size = 0.0011
+		_gauge.font = ScorecardStyle.header_font()
+		_gauge.font_size = 30
+		_gauge.outline_size = 10
+		_gauge.modulate = Color(1.0, 0.95, 0.85)
+		_gauge.outline_modulate = Color(0.12, 0.12, 0.11, 0.9)
+		_gauge.render_priority = 4
+		_gauge.outline_render_priority = 3
+		add_child(_gauge)
+	var pips := "●".repeat(struck) + "○".repeat(maxi(reach - struck, 0))
+	_gauge.text = "%s\n%d / %d   ·   CUP %d" % [pips, struck, reach, to_cup]
+	_gauge.position = surface_point(a, hole) + Vector3(0, 0.45, 0)
+	_gauge.visible = true
+
+
+func show_reach(ball: Vector2i, reach: int, hole) -> void:
+	"""Faint hex outlines on the green hexes exactly at the edge of reach, so the
+	player can see the whole range they can strike to."""
+	var key := "%s:%d" % [ball, reach]
+	if _reach_marks and key == _reach_key:
+		_reach_marks.visible = true
+		return
+	if _reach_marks:
+		_reach_marks.queue_free()
+	_reach_key = key
+	_reach_marks = Node3D.new()
+	add_child(_reach_marks)
+	var ring := TorusMesh.new()
+	ring.inner_radius = GreenBoard.SIZE * 0.78
+	ring.outer_radius = GreenBoard.SIZE * 0.86
+	ring.rings = 6
+	ring.ring_segments = 4
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1, 1, 1, 0.45)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.render_priority = 2
+	for a in board.tiles:
+		if GreenBoard.distance(ball, a) != reach:
+			continue
+		var m := MeshInstance3D.new()
+		m.mesh = ring
+		m.material_override = mat
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.scale = Vector3(1.0, 0.1, 1.0)
+		m.position = surface_point(a, hole) + Vector3(0, 0.02, 0)
+		_reach_marks.add_child(m)
+
+
 func hide_target() -> void:
 	if _target:
 		_target.visible = false
+	if _gauge:
+		_gauge.visible = false
+	if _reach_marks:
+		_reach_marks.visible = false
 
 
 func _make_chevron_mesh() -> ArrayMesh:

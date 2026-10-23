@@ -132,6 +132,10 @@ func _ready() -> void:
 	hole_complete_popup.visible = false
 	_scorecard_style(score_popup)
 	_scorecard_style(hole_complete_popup)
+	# Centre popups on the hole view, not the whole screen: the tray covers the bottom
+	for p in [score_popup, hole_complete_popup]:
+		p.anchor_top = MainUI.TRAY_TOP / 2.0
+		p.anchor_bottom = MainUI.TRAY_TOP / 2.0
 	hole_complete_title.add_theme_font_size_override("font_size", 40)
 	hole_score.add_theme_font_override("font", ScorecardStyle.pencil_font())
 	hole_score.add_theme_font_size_override("font_size", 34)
@@ -777,12 +781,18 @@ func _show_points_popup(points: int, reason: String) -> void:
 	tween.tween_property(popup, "modulate:a", 0.0, 1.0)
 	tween.set_parallel(false)
 	tween.tween_callback(popup.queue_free)
+	_track_overlay(popup, tween)
 
 
-func _show_golf_bonus_popup(bonus_name: String, bonus_points: int) -> void:
+func show_callout(text: String) -> void:
+	"""Prominent popup with no points (e.g. a Money change)."""
+	_show_golf_bonus_popup(text, 0, false)
+
+
+func _show_golf_bonus_popup(bonus_name: String, bonus_points: int, with_points: bool = true) -> void:
 	"""Show a prominent golf bonus achievement"""
 	var popup = Label.new()
-	popup.text = "%s +%d" % [bonus_name.to_upper(), bonus_points]
+	popup.text = "%s +%d" % [bonus_name.to_upper(), bonus_points] if with_points else bonus_name.to_upper()
 	popup.add_theme_font_override("font", ScorecardStyle.header_font())
 	popup.add_theme_font_size_override("font_size", 44)
 	popup.add_theme_color_override("font_color", ScorecardStyle.RED)
@@ -802,6 +812,39 @@ func _show_golf_bonus_popup(bonus_name: String, bonus_points: int) -> void:
 	tween.tween_interval(1.0)
 	tween.tween_property(popup, "modulate:a", 0.0, 0.5)
 	tween.tween_callback(popup.queue_free)
+	_track_overlay(popup, tween)
+
+
+# Notifications over the hole view ("Over the Water +30", "+20", Money
+# callouts) fade out as soon as the camera moves, so they never sit over the
+# view you're looking at.
+const OVERLAY_GRACE := 0.4   # seconds a fresh notification stays put
+const OVERLAY_FADE := 0.2
+var _overlays: Array = []    # [{node, tween, born}]
+
+
+func _track_overlay(popup: Control, tween: Tween) -> void:
+	_overlays.append({"node": popup, "tween": tween, "born": Time.get_ticks_msec()})
+
+
+func fade_overlays() -> void:
+	"""The camera moved: fade out every notification past its grace time."""
+	var now := Time.get_ticks_msec()
+	var keep: Array = []
+	for o in _overlays:
+		if not is_instance_valid(o.node):
+			continue
+		var node: Control = o.node
+		if now - int(o.born) < OVERLAY_GRACE * 1000.0:
+			keep.append(o)
+			continue
+		var old: Tween = o.tween
+		if old and old.is_valid():
+			old.kill()
+		var t := create_tween()
+		t.tween_property(node, "modulate:a", 0.0, OVERLAY_FADE)
+		t.tween_callback(node.queue_free)
+	_overlays = keep
 
 
 func set_hole_display(display_text: String) -> void:

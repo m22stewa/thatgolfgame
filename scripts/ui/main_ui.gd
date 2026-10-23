@@ -46,6 +46,8 @@ const PROTOTYPE_HIDDEN := [
 	"ShotUI/ShotCounter", "ShotUI/ActionPanel", "ShotUI/BottomPanel",
 	"HoleViewer/HoleHUD/GenerateButton", "HoleViewer/HoleHUD/GenerateUniqueButton",
 	"HoleViewer/HoleHUD/LieInfoPanel", "HoleViewer/HoleHUD/HoleInfoLabel",
+	# Wind and lie live in the tray (ConditionsStrip) under THIS SHOT
+	"HoleViewer/HoleHUD/WindWidget", "HoleViewer/HoleHUD/LieView",
 ]
 var _prototype_saved_visibility: Dictionary = {}  # NodePath -> visible before hiding
 
@@ -62,6 +64,15 @@ var _this_shot_label: Label
 var _deck_label: Label
 var _run_label: Label
 
+# Cards: tap one to read it (CardZoom); drag it onto the playmat to play it
+var card_zoom: CardZoom
+var playmat: Playmat
+var money_badge: MoneyBadge
+var _money := 0
+var _committed := 0
+var club_tier_colors: Dictionary = {}  # ClubType name -> tier colour (set by hex_grid)
+var conditions: ConditionsStrip  # wind + lie, under THIS SHOT
+
 func _ready() -> void:
 	set_prototype_ui.call_deferred(prototype_ui)
 	# Connect card inspection signals from deck widgets
@@ -76,6 +87,13 @@ func _ready() -> void:
 	_create_card_inspection_ui()
 
 	_build_scorecard_tray()
+	card_zoom = CardZoom.new()
+	card_zoom.name = "CardZoom"
+	add_child(card_zoom)
+
+	# Notifications over the hole view fade when the camera moves
+	if hole_viewer and hole_viewer.has_signal("camera_moved") and shot_ui and shot_ui.has_method("fade_overlays"):
+		hole_viewer.camera_moved.connect(shot_ui.fade_overlays)
 
 	# Wire the on-screen hole-view controls to the HoleViewer camera (FEAT-003).
 	if hole_viewer:
@@ -129,15 +147,32 @@ func _build_scorecard_tray() -> void:
 	clubs.add_child(_rule())
 	hand_club_row.reparent(clubs, false)
 
-	# Middle: HAND · N OF M
+	# Middle: HAND · N OF M and MONEY over the hand, then the playmat beside it
 	hand_strip.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var rows := hand_modifier_row.get_parent() as BoxContainer
+	var hand_head := HBoxContainer.new()
+	rows.add_child(hand_head)
+	rows.move_child(hand_head, 0)
 	_hand_label = _tray_caption("HAND")
-	rows.add_child(_hand_label)
-	rows.move_child(_hand_label, 0)
+	_hand_label.size_flags_vertical = Control.SIZE_SHRINK_END
+	hand_head.add_child(_hand_label)
+	var head_fill := Control.new()
+	head_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hand_head.add_child(head_fill)
+	money_badge = MoneyBadge.new()
+	hand_head.add_child(money_badge)
 	rows.add_theme_constant_override("separation", 4)
+	var hand_and_mat := HBoxContainer.new()
+	hand_and_mat.add_theme_constant_override("separation", 16)
+	rows.add_child(hand_and_mat)
+	hand_modifier_row.reparent(hand_and_mat, false)
 	hand_modifier_row.add_theme_constant_override("separation", 12)
 	hand_modifier_row.alignment = BoxContainer.ALIGNMENT_BEGIN
+	hand_modifier_row.set_drag_forwarding(Callable(), _can_drop_in_hand, _drop_in_hand)
+	playmat = Playmat.new()
+	playmat.name = "Playmat"
+	playmat.card_dropped.connect(func(card): emit_signal("modifier_card_selected", card))
+	hand_and_mat.add_child(playmat)
 
 	# Right: scorecard, THIS SHOT, deck / points / run, and SHOOT
 	var right := HBoxContainer.new()
@@ -156,6 +191,9 @@ func _build_scorecard_tray() -> void:
 	_this_shot_label.clip_text = true
 	_this_shot_label.custom_minimum_size = Vector2(380, 0)
 	card_col.add_child(_this_shot_label)
+	conditions = ConditionsStrip.new()
+	conditions.name = "Conditions"
+	card_col.add_child(conditions)
 	var foot := HBoxContainer.new()
 	card_col.add_child(foot)
 	_deck_label = _tray_caption("")
@@ -191,6 +229,36 @@ func _rule() -> ColorRect:
 func update_scorecard(current_hole: int, pars: Dictionary, scores: Dictionary, live_strokes: int) -> void:
 	if scorecard_table:
 		scorecard_table.set_state(current_hole, pars, scores, live_strokes)
+
+
+func _process(_delta: float) -> void:
+	_update_wind()
+
+
+func _update_wind() -> void:
+	"""The tray's wind arrow points where the wind blows as seen on screen, so
+	it turns with the camera."""
+	if conditions == null or hole_viewer == null:
+		return
+	var hg = hole_viewer.get("hex_grid")
+	var cam: Camera3D = hole_viewer.get("camera")
+	if hg == null or cam == null or hg.get("wind_system") == null:
+		return
+	var ws: WindSystem = hg.wind_system
+	var v := ws.get_direction_vector()  # world x, z: the way the ball is pushed
+	var w := Vector3(v.x, 0.0, v.y)
+	var right := cam.global_basis.x
+	right.y = 0.0
+	var fwd := -cam.global_basis.z
+	fwd.y = 0.0
+	var screen := Vector2(w.dot(right.normalized()), -w.dot(fwd.normalized()))
+	conditions.set_wind(ws.enabled and ws.strength > 0, screen.normalized() if screen.length() > 0.001 else Vector2.UP,
+		ws.strength, ws.get_strength_name(), int(ws.speed_kmh))
+
+
+func set_lie(lie_name: String, effects: String) -> void:
+	if conditions:
+		conditions.set_lie(lie_name, effects)
 
 
 func set_this_shot(text: String) -> void:
@@ -325,6 +393,8 @@ func _close_card_inspection() -> void:
 func set_prototype_ui(on: bool) -> void:
 	"""Hide (or restore) the non-prototype UI listed in PROTOTYPE_HIDDEN."""
 	prototype_ui = on
+	if hole_viewer:
+		hole_viewer.set("show_wind_widget", not on)
 	for path in PROTOTYPE_HIDDEN:
 		var node := get_node_or_null(path) as CanvasItem
 		if node == null:
@@ -371,15 +441,128 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func set_card_pressed(card_instance, pressed: bool) -> void:
-	"""Reflect whether a shot card is played this shot (without re-emitting)."""
+	"""Reflect whether a shot card is played this shot (without re-emitting):
+	a played card sits on the playmat, the rest in the hand."""
+	if hand_modifier_row == null:
+		return
+	var btn := _card_button(card_instance)
+	if btn == null:
+		return
+	if pressed and playmat and btn.get_parent() != playmat.slots:
+		playmat.add_card(btn)
+	elif not pressed and btn.get_parent() != hand_modifier_row:
+		btn.reparent(hand_modifier_row, false)
+		if playmat:
+			playmat.refresh()
+	_refresh_affordable()
+
+
+func set_money(money: int, committed: int) -> void:
+	"""Money this hole, and what the cards on the playmat will spend."""
+	_money = money
+	_committed = committed
+	if money_badge:
+		money_badge.set_money(money, committed)
+	_refresh_affordable()
+
+
+func flash_money() -> void:
+	if money_badge:
+		money_badge.flash()
+
+
+func _card_button(card_instance) -> Button:
+	var rows: Array = [hand_modifier_row]
+	if playmat:
+		rows.append(playmat.slots)
+	for row in rows:
+		for c in row.get_children():
+			if c is Button and c.has_meta("card_instance") and c.get_meta("card_instance") == card_instance:
+				return c
+	return null
+
+
+func _on_mat(btn: Control) -> bool:
+	return playmat != null and btn.get_parent() == playmat.slots
+
+
+func _affordable(card_instance) -> bool:
+	return ShotCardFace.cost_for(card_instance.data, card_instance.upgrade_level) <= _money - _committed
+
+
+func _refresh_affordable() -> void:
+	"""Coins on hand cards go red when Money left can't pay for them."""
 	if hand_modifier_row == null:
 		return
 	for c in hand_modifier_row.get_children():
-		if c is Button and c.has_meta("card_instance") and c.get_meta("card_instance") == card_instance:
-			c.set_pressed_no_signal(pressed)
+		var face := c.get_node_or_null("Face") as CardFaceView
+		if face and c.has_meta("card_instance"):
+			face.affordable = _affordable(c.get_meta("card_instance"))
+	if playmat:
+		for c in playmat.cards():
 			var face := c.get_node_or_null("Face") as CardFaceView
 			if face:
-				face.played = pressed
+				face.affordable = true
+
+
+func open_card_zoom(btn: Button) -> void:
+	"""Tap a hand or mat card: read it big, with Play / Take back."""
+	var card = btn.get_meta("card_instance")
+	var face := btn.get_node_or_null("Face") as CardFaceView
+	var unplayable: bool = face != null and face.unplayable
+	var actions: Array = []
+	var note := ""
+	if _on_mat(btn):
+		actions.append({"label": "TAKE BACK", "on_press": func(): emit_signal("modifier_card_selected", card)})
+	else:
+		var cost := ShotCardFace.cost_for(card.data, card.upgrade_level)
+		var verb := "USE" if ShotCardFace.kind_for(card.data).tag == "UTILITY" else "PLAY"
+		var label := "%s  ·  FREE" % verb if cost == 0 else "%s  ·  %d MONEY" % [verb, cost]
+		var blocked: bool = unplayable or not _affordable(card) or (playmat != null and playmat.is_full())
+		if unplayable:
+			note = "Strain can't be played. Remove it in the Pro Shop."
+		elif not _affordable(card):
+			note = "Not enough Money: %d left." % (_money - _committed)
+		elif playmat and playmat.is_full():
+			note = "The playmat is full."
+		actions.append({"label": label, "on_press": func(): emit_signal("modifier_card_selected", card), "disabled": blocked})
+	card_zoom.open(card, actions, note, unplayable or _on_mat(btn) or _affordable(card))
+
+
+func _card_drag_data(btn: Button):
+	"""Start dragging a card (to the playmat, or back to the hand)."""
+	var face := btn.get_node_or_null("Face") as CardFaceView
+	if face == null or face.unplayable:
+		return null
+	var card = btn.get_meta("card_instance")
+	var preview := Control.new()
+	var ghost := CardFaceView.for_instance(card)
+	ghost.size = CardFaceView.SIZE
+	ghost.position = -CardFaceView.SIZE / 2.0
+	ghost.rotation = -0.06
+	ghost.modulate.a = 0.9
+	preview.add_child(ghost)
+	btn.set_drag_preview(preview)
+	return {"card": card, "from_mat": _on_mat(btn)}
+
+
+func _can_drop_on_card(pos: Vector2, data, btn: Button) -> bool:
+	return playmat._can_drop_data(pos, data) if _on_mat(btn) else _can_drop_in_hand(pos, data)
+
+
+func _drop_on_card(pos: Vector2, data, btn: Button) -> void:
+	if _on_mat(btn):
+		playmat._drop_data(pos, data)
+	else:
+		_drop_in_hand(pos, data)
+
+
+func _can_drop_in_hand(_pos: Vector2, data) -> bool:
+	return data is Dictionary and data.get("from_mat", false)
+
+
+func _drop_in_hand(_pos: Vector2, data) -> void:
+	emit_signal("modifier_card_selected", data.card)
 
 
 func set_hand(club_cards: Array, modifier_cards: Array, club_subtitles: Dictionary = {}) -> void:
@@ -411,7 +594,6 @@ func build_shot_card(btn: Button, instance) -> void:
 	var face := CardFaceView.for_instance(instance)
 	face.name = "Face"
 	btn.custom_minimum_size = CardFaceView.SIZE
-	btn.tooltip_text = instance.get_full_description()
 	btn.disabled = face.unplayable
 	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
 		btn.add_theme_stylebox_override(state, StyleBoxEmpty.new())
@@ -426,13 +608,15 @@ func build_shot_card(btn: Button, instance) -> void:
 
 
 func clear_hand() -> void:
-	"""Remove every card control from both rows."""
+	"""Remove every card control from both rows and the playmat."""
 	if hand_club_row:
 		for c in hand_club_row.get_children():
 			c.queue_free()
 	if hand_modifier_row:
 		for c in hand_modifier_row.get_children():
 			c.queue_free()
+	if playmat:
+		playmat.clear()
 
 
 func set_selected_club(card_instance) -> void:
@@ -458,17 +642,24 @@ func _make_hand_card(instance, is_club: bool, subtitle: String = "") -> Button:
 		line.club_name = instance.data.card_name
 		line.yards = subtitle.replace(" yd", "").replace("-", "–")
 		line.tooltip_text = "%s  %s" % [instance.data.card_name, subtitle]
+		line.tier_color = club_tier_colors.get(instance.data.target_club, Color(0, 0, 0, 0))
 		btn = line
 	else:
 		btn = Button.new()
-		btn.toggle_mode = true
 		build_shot_card(btn, instance)
+		btn.disabled = false  # Strain can still be tapped and read
+		# Drop on a card = drop on whatever it sits in (the mat or the hand)
+		btn.set_drag_forwarding(_card_drag_data.bind(btn).unbind(1), _can_drop_on_card.bind(btn), _drop_on_card.bind(btn))
 	btn.set_meta("card_instance", instance)
 	btn.pressed.connect(func() -> void:
 		var bound = btn.get_meta("card_instance")
 		if is_club:
 			emit_signal("club_card_selected", bound)
 		else:
-			emit_signal("modifier_card_selected", bound)
+			open_card_zoom(btn)
 	)
+	if not is_club:
+		var face := btn.get_node_or_null("Face") as CardFaceView
+		if face:
+			face.affordable = _affordable(instance)
 	return btn

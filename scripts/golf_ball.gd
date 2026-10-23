@@ -18,8 +18,14 @@ class_name GolfBall
 @export var shadow_max_height: float = 15.0  # Height at which shadow is smallest
 @export var shadow_opacity: float = 0.5
 
+# Printed mark on the ball, so spin and roll can be seen
+@export var enable_decal: bool = true
+@export var decal_color: Color = Color(0.85, 0.12, 0.1)
+const DECAL_LAYER := 1 << 19  # render layer only the ball is on: the decal never prints on the course
+
 # Reference to the actual mesh
 var ball_mesh: MeshInstance3D = null
+var radius: float = 1.0  # ball mesh radius, in this node's (unscaled) space
 
 # Shadow components
 var shadow_mesh: MeshInstance3D = null
@@ -35,6 +41,8 @@ func _ready() -> void:
 	# Create ground shadow
 	if enable_shadow:
 		_create_shadow()
+	if enable_decal:
+		_add_decal()
 	
 	# Apply shader material if set
 	if ball_material:
@@ -51,6 +59,50 @@ func _find_and_setup_mesh() -> void:
 	if ball_mesh == null:
 		# Try finding any MeshInstance3D child
 		ball_mesh = _find_mesh_recursive(self)
+
+
+func _mesh_radius() -> float:
+	"""Radius of the ball mesh in this node's space (the model is nested in
+	scaled, rotated import nodes)."""
+	var t := Transform3D.IDENTITY
+	var n: Node = ball_mesh
+	while n != self and n is Node3D:
+		t = (n as Node3D).transform * t
+		n = n.get_parent()
+	return (t * ball_mesh.mesh.get_aabb()).size.x / 2.0
+
+
+func _add_decal() -> void:
+	"""A small red alignment arrow printed on the ball. It turns with the ball,
+	so backspin, sidespin and the roll all read at a glance."""
+	if ball_mesh == null or ball_mesh.mesh == null:
+		return
+	radius = _mesh_radius()
+	ball_mesh.layers |= DECAL_LAYER
+	var decal := Decal.new()
+	decal.name = "Decal"
+	decal.texture_albedo = _decal_texture()
+	decal.modulate = decal_color
+	decal.cull_mask = DECAL_LAYER
+	# The box covers one cap of the ball and projects straight down onto it
+	decal.size = Vector3(radius * 1.15, radius * 0.7, radius * 1.15)
+	decal.position = Vector3(0, radius * 0.95, 0)
+	decal.normal_fade = 0.2
+	add_child(decal)
+
+
+func _decal_texture() -> ImageTexture:
+	"""White arrow on clear (tinted by decal_color): a stripe with a head."""
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(Color(1, 1, 1, 0))
+	img.fill_rect(Rect2i(14, 56, 78, 16), Color.WHITE)
+	for x in range(88, 118):
+		var half := int((118 - x) * 0.8)
+		for y in range(64 - half, 64 + half):
+			img.set_pixel(x, y, Color.WHITE)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 func _create_shadow() -> void:

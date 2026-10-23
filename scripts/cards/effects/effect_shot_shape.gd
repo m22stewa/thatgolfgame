@@ -5,7 +5,7 @@ class_name EffectShotShape
 ## All fields add up across played cards through ShotContext metadata, which
 ## TurnController reads when it builds the path.
 
-@export var power_cost: int = 0      # added to the shot's power spend
+@export var power_cost: int = 0      # the card's price in Money (hex_grid pays it when the shot is struck)
 @export var bulge: float = 0.0       # hexes; + bows the flight right (curves left into the target)
 @export var loft: bool = false       # flight clears trees
 @export var ignore_wind: bool = false

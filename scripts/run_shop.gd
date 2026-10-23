@@ -34,7 +34,15 @@ const POOL := [
 	"extinguisher", "groundskeeper", "shutoff",
 ]
 
+const CLUB_OFFER_COUNT := 2
+const CLUB_TIER_WEIGHT := {  # tiers above Common; Common clubs aren't sold
+	ClubItem.Tier.RARE: 6.0,
+	ClubItem.Tier.LEGENDARY: 2.5,
+	ClubItem.Tier.EPIC: 1.0,
+}
+
 var offers: Array[CardData] = []
+var club_offers: Array[ClubItem] = []
 var eraser_available := true
 
 
@@ -60,6 +68,31 @@ func roll_offers(rng: RandomNumberGenerator) -> void:
 				offers.append(d)
 				pool.erase(d)
 				break
+
+
+func roll_club_offers(rng: RandomNumberGenerator, owned: Dictionary) -> void:
+	"""CLUB_OFFER_COUNT better versions of clubs you own (owned: ClubType ->
+	ClubItem), each of a different club, tier weighted toward Rare."""
+	club_offers.clear()
+	var types: Array = owned.keys().filter(func(c): return owned[c].tier < ClubItem.Tier.EPIC)
+	types.sort()
+	for _i in range(CLUB_OFFER_COUNT):
+		if types.is_empty():
+			break
+		var club: int = types.pop_at(rng.randi_range(0, types.size() - 1))
+		var have: ClubItem = owned[club]
+		var tiers: Array = CLUB_TIER_WEIGHT.keys().filter(func(t): return t > have.tier)
+		var total := 0.0
+		for t in tiers:
+			total += CLUB_TIER_WEIGHT[t]
+		var pick := rng.randf() * total
+		var tier: int = tiers[tiers.size() - 1]
+		for t in tiers:
+			pick -= CLUB_TIER_WEIGHT[t]
+			if pick <= 0.0:
+				tier = t
+				break
+		club_offers.append(ClubItem.create(club, have.club_name, tier, rng))
 
 
 static func price_of(data: CardData) -> int:

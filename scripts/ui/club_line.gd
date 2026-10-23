@@ -3,10 +3,12 @@ class_name ClubLine
 
 ## ClubLine - One row of the "CLUB IN HAND | YARDS" table: the club name in
 ## condensed caps, its carry range pencilled in, and a pencil ellipse round the
-## name when it's the club in hand.
+## name when it's the club in hand. A bar on the left shows the club's tier
+## colour (ClubItem: grey, blue, purple, gold).
 
 var club_name: String = ""
 var yards: String = ""
+var tier_color := Color(0, 0, 0, 0)
 
 
 func _init() -> void:
@@ -28,6 +30,8 @@ func _draw() -> void:
 	if is_hovered() and not button_pressed:
 		draw_rect(Rect2(0, 1, size.x, h - 2), Color(ScorecardStyle.RED, 0.07))
 	var name_w := head.get_string_size(club_name.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
+	if tier_color.a > 0.0:
+		draw_rect(Rect2(0, 3, 4, h - 6), tier_color)
 	draw_string(head, Vector2(10, h - 7), club_name.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, ScorecardStyle.INK)
 	draw_string(pencil, Vector2(size.x - 92, h - 4), yards, HORIZONTAL_ALIGNMENT_RIGHT, 84, 21, ScorecardStyle.PENCIL)
 	draw_line(Vector2(0, h - 0.5), Vector2(size.x, h - 0.5), Color(ScorecardStyle.RULE, 0.35), 1.0)

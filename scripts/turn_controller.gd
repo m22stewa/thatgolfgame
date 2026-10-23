@@ -236,7 +236,7 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 		"ignore_wind": ctx.get_metadata("ignore_wind", false) or played_club == int(hex_grid.ClubType.PUTTER),
 		"wind_vec": wind_vec,
 		"wind_strength": strength,
-		"extra_cost": int(ctx.get_metadata("power_cost", 0)),
+		# Cards are paid for in Money (hex_grid), not out of the club's power
 		"spread": ctx.base_spread,
 		"exact_usage": ShotPlan.PUTT_EXACT_USAGE if played_club == int(hex_grid.ClubType.PUTTER) else ShotPlan.EXACT_USAGE,
 		"ring_mod": swung.ring_mod,
@@ -444,9 +444,11 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 	# loop; here we only tag so scoring/loop can react).
 	if _surface_at(tile) == SURF_WATER:
 		ctx.add_metadata("hit_water", true)
-	# Fire: penalty stroke, returned like water (the loop handles it)
-	if _feature_at(tile) == "fire":
-		ctx.add_metadata("hit_fire", true)
+	# Fire: landing in it or rolling through it costs a Money (hex_grid)
+	for t in [landing] + rolled:
+		if _feature_at(t) == "fire":
+			ctx.add_metadata("hit_fire", true)
+			break
 	if ice_crossed >= 3:
 		ctx.add_metadata("ice_run", ice_crossed)
 	if triggered.values().has("trampoline"):
@@ -529,7 +531,7 @@ func _cup() -> Vector2i:
 func _write_band_from_club(ctx: ShotContext, club: int) -> void:
 	if hex_grid == null or club < 0:
 		return
-	var stats: Dictionary = hex_grid.CLUB_STATS.get(club, {})
+	var stats: Dictionary = hex_grid.get_club_stats(club) if hex_grid.has_method("get_club_stats") else hex_grid.CLUB_STATS.get(club, {})
 	if stats.is_empty():
 		return
 	ctx.band_min = int(stats.get("band_min", 0))

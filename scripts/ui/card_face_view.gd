@@ -1,16 +1,21 @@
 extends Control
 class_name CardFaceView
 
-## CardFaceView - A shot card drawn as a scorecard slip: coloured category bar
-## with the cost, a condensed title, the drawn icon on grid paper, a one-line
-## effect, and a stat row with pencilled values. A played card gets a pencil
-## tick; a Strain card is stamped UNPLAYABLE.
+## CardFaceView - A shot card drawn as a scorecard slip: coloured category bar,
+## a gold coin with the card's Money cost, a condensed title, the drawn icon on
+## grid paper, a one-line effect, and a stat row with pencilled values. A played
+## card gets a pencil tick; a Strain card is stamped UNPLAYABLE.
+##
+## Drawn at any size: everything scales with size.x / SIZE.x, so the zoomed-in
+## card (CardZoom) is as sharp as the one in the hand.
 
 const SIZE := Vector2(186, 254)
 const BAR_H := 28.0
 const ART_TOP := 74.0
 const ART_H := 74.0
 const STAT_H := 52.0
+const COIN := Color(0.95, 0.76, 0.26)
+const COIN_RIM := Color(0.6, 0.42, 0.08)
 
 var tag: String = "SHOT"
 var cost_text: String = ""
@@ -22,6 +27,11 @@ var played: bool = false:
 		played = v
 		queue_redraw()
 var unplayable: bool = false
+var cost: int = 0
+var affordable: bool = true:  # false: the coin turns red (not enough Money)
+	set(v):
+		affordable = v
+		queue_redraw()
 var _icon: ShotCardFace
 
 
@@ -44,8 +54,8 @@ func set_card(instance) -> void:
 	var info := ShotCardFace.kind_for(data)
 	tag = info.tag
 	unplayable = info.kind == "strain"
-	var cost := ShotCardFace.cost_for(data, instance.upgrade_level)
-	cost_text = "–" if unplayable else ("%d" % cost if cost > 0 else "FREE")
+	cost = ShotCardFace.cost_for(data, instance.upgrade_level)
+	cost_text = "–" if unplayable else "%d" % cost
 	title = instance.get_display_name()
 	description = data.description.split(" (")[0]
 	stats = stats_for(data)
@@ -87,75 +97,90 @@ static func stats_for(data: CardData) -> Array:
 
 
 func _draw() -> void:
-	var icon_rect := Rect2(10, ART_TOP + 2, size.x - 20, ART_H - 4)
+	var k := size.x / SIZE.x  # 1 in the hand, ~2.6 zoomed in
+	var icon_rect := Rect2(10 * k, (ART_TOP + 2) * k, size.x - 20 * k, (ART_H - 4) * k)
 	if _icon.position != icon_rect.position or _icon.size != icon_rect.size:
 		_icon.position = icon_rect.position
 		_icon.size = icon_rect.size
 		_icon.queue_redraw()
 	var w := size.x
 	var h := size.y
+	var bar_h := BAR_H * k
 	var head := ScorecardStyle.header_font()
 	var head_light := ScorecardStyle.header_font(false)
 	var pencil := ScorecardStyle.pencil_font()
 	var ink := ScorecardStyle.INK
 	draw_rect(Rect2(Vector2.ZERO, size), ScorecardStyle.PAPER_DARK if unplayable else ScorecardStyle.PAPER)
 
-	# Category bar + cost
+	# Category bar
 	var bar := ScorecardStyle.category_color(tag)
-	draw_rect(Rect2(0, 0, w, BAR_H), bar)
-	draw_string(head, Vector2(10, BAR_H - 8), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, ScorecardStyle.PAPER)
-	draw_string(head, Vector2(w - 72, BAR_H - 8), cost_text, HORIZONTAL_ALIGNMENT_RIGHT, 62, 15, ScorecardStyle.PAPER)
+	draw_rect(Rect2(0, 0, w, bar_h), bar)
+	draw_string(head, Vector2(10 * k, bar_h - 8 * k), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, int(15 * k), ScorecardStyle.PAPER)
 
 	# Title, shrunk to fit
 	var title_size := 30
-	while title_size > 16 and head.get_string_size(title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x > w - 16:
+	while title_size > 16 and head.get_string_size(title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, int(title_size * k)).x > w - 16 * k:
 		title_size -= 1
-	draw_string(head, Vector2(10, BAR_H + 37), title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, w - 16, title_size, ink)
+	draw_string(head, Vector2(10 * k, bar_h + 37 * k), title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, w - 16 * k, int(title_size * k), ink)
 
 	# Grid paper under the icon
-	var art := Rect2(8, ART_TOP, w - 16, ART_H)
+	var art := Rect2(8 * k, ART_TOP * k, w - 16 * k, ART_H * k)
 	draw_rect(art, Color(1, 1, 1, 0.35))
-	var step := 8.0
+	var step := 8.0 * k
 	var x := art.position.x + step
 	while x < art.end.x:
-		draw_line(Vector2(x, art.position.y), Vector2(x, art.end.y), ScorecardStyle.GRID, 1.0)
+		draw_line(Vector2(x, art.position.y), Vector2(x, art.end.y), ScorecardStyle.GRID, k)
 		x += step
 	var y := art.position.y + step
 	while y < art.end.y:
-		draw_line(Vector2(art.position.x, y), Vector2(art.end.x, y), ScorecardStyle.GRID, 1.0)
+		draw_line(Vector2(art.position.x, y), Vector2(art.end.x, y), ScorecardStyle.GRID, k)
 		y += step
-	draw_rect(art, Color(ink, 0.35), false, 1.0)
+	draw_rect(art, Color(ink, 0.35), false, k)
 
 	# Effect line
-	draw_multiline_string(head_light, Vector2(8, ART_TOP + ART_H + 18), description, HORIZONTAL_ALIGNMENT_LEFT, w - 16, 14, 2, ScorecardStyle.INK_SOFT)
+	draw_multiline_string(head_light, Vector2(8 * k, (ART_TOP + ART_H + 18) * k), description, HORIZONTAL_ALIGNMENT_LEFT, w - 16 * k, int(14 * k), 2, ScorecardStyle.INK_SOFT)
 
 	# Stat row: small caps labels, pencilled values
-	var top := h - STAT_H
-	draw_line(Vector2(0, top), Vector2(w, top), ScorecardStyle.RULE, 1.0)
+	var top := h - STAT_H * k
+	draw_line(Vector2(0, top), Vector2(w, top), ScorecardStyle.RULE, k)
 	if not stats.is_empty():
 		var cw := w / float(stats.size())
 		for i in range(stats.size()):
 			var cx := cw * i
 			if i > 0:
-				draw_line(Vector2(cx, top), Vector2(cx, h), ScorecardStyle.RULE, 1.0)
-			draw_string(head_light, Vector2(cx, top + 15), stats[i][0], HORIZONTAL_ALIGNMENT_CENTER, cw, 12, ScorecardStyle.INK_SOFT)
-			draw_string(pencil, Vector2(cx, top + 45), stats[i][1], HORIZONTAL_ALIGNMENT_CENTER, cw, 30, ScorecardStyle.PENCIL)
+				draw_line(Vector2(cx, top), Vector2(cx, h), ScorecardStyle.RULE, k)
+			draw_string(head_light, Vector2(cx, top + 15 * k), stats[i][0], HORIZONTAL_ALIGNMENT_CENTER, cw, int(12 * k), ScorecardStyle.INK_SOFT)
+			draw_string(pencil, Vector2(cx, top + 45 * k), stats[i][1], HORIZONTAL_ALIGNMENT_CENTER, cw, int(30 * k), ScorecardStyle.PENCIL)
 
-	draw_rect(Rect2(Vector2.ZERO, size), ink, false, 2.0)
+	draw_rect(Rect2(Vector2.ZERO, size), ink, false, 2.0 * k)
+
+	# Cost: a gold coin on the top-right corner, the card's price in Money
+	if not unplayable and cost_text != "":
+		var at := Vector2(w - 24 * k, 22 * k)
+		var r := 19.0 * k
+		draw_circle(at + Vector2(0, 2 * k), r, Color(0, 0, 0, 0.25))
+		draw_circle(at, r, COIN if affordable else ScorecardStyle.PAPER_DARK)
+		draw_arc(at, r, 0, TAU, 32, COIN_RIM if affordable else ScorecardStyle.RED, 2.5 * k, true)
+		draw_arc(at, r - 4 * k, 0, TAU, 32, Color(COIN_RIM, 0.45), k, true)
+		var fs := int(26 * k)
+		var tw := head.get_string_size(cost_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		draw_string(head, at + Vector2(-tw.x / 2.0, fs * 0.36), cost_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink if affordable else ScorecardStyle.RED)
 
 	if played:
-		ScorecardStyle.check_mark(self, Vector2(w - 40, BAR_H + 8), 30)
+		ScorecardStyle.check_mark(self, Vector2(w - 40 * k, bar_h + 26 * k), 30 * k)
 	if unplayable:
 		_stamp("UNPLAYABLE")
 
 
 func _stamp(text: String) -> void:
+	var k := size.x / SIZE.x
 	var font := ScorecardStyle.header_font()
-	var c := size / 2.0 + Vector2(0, -6)
+	var c := size / 2.0 + Vector2(0, -6 * k)
 	draw_set_transform(c, -0.32, Vector2.ONE)
-	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
-	var box := Rect2(-tw / 2.0 - 8, -18, tw + 16, 30)
+	var fs := int(22 * k)
+	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var box := Rect2(-tw / 2.0 - 8 * k, -18 * k, tw + 16 * k, 30 * k)
 	draw_rect(box, Color(ScorecardStyle.PAPER, 0.7))
-	draw_rect(box, ScorecardStyle.RED, false, 3.0)
-	draw_string(font, Vector2(-tw / 2.0, 6), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, ScorecardStyle.RED)
+	draw_rect(box, ScorecardStyle.RED, false, 3.0 * k)
+	draw_string(font, Vector2(-tw / 2.0, 6 * k), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ScorecardStyle.RED)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

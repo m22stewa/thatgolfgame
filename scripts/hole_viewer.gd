@@ -6,6 +6,8 @@ class_name HoleViewer
 
 signal tile_clicked(tile_coords: Vector2i)
 signal tile_hovered(tile_coords: Vector2i)
+signal flyover_finished  # the new-hole flyover reached the tee (or was skipped)
+signal camera_moved      # the camera moved this frame (any cause)
 
 # Camera node references
 var camera: Camera3D = null
@@ -289,7 +291,7 @@ func _on_viewport_resized() -> void:
 	if is_green_view and _green_frame.size() == 3:
 		enter_green_view(_green_frame[0], _green_frame[1], _green_frame[2])
 		return
-	if is_tracking_ball:
+	if is_tracking_ball or is_flying:
 		return
 	if is_panning or is_rotating or is_pitching:
 		return
@@ -297,14 +299,35 @@ func _on_viewport_resized() -> void:
 
 
 func _process(delta: float) -> void:
-	# Skip ball tracking in putting mode - camera stays fixed on green
-	if not is_putting_mode and not is_green_view:
+	# Skip ball tracking in putting mode - camera stays fixed on green, and
+	# while a scripted move (flyover / glide to the ball) has the camera
+	var scripted := _cam_tween != null and _cam_tween.is_valid() and _cam_tween.is_running()
+	if not is_putting_mode and not is_green_view and not scripted:
 		_handle_ball_tracking(delta)
-	_process_keyboard_camera(delta)
+	if not scripted:
+		_process_keyboard_camera(delta)
 	_smooth_camera_movement(delta)
 	_update_camera_transform()
+	_check_camera_moved()
 	_update_hovered_tile()
 	_update_wind_display()
+
+
+const CAMERA_MOVE_EPS := 0.02  # world units / radians per frame that count as moving
+var _last_cam := Transform3D()
+
+
+func _check_camera_moved() -> void:
+	"""Emit camera_moved when the camera visibly moved since last frame (the
+	smoothing's tiny settling steps don't count)."""
+	if camera == null:
+		return
+	var t := camera.global_transform
+	var moved := t.origin.distance_to(_last_cam.origin) > CAMERA_MOVE_EPS \
+		or (t.basis.z - _last_cam.basis.z).length() > CAMERA_MOVE_EPS * 0.1
+	_last_cam = t
+	if moved:
+		camera_moved.emit()
 
 
 func _process_keyboard_camera(delta: float) -> void:
@@ -382,9 +405,6 @@ func _handle_ball_tracking(delta: float) -> void:
 		_on_ball_flight_started()
 	elif not ball_in_flight and was_in_flight:
 		_on_ball_flight_ended()
-		# Move camera to ball position when it lands (not during flight)
-		if is_tracking_ball:
-			target_position = Vector3(ball_pos.x, 0, ball_pos.z)
 	
 	# Only do smooth tracking when ball is at rest and tracking is enabled
 	# Skip tracking during flight to reduce per-frame calculations
@@ -404,12 +424,9 @@ func _on_ball_flight_started() -> void:
 func _on_ball_flight_ended() -> void:
 	"""Called when ball stops - smoothly move camera to ball position"""
 	# Re-enable tracking when shot completes (user can disable again by panning/rotating)
+	# (the tracking lerp eases it over; the next shot's frame_shot settles it)
 	is_tracking_ball = true
 	track_after_flight = true
-	
-	# Smoothly move camera to center on ball's new position
-	if ball_node and is_instance_valid(ball_node):
-		target_position = Vector3(ball_node.global_position.x, 0, ball_node.global_position.z)
 
 
 func _smooth_camera_movement(delta: float) -> void:
@@ -457,19 +474,20 @@ func _update_camera_transform() -> void:
 	var offset_x = sin(camera_yaw) * horizontal_dist
 	var offset_z = -cos(camera_yaw) * horizontal_dist  # Negative to look from behind
 	
-	# Shift camera forward (positive Z) to put tee at bottom of view
-	# This offset moves the camera's view forward toward the green.
-	# The green view frames its own centre, so no shift there.
-	var forward_shift = 0.0 if is_green_view else horizontal_dist * 0.5
+	# Shift the view forward (the way the camera faces) so the ball / tee sits
+	# low in the frame with the shot ahead of it. The green view frames its
+	# own centre, so no shift there.
+	var shift_len: float = 0.0 if is_green_view else horizontal_dist * 0.5
+	var shift := Vector3(-sin(camera_yaw), 0, cos(camera_yaw)) * shift_len
 	
 	var cam_pos = Vector3(
 		target_position.x + offset_x,
 		vertical_dist,
-		target_position.z + offset_z + forward_shift
-	)
+		target_position.z + offset_z
+	) + shift
 	
 	camera.global_position = cam_pos
-	camera.look_at(Vector3(target_position.x, 0, target_position.z + forward_shift), Vector3.UP)
+	camera.look_at(Vector3(target_position.x, 0, target_position.z) + shift, Vector3.UP)
 
 
 func _is_mouse_inside() -> bool:
@@ -550,6 +568,13 @@ func _control_wants_input(control: Control, mouse_pos: Vector2) -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	# A flyover belongs to the camera: any press skips to its end
+	if is_flying:
+		var press: bool = (event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventKey) and event.pressed
+		if press and (not (event is InputEventMouseButton) or _is_mouse_inside()):
+			skip_flyover()
+			get_viewport().set_input_as_handled()
+		return
 	# --- Touch screen (phone) ---
 	if event is InputEventScreenTouch:
 		_handle_screen_touch(event)
@@ -1057,6 +1082,9 @@ func reset_view() -> void:
 	if is_green_view and _green_frame.size() == 3:
 		enter_green_view(_green_frame[0], _green_frame[1], _green_frame[2])
 		return
+	if not _shot_pose.is_empty():
+		_glide_to(_shot_pose, SHOT_GLIDE_TIME)
+		return
 	target_yaw = 0.0
 	camera_angle = DEFAULT_PITCH
 	target_pitch = DEFAULT_PITCH
@@ -1127,11 +1155,146 @@ func add_to_viewport(node: Node3D) -> void:
 		viewport.add_child(node)
 
 
+# --- Camera direction: hole flyover and framing each shot ---
+#
+# A pose is {pos (ground point looked at), zoom, yaw, pitch}. Scripted moves
+# tween between poses and own the camera while they run (no ball tracking,
+# no keyboard camera); a flyover can be skipped with any press.
+
+const SHOT_GLIDE_TIME := 1.1
+const FLY_LOW_ZOOM := 26.0
+const FLY_LOW_PITCH := 46.0
+
+var is_flying := false
+var _cam_tween: Tween = null
+var _shot_pose: Dictionary = {}  # where the camera settles for the next shot
+
+
+static func yaw_toward(from: Vector3, to: Vector3) -> float:
+	"""Camera yaw that faces from -> to (matches _update_camera_transform)."""
+	var d := to - from
+	return atan2(-d.x, d.z)
+
+
+func shot_pose(ball: Vector3, aim: Vector3) -> Dictionary:
+	"""Behind the ball, facing the aim, zoomed so the shot fits ahead of it."""
+	var dist := Vector2(aim.x - ball.x, aim.z - ball.z).length()
+	return {
+		"pos": Vector3(ball.x, 0, ball.z),
+		"zoom": clampf(dist * 0.55 + 12.0, 20.0, max_zoom),
+		"yaw": yaw_toward(ball, aim) if dist > 0.5 else target_yaw,
+		"pitch": DEFAULT_PITCH,
+	}
+
+
+func frame_shot(ball: Vector3, aim: Vector3) -> void:
+	"""Next shot: glide to the ball, turned to face where it's aimed."""
+	if is_green_view:
+		return
+	_shot_pose = shot_pose(ball, aim)
+	if is_flying:
+		_flyover_end_pose = _shot_pose  # the flyover lands on the new framing
+		return
+	_glide_to(_shot_pose, SHOT_GLIDE_TIME)
+
+
+func play_flyover(tee: Vector3, green: Vector3, end_pose: Dictionary, start_delay: float = 0.0) -> void:
+	"""New hole: whole-hole overview, down to the tee, along the hole to the
+	green, a slow circle round it, then back to the tee framed for the shot."""
+	_stop_camera_tween()
+	_shot_pose = end_pose
+	_flyover_end_pose = end_pose
+	is_flying = true
+	is_tracking_ball = false
+	var yaw := yaw_toward(tee, green)
+	var length := Vector2(green.x - tee.x, green.z - tee.z).length()
+	var mid := (tee + green) / 2.0
+	var overview := {"pos": Vector3(mid.x, 0, mid.z) - Vector3(-sin(yaw), 0, cos(yaw)) * length * 0.25,
+		"zoom": clampf(length * 0.75, 30.0, max_zoom), "yaw": yaw, "pitch": 60.0}
+	var at_tee := {"pos": Vector3(tee.x, 0, tee.z), "zoom": FLY_LOW_ZOOM, "yaw": yaw, "pitch": FLY_LOW_PITCH}
+	var at_green := {"pos": Vector3(green.x, 0, green.z), "zoom": FLY_LOW_ZOOM + 2.0, "yaw": yaw, "pitch": FLY_LOW_PITCH + 6.0}
+	var round_green := {"pos": Vector3(green.x, 0, green.z), "zoom": FLY_LOW_ZOOM + 6.0, "yaw": yaw + deg_to_rad(80), "pitch": 52.0}
+	_apply_pose(overview)
+	_cam_tween = create_tween()
+	if start_delay > 0.0:
+		_cam_tween.tween_interval(start_delay)
+	_cam_tween.tween_interval(0.8)
+	_tween_pose(overview, at_tee, 1.4, Tween.TRANS_SINE)
+	_tween_pose(at_tee, at_green, clampf(length / 14.0, 2.2, 4.5), Tween.TRANS_SINE)
+	_tween_pose(at_green, round_green, 1.6, Tween.TRANS_SINE)
+	# The end pose may change while flying (the first shot gets re-aimed), so
+	# the last leg reads it when it starts
+	_cam_tween.tween_callback(func(): _last_leg_from = _pose_now())
+	_cam_tween.tween_method(func(t: float): _apply_pose(_lerp_pose(_last_leg_from, _flyover_end_pose, t)), 0.0, 1.0, 2.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_cam_tween.tween_callback(_finish_flyover)
+
+
+var _flyover_end_pose: Dictionary = {}
+var _last_leg_from: Dictionary = {}
+
+
+func skip_flyover() -> void:
+	if not is_flying:
+		return
+	_stop_camera_tween()
+	_glide_to(_flyover_end_pose, 0.6)
+	_finish_flyover()
+
+
+func _finish_flyover() -> void:
+	is_flying = false
+	is_tracking_ball = true
+	flyover_finished.emit()
+
+
+func _glide_to(pose: Dictionary, duration: float) -> void:
+	_stop_camera_tween()
+	is_tracking_ball = true
+	_cam_tween = create_tween()
+	_tween_pose(_pose_now(), pose, duration, Tween.TRANS_SINE)
+
+
+func _tween_pose(from: Dictionary, to: Dictionary, duration: float, trans: Tween.TransitionType) -> void:
+	_cam_tween.tween_method(func(t: float): _apply_pose(_lerp_pose(from, to, t)), 0.0, 1.0, duration).set_trans(trans).set_ease(Tween.EASE_IN_OUT)
+
+
+func _stop_camera_tween() -> void:
+	if _cam_tween and _cam_tween.is_valid():
+		_cam_tween.kill()
+	_cam_tween = null
+	is_flying = false
+
+
+func _pose_now() -> Dictionary:
+	return {"pos": target_position, "zoom": current_zoom, "yaw": camera_yaw, "pitch": camera_angle}
+
+
+func _lerp_pose(a: Dictionary, b: Dictionary, t: float) -> Dictionary:
+	return {
+		"pos": (a.pos as Vector3).lerp(b.pos, t),
+		"zoom": lerpf(a.zoom, b.zoom, t),
+		"yaw": lerp_angle(a.yaw, b.yaw, t),
+		"pitch": lerpf(a.pitch, b.pitch, t),
+	}
+
+
+func _apply_pose(p: Dictionary) -> void:
+	"""Set the camera exactly (current and target) so smoothing doesn't lag it."""
+	target_position = p.pos
+	current_zoom = p.zoom
+	target_zoom = p.zoom
+	camera_yaw = p.yaw
+	target_yaw = p.yaw
+	camera_angle = p.pitch
+	target_pitch = p.pitch
+
+
 # --- Green View ---
 
 func enter_green_view(center: Vector3, extent: float, yaw: float) -> void:
 	"""Frame the whole green: look at its centre from yaw (radians, ball side),
 	pitched down, zoomed so a circle of diameter extent fits the band."""
+	_stop_camera_tween()
 	if not is_green_view:
 		_pre_green_view = {"angle": camera_angle, "pitch": target_pitch, "zoom": target_zoom, "yaw": target_yaw}
 	_green_frame = [center, extent, yaw]
@@ -1217,6 +1380,7 @@ func set_putting_system(system: Node) -> void:
 # ============================================================================
 
 var wind_widget: Control = null
+var show_wind_widget := true  # off in the prototype UI: the tray shows the wind
 
 func _setup_wind_display() -> void:
 	"""Find UI elements for wind display (must be added in editor)"""
@@ -1281,8 +1445,8 @@ func _update_wind_display() -> void:
 	# Update wind label
 	var enabled = wind_system.get("enabled")
 	
-	# ALWAYS show the widget, even if calm
-	wind_widget.visible = true
+	# ALWAYS show the widget, even if calm (unless the tray has it)
+	wind_widget.visible = show_wind_widget
 	
 	if enabled:
 		if wind_label:

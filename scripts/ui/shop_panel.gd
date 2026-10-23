@@ -1,118 +1,176 @@
 extends Control
 class_name ShopPanel
 
-## ShopPanel - The Pro Shop overlay between holes.
+## ShopPanel - The Pro Shop, full screen at the start of each hole (after the
+## flyover).
 ##
-## Shows the RunShop's offers as real card faces with Buy buttons, the Eraser
-## item, a reroll, and the run's deck as chips you can pick to Remove or
-## Upgrade. It only displays and forwards clicks: the host (hex_grid) owns the
-## decks and the wallet and implements shop_* actions, then calls refresh().
+## Top: your bag for the hole - tap BAG_SIZE of your clubs (tiles in their
+## tier colour; the putter is always in), and better clubs for sale.
+## Left: the RunShop's offers as real card faces with Buy buttons, the Eraser
+## item, and a reroll. Right: your deck as card faces, the shot deck in rows of
+## DECK_COLUMNS and the green deck below it. Tap any card to read it big
+## (CardZoom) with what you can do to it here: Buy an offer; Remove or Upgrade
+## a deck card. It only displays and forwards clicks: the host (hex_grid) owns
+## the decks and the wallet and implements shop_* actions, then calls refresh().
 
 const INK := ScorecardStyle.INK
 const SOFT := ScorecardStyle.INK_SOFT
 const RED := ScorecardStyle.RED
+const DECK_COLUMNS := 6
+const DECK_SCALE := 0.7   # deck cards a little smaller than the offers
+const OFFER_SCALE := 0.8
 
 var shop: RunShop
 var host  # hex_grid: shop_balance(), shop_deck_cards(), shop_buy(i), shop_buy_eraser(), shop_reroll(), shop_remove(card), shop_upgrade(card), shop_continue()
 var main_ui  # builds card faces (build_shot_card)
 
 var _balance: Label
-var _offers_row: HBoxContainer
-var _deck_flow: HFlowContainer
-var _remove_button: Button
-var _upgrade_button: Button
+var _bag_caption: Label
+var _bag_row: HBoxContainer
+var _club_offers: HBoxContainer
+var _hole := 1
+var _hole_title: Label
+var _hole_details: Label
+var _offers: GridContainer
+var _deck_caption: Label
+var _deck_grid: GridContainer
+var _green_caption: Label
+var _green_grid: GridContainer
 var _reroll_button: Button
 var _continue_button: Button
 var _note: Label
-var _selected = null  # deck card picked for Remove / Upgrade
+var _zoom: CardZoom
 
 
 func _init() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	var backdrop := ColorRect.new()
-	backdrop.color = Color(0, 0, 0, 0.55)
-	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(backdrop)
 
+	# Full screen: one sheet of scorecard paper covers the whole view
 	var panel := PanelContainer.new()
-	var box := ScorecardStyle.paper_box(INK, 3)
-	box.content_margin_left = 28
-	box.content_margin_right = 28
-	box.content_margin_top = 20
-	box.content_margin_bottom = 20
+	var box := ScorecardStyle.paper_box(INK, 0, ScorecardStyle.PAPER, 0)
+	box.content_margin_left = 48
+	box.content_margin_right = 48
+	box.content_margin_top = 28
+	box.content_margin_bottom = 28
 	panel.add_theme_stylebox_override("panel", box)
 	add_child(panel)
-	panel.anchor_left = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_top = 0.5
-	panel.anchor_bottom = 0.5
-	panel.offset_left = -590
-	panel.offset_right = 590
-	panel.offset_top = -380
-	panel.offset_bottom = 380
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 14)
+	col.add_theme_constant_override("separation", 12)
 	panel.add_child(col)
 
 	var header := HBoxContainer.new()
 	col.add_child(header)
-	header.add_child(_label("PRO SHOP", 40, INK, ScorecardStyle.header_font()))
+	header.add_theme_constant_override("separation", 36)
+	header.add_child(_label("PRO SHOP", 44, INK, ScorecardStyle.header_font()))
+	var hole_info := VBoxContainer.new()
+	hole_info.add_theme_constant_override("separation", 0)
+	hole_info.alignment = BoxContainer.ALIGNMENT_CENTER
+	header.add_child(hole_info)
+	_hole_title = _label("", 30, RED, ScorecardStyle.header_font())
+	hole_info.add_child(_hole_title)
+	_hole_details = _caption("")
+	hole_info.add_child(_hole_details)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(spacer)
-	_balance = _label("", 40, ScorecardStyle.PENCIL, ScorecardStyle.pencil_font())
+	_balance = _label("", 44, ScorecardStyle.PENCIL, ScorecardStyle.pencil_font())
 	header.add_child(_balance)
 	col.add_child(_rule(RED, 3))
 
-	col.add_child(_caption("FOR SALE"))
-	_offers_row = HBoxContainer.new()
-	_offers_row.add_theme_constant_override("separation", 18)
-	col.add_child(_offers_row)
-
-	var mid := HBoxContainer.new()
-	mid.add_theme_constant_override("separation", 12)
-	col.add_child(mid)
-	_reroll_button = _button("REROLL  ·  %d" % RunShop.REROLL_PRICE, func(): host.shop_reroll())
-	mid.add_child(_reroll_button)
-	_note = _label("", 22, ScorecardStyle.PENCIL, ScorecardStyle.pencil_font())
-	mid.add_child(_note)
-
+	# The bag for this hole, and clubs for sale
+	var bag := HBoxContainer.new()
+	bag.add_theme_constant_override("separation", 40)
+	col.add_child(bag)
+	var bag_col := VBoxContainer.new()
+	bag_col.add_theme_constant_override("separation", 8)
+	bag.add_child(bag_col)
+	_bag_caption = _caption("")
+	bag_col.add_child(_bag_caption)
+	_bag_row = HBoxContainer.new()
+	_bag_row.add_theme_constant_override("separation", 10)
+	bag_col.add_child(_bag_row)
+	var shop_col := VBoxContainer.new()
+	shop_col.add_theme_constant_override("separation", 8)
+	bag.add_child(shop_col)
+	shop_col.add_child(_caption("CLUBS FOR SALE  ·  REPLACES YOURS"))
+	_club_offers = HBoxContainer.new()
+	_club_offers.add_theme_constant_override("separation", 12)
+	shop_col.add_child(_club_offers)
 	col.add_child(_rule(ScorecardStyle.RULE, 1))
-	col.add_child(_caption("YOUR DECK  ·  PICK A CARD TO REMOVE OR UPGRADE"))
+
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 40)
+	col.add_child(body)
+
+	# Left: for sale
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 12)
+	body.add_child(left)
+	left.add_child(_caption("FOR SALE  ·  TAP A CARD TO READ IT"))
+	_offers = GridContainer.new()
+	_offers.columns = 2
+	_offers.add_theme_constant_override("h_separation", 20)
+	_offers.add_theme_constant_override("v_separation", 16)
+	left.add_child(_offers)
+	_reroll_button = _button("REROLL  ·  %d" % RunShop.REROLL_PRICE, func(): host.shop_reroll())
+	left.add_child(_reroll_button)
+
+	var divider := ColorRect.new()
+	divider.color = ScorecardStyle.RULE
+	divider.custom_minimum_size = Vector2(2, 0)
+	body.add_child(divider)
+
+	# Right: your deck
+	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.add_theme_constant_override("separation", 10)
+	body.add_child(right)
+	_deck_caption = _caption("")
+	right.add_child(_deck_caption)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 150)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	col.add_child(scroll)
-	_deck_flow = HFlowContainer.new()
-	_deck_flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_deck_flow.add_theme_constant_override("h_separation", 8)
-	_deck_flow.add_theme_constant_override("v_separation", 8)
-	scroll.add_child(_deck_flow)
+	right.add_child(scroll)
+	var decks := VBoxContainer.new()
+	decks.add_theme_constant_override("separation", 10)
+	scroll.add_child(decks)
+	_deck_grid = _grid()
+	decks.add_child(_deck_grid)
+	_green_caption = _caption("")
+	decks.add_child(_green_caption)
+	_green_grid = _grid()
+	decks.add_child(_green_grid)
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 12)
 	col.add_child(actions)
-	_remove_button = _button("REMOVE  ·  %d" % RunShop.REMOVE_PRICE, func(): host.shop_remove(_selected))
-	actions.add_child(_remove_button)
-	_upgrade_button = _button("UPGRADE  ·  %d  (-1 POWER)" % RunShop.UPGRADE_PRICE, func(): host.shop_upgrade(_selected))
-	actions.add_child(_upgrade_button)
+	_note = _label("", 24, ScorecardStyle.PENCIL, ScorecardStyle.pencil_font())
+	actions.add_child(_note)
 	var fill := Control.new()
 	fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	actions.add_child(fill)
 	_continue_button = _button("Continue", func(): host.shop_continue())
-	_continue_button.custom_minimum_size = Vector2(240, 56)
+	_continue_button.custom_minimum_size = Vector2(260, 56)
 	ScorecardStyle.flat_button(_continue_button, RED, RED)
+	_continue_button.add_theme_font_size_override("font_size", 22)
 	actions.add_child(_continue_button)
+
+	_zoom = CardZoom.new()
+	add_child(_zoom)
 
 
 func open(p_shop: RunShop, p_host, p_main_ui, next_hole: int) -> void:
 	shop = p_shop
 	host = p_host
 	main_ui = p_main_ui
-	_selected = null
-	_continue_button.text = "TEE OFF HOLE %d  →" % next_hole
+	_hole = next_hole
+	var info: Dictionary = host.shop_hole_info()
+	_hole_title.text = info.title
+	_hole_details.text = info.details
 	visible = true
 	refresh()
 
@@ -121,68 +179,144 @@ func refresh() -> void:
 	"""Rebuild the offers and the deck from the shop and the host."""
 	var balance: int = host.shop_balance()
 	_balance.text = "%d pts" % balance
-	for c in _offers_row.get_children():
+	_refresh_bag(balance)
+	for c in _offers.get_children():
 		c.queue_free()
 	for i in range(shop.offers.size()):
 		var data: CardData = shop.offers[i]
 		var price := RunShop.price_of(data)
+		var instance := CardInstance.create_from_data(data)
+		var idx := i
+		var buy := func(): host.shop_buy(idx)
 		var slot := VBoxContainer.new()
 		slot.add_theme_constant_override("separation", 8)
-		var face := Button.new()
-		face.disabled = true
-		main_ui.build_shot_card(face, CardInstance.create_from_data(data))
-		slot.add_child(face)
-		var idx := i
-		var buy := _button("BUY  ·  %d" % price, func(): host.shop_buy(idx))
-		buy.disabled = balance < price
-		slot.add_child(buy)
-		_offers_row.add_child(slot)
+		slot.add_child(_card(instance, OFFER_SCALE, func():
+			_zoom.open(instance, [{"label": "BUY  ·  %d PTS" % price, "on_press": buy, "disabled": balance < price}],
+				"" if balance >= price else "Not enough points: %d." % balance)))
+		var buy_button := _button("BUY  ·  %d" % price, buy)
+		buy_button.disabled = balance < price
+		slot.add_child(buy_button)
+		_offers.add_child(slot)
 	# The item: Eraser
 	var item := VBoxContainer.new()
 	item.add_theme_constant_override("separation", 8)
-	item.add_child(_item_face("Eraser", "-1 stroke off your run score. Used at once."))
+	var eraser := _item_face("Eraser", "-1 stroke off your run score. Used at once.")
+	eraser.custom_minimum_size = CardFaceView.SIZE * OFFER_SCALE
+	item.add_child(eraser)
 	var buy_item := _button("BUY  ·  %d" % RunShop.ERASER_PRICE, func(): host.shop_buy_eraser())
 	buy_item.disabled = balance < RunShop.ERASER_PRICE or not shop.eraser_available
 	if not shop.eraser_available:
 		buy_item.text = "SOLD"
 	item.add_child(buy_item)
-	_offers_row.add_child(item)
+	_offers.add_child(item)
 	_reroll_button.disabled = balance < RunShop.REROLL_PRICE
 
-	for c in _deck_flow.get_children():
-		c.queue_free()
+	# The deck: shot cards in rows of DECK_COLUMNS, green cards below
+	for grid in [_deck_grid, _green_grid]:
+		for c in grid.get_children():
+			c.queue_free()
+	var shots := 0
+	var greens := 0
 	for card in host.shop_deck_cards():
-		var chip := Button.new()
-		chip.toggle_mode = true
-		chip.button_pressed = card == _selected
-		var tag: String = ShotCardFace.kind_for(card.data).tag
-		chip.text = card.get_display_name().to_upper()
-		chip.custom_minimum_size = Vector2(130, 38)
-		ScorecardStyle.flat_button(chip)
-		chip.add_theme_font_size_override("font_size", 15)
-		# A coloured left edge for the card's category, red when picked
-		var normal := ScorecardStyle.paper_box(ScorecardStyle.RULE, 1)
-		normal.border_width_left = 6
-		normal.border_color = ScorecardStyle.category_color(tag)
-		chip.add_theme_stylebox_override("normal", normal)
-		var picked_box := ScorecardStyle.paper_box(RED, 3, ScorecardStyle.PAPER_DARK)
-		picked_box.border_width_left = 6
-		chip.add_theme_stylebox_override("pressed", picked_box)
-		chip.add_theme_stylebox_override("hover_pressed", picked_box)
-		if card.data.card_type == CardData.CardType.NEGATIVE:
-			chip.add_theme_color_override("font_color", RED)
+		var green := RunShop.is_green_card(card.data)
 		var picked = card
-		chip.pressed.connect(func():
-			_selected = picked if _selected != picked else null
-			refresh())
-		_deck_flow.add_child(chip)
-	_remove_button.disabled = _selected == null or balance < RunShop.REMOVE_PRICE
-	_upgrade_button.disabled = _selected == null or balance < RunShop.UPGRADE_PRICE or not RunShop.can_upgrade(_selected)
-	_note.text = "Strain comes from overswinging - remove it here." if _has_strain() else ""
+		var face := _card(card, DECK_SCALE, func(): _open_deck_card(picked))
+		(_green_grid if green else _deck_grid).add_child(face)
+		if green:
+			greens += 1
+		else:
+			shots += 1
+	_deck_caption.text = "YOUR DECK  ·  %d SHOT CARDS  ·  TAP A CARD TO READ, REMOVE OR UPGRADE IT" % shots
+	_green_caption.text = "GREEN DECK  ·  %d CARDS" % greens
+	_note.text = "Strain comes from overswinging. Tap it to remove it." if _has_strain() else ""
+
+
+func _refresh_bag(balance: int) -> void:
+	"""Owned clubs as tiles to pick for the hole, the putter locked in, and
+	the club offers with Buy buttons."""
+	for c in _bag_row.get_children():
+		c.queue_free()
+	for item in host.shop_clubs():
+		var tile := _club_tile(item)
+		tile.button_pressed = host.shop_bag_has(item.club)
+		var club: int = item.club
+		tile.pressed.connect(func(): host.shop_toggle_bag(club))
+		_bag_row.add_child(tile)
+	var putter := _club_tile(host.shop_putter())
+	putter.locked = true
+	putter.disabled = true
+	putter.yards = "the green"
+	_bag_row.add_child(putter)
+	var needed: int = host.shop_bag_needed()
+	_bag_caption.text = "YOUR BAG FOR HOLE %d  ·  PICK %d CLUBS  ·  THE PUTTER IS ALWAYS IN" % [_hole, host.shop_bag_size()]
+	_continue_button.disabled = needed > 0
+	_continue_button.text = ("PICK %d MORE CLUB%s" % [needed, "" if needed == 1 else "S"]) if needed > 0 else "TEE OFF HOLE %d  →" % _hole
+
+	for c in _club_offers.get_children():
+		c.queue_free()
+	for i in range(shop.club_offers.size()):
+		var item: ClubItem = shop.club_offers[i]
+		var slot := VBoxContainer.new()
+		slot.add_theme_constant_override("separation", 6)
+		var tile := _club_tile(item)
+		tile.toggle_mode = false
+		slot.add_child(tile)
+		var idx := i
+		var buy := _button("BUY  ·  %d" % item.price(), func(): host.shop_buy_club(idx))
+		buy.disabled = balance < item.price()
+		slot.add_child(buy)
+		_club_offers.add_child(slot)
+	if shop.club_offers.is_empty():
+		_club_offers.add_child(_caption("SOLD OUT"))
+
+
+func _club_tile(item: ClubItem) -> ClubTile:
+	var tile := ClubTile.new()
+	tile.item = item
+	tile.yards = host.shop_club_yards(item.club)
+	return tile
 
 
 func clear_selection() -> void:
-	_selected = null
+	"""Kept for the host; deck picks now happen in the zoom view."""
+	pass
+
+
+func _open_deck_card(card) -> void:
+	var balance: int = host.shop_balance()
+	var can_up := RunShop.can_upgrade(card)
+	var note := ""
+	if balance < RunShop.REMOVE_PRICE:
+		note = "Not enough points: %d." % balance
+	elif not can_up:
+		note = "Already at its lowest cost." if ShotCardFace.cost_for(card.data) > 0 or card.upgrade_level > 0 else ""
+	_zoom.open(card, [
+		{"label": "REMOVE  ·  %d PTS" % RunShop.REMOVE_PRICE, "on_press": func(): host.shop_remove(card),
+			"disabled": balance < RunShop.REMOVE_PRICE},
+		{"label": "UPGRADE  ·  %d PTS  (−1 COST)" % RunShop.UPGRADE_PRICE, "on_press": func(): host.shop_upgrade(card),
+			"disabled": balance < RunShop.UPGRADE_PRICE or not can_up},
+	], note)
+
+
+func _card(instance, scale: float, on_tap: Callable) -> Button:
+	"""A card face that opens the zoom view when tapped."""
+	var face := Button.new()
+	main_ui.build_shot_card(face, instance)
+	face.disabled = false
+	face.custom_minimum_size = CardFaceView.SIZE * scale
+	var drawn := face.get_node_or_null("Face") as Control
+	if drawn:
+		drawn.custom_minimum_size = CardFaceView.SIZE * scale  # the face draws at whatever size it is given
+	face.pressed.connect(on_tap)
+	return face
+
+
+func _grid() -> GridContainer:
+	var g := GridContainer.new()
+	g.columns = DECK_COLUMNS
+	g.add_theme_constant_override("h_separation", 12)
+	g.add_theme_constant_override("v_separation", 12)
+	return g
 
 
 func _has_strain() -> bool:
@@ -196,7 +330,7 @@ func _item_face(title: String, text: String) -> Control:
 	"""An item drawn as a card: red ITEM bar, name, effect."""
 	var face := CardFaceView.new()
 	face.tag = "ITEM"
-	face.cost_text = "ONCE"
+	face.cost_text = ""
 	face.title = title
 	face.description = text
 	face.stats = [["STROKES", "-1"], ["USE", "NOW"]]
@@ -209,7 +343,7 @@ func _label(text: String, size: int, color: Color, font: Font = null) -> Label:
 
 
 func _caption(text: String) -> Label:
-	return ScorecardStyle.label(text, 15, SOFT, ScorecardStyle.header_font(false))
+	return ScorecardStyle.label(text, 16, SOFT, ScorecardStyle.header_font(false))
 
 
 func _rule(color: Color, height: int) -> ColorRect:

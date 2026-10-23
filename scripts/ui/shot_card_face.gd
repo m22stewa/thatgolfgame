@@ -50,9 +50,15 @@ static func cost_for(data: CardData, upgrade_level: int = 0) -> int:
 	return 0
 
 
+const BASE_H := 70.0  # icon height on a card in the hand; bigger = zoomed in
+
+
 func _draw() -> void:
-	var c := size / 2.0
-	var h := minf(size.x, size.y) * 0.42
+	# Draw at hand size and let the transform scale it: shapes stay crisp
+	var k := maxf(size.y / BASE_H, 0.01)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(k, k))
+	var c := size / k / 2.0
+	var h := minf(size.x, size.y) / k * 0.42
 	var w := 2.5
 	match kind:
 		"draw", "fade":
