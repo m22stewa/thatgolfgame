@@ -14,7 +14,9 @@ class_name GreenOverlay
 ##     a forgotten putter lying across two hexes.
 
 const LIFT := 0.04            # above the course tile surface
-const TINT_ALPHA := 0.5
+const TINT_MIX := 0.6         # how much height colour over the turf green
+const TINT_DEPTH := 0.6       # tints are solid columns this deep, so steps in the course below never show
+const TURF := Color(0.33, 0.6, 0.3)
 const CHEVRON_SPACING := 0.15
 const DRIFT_RANGE := 0.1      # how far chevrons drift before looping (world units)
 
@@ -49,9 +51,9 @@ func _init() -> void:
 	_dot_mesh.height = 0.01
 	_dot_mesh.radial_segments = 8
 	_tint_mesh = CylinderMesh.new()
-	_tint_mesh.top_radius = GreenBoard.SIZE * 0.94
-	_tint_mesh.bottom_radius = GreenBoard.SIZE * 0.94
-	_tint_mesh.height = 0.01
+	_tint_mesh.top_radius = GreenBoard.SIZE * 1.01
+	_tint_mesh.bottom_radius = GreenBoard.SIZE * 1.01
+	_tint_mesh.height = TINT_DEPTH
 	_tint_mesh.radial_segments = 6
 
 
@@ -98,11 +100,21 @@ func clear() -> void:
 
 
 func surface_point(a: Vector2i, hole) -> Vector3:
-	"""World position on top of the course tile under small hex a."""
+	"""World position on top of small hex a: the highest course tile under any
+	part of it, so a hex straddling two tiles never sinks into the higher one."""
 	var w := GreenBoard.to_world(a)
-	var cell: Vector2i = hole.world_to_grid(Vector3(w.x, 0.0, w.y))
-	var y: float = hole.get_tile_world_position(cell).y + hole.TILE_SURFACE_OFFSET + LIFT
-	return Vector3(w.x, y, w.y)
+	var top := -INF
+	for i in range(7):
+		var p := w
+		if i > 0:
+			var ang := float(i) * TAU / 6.0
+			p += Vector2(cos(ang), sin(ang)) * GreenBoard.SIZE * 0.9
+		var cell: Vector2i = hole.world_to_grid(Vector3(p.x, 0.0, p.y))
+		if hole.get_cell(cell.x, cell.y) >= 0:
+			top = maxf(top, hole.get_tile_world_position(cell).y)
+	if top == -INF:
+		top = hole.get_tile_world_position(hole.world_to_grid(Vector3(w.x, 0.0, w.y))).y
+	return Vector3(w.x, top + hole.TILE_SURFACE_OFFSET + LIFT, w.y)
 
 
 func _process(delta: float) -> void:
@@ -120,18 +132,15 @@ func _process(delta: float) -> void:
 
 func _add_tint(at: Vector3, height: float) -> void:
 	var color := LOW_COLOR.lerp(MID_COLOR, height * 2.0) if height < 0.5 else MID_COLOR.lerp(HIGH_COLOR, (height - 0.5) * 2.0)
-	color.a = TINT_ALPHA
+	# Solid (not see-through): the course hexes under the green must not show
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.render_priority = 1
+	mat.albedo_color = TURF.lerp(color, TINT_MIX)
+	mat.roughness = 1.0
 	var mi := MeshInstance3D.new()
 	mi.mesh = _tint_mesh
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.position = at
+	mi.position = at - Vector3(0, TINT_DEPTH / 2.0, 0)  # top face at the surface
 	mi.rotation.y = PI / 6.0
 	add_child(mi)
 

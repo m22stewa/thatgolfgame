@@ -1289,6 +1289,11 @@ func _show_turn_footprint() -> void:
 	_hide_all_aoe_highlights()
 	modifier_trajectory_mesh.visible = false
 	curved_trajectory_mesh.visible = false
+	if putting_active:
+		# The green board draws the putt; course-hex markers would sit over it
+		highlight_mesh.visible = false
+		target_highlight_mesh.visible = false
+		return
 	if golf_ball == null or turn_aim_target.x < 0 or hole_complete_triggered:
 		highlight_mesh.visible = false
 		target_highlight_mesh.visible = false

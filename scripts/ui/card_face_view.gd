@@ -6,11 +6,11 @@ class_name CardFaceView
 ## effect, and a stat row with pencilled values. A played card gets a pencil
 ## tick; a Strain card is stamped UNPLAYABLE.
 
-const SIZE := Vector2(150, 204)
-const BAR_H := 22.0
-const ART_TOP := 58.0
-const ART_H := 62.0
-const STAT_H := 40.0
+const SIZE := Vector2(186, 254)
+const BAR_H := 28.0
+const ART_TOP := 74.0
+const ART_H := 74.0
+const STAT_H := 52.0
 
 var tag: String = "SHOT"
 var cost_text: String = ""
@@ -103,14 +103,14 @@ func _draw() -> void:
 	# Category bar + cost
 	var bar := ScorecardStyle.category_color(tag)
 	draw_rect(Rect2(0, 0, w, BAR_H), bar)
-	draw_string(head, Vector2(8, BAR_H - 6), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, ScorecardStyle.PAPER)
-	draw_string(head, Vector2(w - 60, BAR_H - 6), cost_text, HORIZONTAL_ALIGNMENT_RIGHT, 52, 12, ScorecardStyle.PAPER)
+	draw_string(head, Vector2(10, BAR_H - 8), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, ScorecardStyle.PAPER)
+	draw_string(head, Vector2(w - 72, BAR_H - 8), cost_text, HORIZONTAL_ALIGNMENT_RIGHT, 62, 15, ScorecardStyle.PAPER)
 
 	# Title, shrunk to fit
-	var title_size := 24
-	while title_size > 14 and head.get_string_size(title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x > w - 16:
+	var title_size := 30
+	while title_size > 16 and head.get_string_size(title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x > w - 16:
 		title_size -= 1
-	draw_string(head, Vector2(8, BAR_H + 30), title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, w - 16, title_size, ink)
+	draw_string(head, Vector2(10, BAR_H + 37), title.to_upper(), HORIZONTAL_ALIGNMENT_LEFT, w - 16, title_size, ink)
 
 	# Grid paper under the icon
 	var art := Rect2(8, ART_TOP, w - 16, ART_H)
@@ -127,7 +127,7 @@ func _draw() -> void:
 	draw_rect(art, Color(ink, 0.35), false, 1.0)
 
 	# Effect line
-	draw_multiline_string(head_light, Vector2(8, ART_TOP + ART_H + 14), description, HORIZONTAL_ALIGNMENT_LEFT, w - 16, 11, 2, ScorecardStyle.INK_SOFT)
+	draw_multiline_string(head_light, Vector2(8, ART_TOP + ART_H + 18), description, HORIZONTAL_ALIGNMENT_LEFT, w - 16, 14, 2, ScorecardStyle.INK_SOFT)
 
 	# Stat row: small caps labels, pencilled values
 	var top := h - STAT_H
@@ -138,13 +138,13 @@ func _draw() -> void:
 			var cx := cw * i
 			if i > 0:
 				draw_line(Vector2(cx, top), Vector2(cx, h), ScorecardStyle.RULE, 1.0)
-			draw_string(head_light, Vector2(cx, top + 12), stats[i][0], HORIZONTAL_ALIGNMENT_CENTER, cw, 9, ScorecardStyle.INK_SOFT)
-			draw_string(pencil, Vector2(cx, top + 34), stats[i][1], HORIZONTAL_ALIGNMENT_CENTER, cw, 22, ScorecardStyle.PENCIL)
+			draw_string(head_light, Vector2(cx, top + 15), stats[i][0], HORIZONTAL_ALIGNMENT_CENTER, cw, 12, ScorecardStyle.INK_SOFT)
+			draw_string(pencil, Vector2(cx, top + 45), stats[i][1], HORIZONTAL_ALIGNMENT_CENTER, cw, 30, ScorecardStyle.PENCIL)
 
 	draw_rect(Rect2(Vector2.ZERO, size), ink, false, 2.0)
 
 	if played:
-		ScorecardStyle.check_mark(self, Vector2(w - 34, BAR_H + 6), 24)
+		ScorecardStyle.check_mark(self, Vector2(w - 40, BAR_H + 8), 30)
 	if unplayable:
 		_stamp("UNPLAYABLE")
 

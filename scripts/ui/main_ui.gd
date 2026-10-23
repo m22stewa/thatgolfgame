@@ -39,6 +39,7 @@ var _selected_club_instance = null
 # Prototype: hide everything not needed to plan and hit a shot (scoreboard,
 # debug info, dev buttons). Nothing is deleted; F1 toggles it all back.
 @export var prototype_ui: bool = true
+const TRAY_TOP := 0.69  # the scorecard tray takes the bottom 31% of the screen
 const PROTOTYPE_HIDDEN := [
 	"ShotUI/mainbg green", "ShotUI/holeinfo white", "ShotUI/shotinfo grey",
 	"ShotUI/scorebg darkgreen", "ShotUI/ScoreInfo", "ShotUI/TopBar",
@@ -95,6 +96,10 @@ func _build_scorecard_tray() -> void:
 	if tray == null or hand_club_row == null or hand_modifier_row == null or shoot_button == null:
 		return
 	tray.material = null
+	# A taller tray so the cards can be read: the hole view gives up the space
+	tray.anchor_top = TRAY_TOP
+	if hole_viewer:
+		hole_viewer.anchor_bottom = TRAY_TOP
 	var paper := ScorecardStyle.paper_box(ScorecardStyle.INK, 0, ScorecardStyle.PAPER, 0)
 	paper.border_width_top = 3
 	tray.add_theme_stylebox_override("panel", paper)
