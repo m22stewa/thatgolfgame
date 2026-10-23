@@ -401,6 +401,11 @@ func _register_path_cards() -> void:
 	_register_putt_card("firm_putt", "Firm Putt", "Strike it 2 hexes further.", {"reach_bonus": 2})
 	_register_putt_card("dead_weight", "Dead Weight", "Stops where it's struck.", {"dead_weight": true})
 
+	# Utility cards: act on the course's obstacles as soon as they're played
+	_register_utility_card("extinguisher", "Fire Extinguisher", "Put out every fire on the hole.", "extinguish")
+	_register_utility_card("groundskeeper", "Groundskeeper", "Move the hole's obstacles somewhere else.", "groundskeeper", CardData.Rarity.UNCOMMON)
+	_register_utility_card("shutoff", "Shut-Off Valve", "Wind tunnels and sprinklers off for the hole.", "shutoff", CardData.Rarity.UNCOMMON)
+
 	# Strain: added to your deck when you overspend power. Dead weight in hand.
 	if not _cards.has("strain"):
 		var strain = CardData.create("strain", "Strain", CardData.Rarity.COMMON)
@@ -419,6 +424,19 @@ func _register_putt_card(id: String, card_name: String, description: String, fie
 	effect.effect_name = card_name
 	for key in fields:
 		effect.set(key, fields[key])
+	card.effects.append(effect)
+	_register(card)
+
+
+func _register_utility_card(id: String, card_name: String, description: String, action: String, rarity: CardData.Rarity = CardData.Rarity.COMMON) -> void:
+	if _cards.has(id):
+		return
+	var card = CardData.create(id, card_name, rarity)
+	card.card_type = CardData.CardType.SHOT
+	card.description = description
+	var effect := EffectCourseUtility.new()
+	effect.effect_name = card_name
+	effect.action = action
 	card.effects.append(effect)
 	_register(card)
 

@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="DeckDefinition" load_steps=3 format=3 uid="uid://gtpkcpcn5wkb"]
+[gd_resource type="Resource" script_class="DeckDefinition" format=3 uid="uid://gtpkcpcn5wkb"]
 
 [ext_resource type="Script" uid="uid://bqhyqgxuiige0" path="res://scripts/cards/deck_definition.gd" id="1_script"]
 [ext_resource type="Script" uid="uid://c4uvg41aeeatq" path="res://scripts/cards/card_data.gd" id="1_woe3k"]
@@ -8,4 +8,4 @@ script = ExtResource("1_script")
 deck_id = "starter_deck"
 display_name = "Starter Deck"
 description = "Prototype path deck: shape cards that spend club power."
-card_ids = Array[String](["draw_shot", "draw_shot", "fade_shot", "fade_shot", "hard_draw", "hard_fade", "loft", "loft", "stop", "stop", "release", "dart", "dart", "knockdown"])
+card_ids = Array[String](["draw_shot", "draw_shot", "fade_shot", "fade_shot", "hard_draw", "hard_fade", "loft", "loft", "stop", "stop", "release", "dart", "dart", "knockdown", "extinguisher"])

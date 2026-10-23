@@ -130,6 +130,12 @@ func _ready() -> void:
 	# Hide popups initially
 	score_popup.visible = false
 	hole_complete_popup.visible = false
+	_scorecard_style(score_popup)
+	_scorecard_style(hole_complete_popup)
+	hole_complete_title.add_theme_font_size_override("font_size", 40)
+	hole_score.add_theme_font_override("font", ScorecardStyle.pencil_font())
+	hole_score.add_theme_font_size_override("font_size", 34)
+	hole_score.add_theme_color_override("font_color", ScorecardStyle.PENCIL)
 	
 	# Connect button signals
 	next_button.pressed.connect(_on_next_hole_pressed)
@@ -436,13 +442,13 @@ func show_score_popup(chips: int, mult: float, final_score: int, hit_water: bool
 	
 	if hit_water:
 		score_title.text = "In the Water!"
-		score_title.add_theme_color_override("font_color", Color(0.3, 0.5, 0.8))
+		score_title.add_theme_color_override("font_color", ScorecardStyle.NAVY)
 	elif hit_sand:
 		score_title.text = "In the Sand!"
-		score_title.add_theme_color_override("font_color", Color(0.8, 0.7, 0.3))
+		score_title.add_theme_color_override("font_color", Color(0.55, 0.42, 0.15))
 	else:
 		score_title.text = title if title != "" else "Nice Shot!"
-		score_title.add_theme_color_override("font_color", Color.WHITE)
+		score_title.add_theme_color_override("font_color", ScorecardStyle.INK)
 	
 	score_value.text = "+%d" % final_score
 	score_details.text = "%d pts × %.1f streak" % [chips, mult]
@@ -480,6 +486,24 @@ func _update_score_display(value: int) -> void:
 		persistent_score_label.text = str(value)
 
 
+func _scorecard_style(node: Node) -> void:
+	"""Popups in the scorecard look: paper panels, ink headers, ruled buttons."""
+	if node is PanelContainer or node is Panel:
+		var box := ScorecardStyle.paper_box(ScorecardStyle.INK, 3)
+		box.set_content_margin_all(24)
+		node.add_theme_stylebox_override("panel", box)
+	elif node is Button:
+		ScorecardStyle.flat_button(node, ScorecardStyle.RED, ScorecardStyle.RED)
+		node.add_theme_font_size_override("font_size", 22)
+	elif node is Label:
+		node.add_theme_font_override("font", ScorecardStyle.header_font())
+		node.add_theme_color_override("font_color", ScorecardStyle.INK)
+		node.remove_theme_color_override("font_outline_color")
+		node.add_theme_constant_override("outline_size", 0)
+	for c in node.get_children():
+		_scorecard_style(c)
+
+
 func show_hole_complete(strokes: int, par: int, hole_points: int, breakdown: Array = [], balance: int = -1) -> void:
 	"""Display hole completion popup. breakdown is [{label, points}] earned this
 	   hole; balance is the spendable points total (-1 = unknown)."""
@@ -490,7 +514,7 @@ func show_hole_complete(strokes: int, par: int, hole_points: int, breakdown: Arr
 	if hole_complete_title:
 		hole_complete_title.text = "Hole %d Complete!" % current_hole
 	
-	hole_score.text = "%s\n%d strokes" % [score_name, strokes]
+	hole_score.text = "%s  ·  %d strokes" % [score_name, strokes]
 	if run_state:
 		hole_score.text += "  |  Run %s" % run_state.format_vs_par(run_state.get_live_vs_par())
 	
@@ -733,12 +757,15 @@ func _show_points_popup(points: int, reason: String) -> void:
 	"""Show a floating points indicator"""
 	var popup = Label.new()
 	popup.text = "+%d" % points if points >= 0 else "%d" % points
-	popup.add_theme_font_size_override("font_size", 24)
+	popup.add_theme_font_size_override("font_size", 30)
+	popup.add_theme_font_override("font", ScorecardStyle.pencil_font())
+	popup.add_theme_color_override("font_outline_color", ScorecardStyle.PAPER)
+	popup.add_theme_constant_override("outline_size", 8)
 	
 	if points > 0:
-		popup.add_theme_color_override("font_color", Color(0.3, 1.0, 0.3))
+		popup.add_theme_color_override("font_color", ScorecardStyle.GREEN)
 	else:
-		popup.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+		popup.add_theme_color_override("font_color", ScorecardStyle.RED)
 	
 	popup.position = Vector2(get_viewport().size.x / 2 - 50, get_viewport().size.y / 2)
 	add_child(popup)
@@ -755,9 +782,12 @@ func _show_points_popup(points: int, reason: String) -> void:
 func _show_golf_bonus_popup(bonus_name: String, bonus_points: int) -> void:
 	"""Show a prominent golf bonus achievement"""
 	var popup = Label.new()
-	popup.text = "%s +%d" % [bonus_name, bonus_points]
-	popup.add_theme_font_size_override("font_size", 36)
-	popup.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
+	popup.text = "%s +%d" % [bonus_name.to_upper(), bonus_points]
+	popup.add_theme_font_override("font", ScorecardStyle.header_font())
+	popup.add_theme_font_size_override("font_size", 44)
+	popup.add_theme_color_override("font_color", ScorecardStyle.RED)
+	popup.add_theme_color_override("font_outline_color", ScorecardStyle.PAPER)
+	popup.add_theme_constant_override("outline_size", 12)
 	popup.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	
 	popup.set_anchors_preset(Control.PRESET_CENTER)

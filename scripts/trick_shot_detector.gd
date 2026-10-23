@@ -33,6 +33,8 @@ const TRICKS := {
 	"chip_in": {"name": "Chip-in", "points": 100},
 	"long_putt": {"name": "Long Putt", "points": 50},
 	"ice_run": {"name": "Ice Run", "points": 20},
+	"boing": {"name": "Boing!", "points": 15},
+	"tunnel_ride": {"name": "Tunnel Ride", "points": 15},
 }
 
 const COIN_POINTS := 25
@@ -76,6 +78,10 @@ func score_shot(ctx: ShotContext) -> Array:
 		tricks.append(_trick("stuck_green"))
 	if ctx.has_metadata("ice_run"):
 		tricks.append(_trick("ice_run"))
+	if ctx.has_metadata("bounced") and lands_safe:
+		tricks.append(_trick("boing"))
+	if ctx.has_metadata("tunnel_ride") and lands_safe:
+		tricks.append(_trick("tunnel_ride"))
 	var flag := _flag()
 	if flag.x >= 0 and hex_distance(landing, flag) <= PIN_SEEKER_RADIUS and hex_distance(start, flag) >= PIN_SEEKER_MIN_DIST:
 		tricks.append(_trick("pin_seeker"))

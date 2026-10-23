@@ -406,6 +406,7 @@ var deck_manager: DeckManager = null
 var turn_controller: TurnController = null
 var hole_context: HoleContext = null
 var shoot_button: Button = null  # Turn-based confirm button (lives in MainUI)
+var pending_swing: Dictionary = {}  # a swing grade to use when Shoot fires with no hold (bot / tests)
 var main_ui_ref: Control = null   # MainUI node (owns the 2D hand strip + Shoot button)
 var current_aim_dir: int = 3  # Dominant hex aim direction (0..5); 3 = Down = toward flag
 var turn_aim_target: Vector2i = Vector2i(-1, -1)  # Hex the player is aiming at this shot
@@ -1398,6 +1399,14 @@ func _on_shoot_pressed() -> void:
 		return
 	if not _is_shoot_legal():
 		return
+	# The SHOOT meter's grade bends this shot (pure / thin / slice / hook)
+	var swing: Dictionary = shoot_button.take_swing() if shoot_button is SwingButton else {}
+	if swing.is_empty() and not pending_swing.is_empty():
+		swing = pending_swing
+		if shoot_button is SwingButton:
+			shoot_button.show_result(swing.kind)
+	pending_swing = {}
+	turn_controller.swing = swing
 	# Make sure the ShotManager has a live shot + the latest footprint before
 	# confirming (execute_shot -> confirm_shot consumes the built footprint).
 	if shot_manager and not shot_manager.is_shot_in_progress and golf_ball:
@@ -1406,6 +1415,8 @@ func _on_shoot_pressed() -> void:
 		turn_controller.played_club = current_club
 		turn_controller.begin_turn()
 		turn_controller.set_aim_dir(current_aim_dir)
+	elif not swing.is_empty():
+		turn_controller.rebuild()
 	var plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {}) if shot_manager else {}
 	if int(plan.get("over", 0)) > 0:
 		_add_strain_cards(int(plan.over))
@@ -1492,22 +1503,110 @@ func _allowed_clubs_for_tile(tile: Vector2i) -> Array:
 
 
 func _update_shoot_button_state() -> void:
-	"""Enable/disable the Shoot button based on shot legality."""
-	if shoot_button and putting_active:
+	"""Enable/disable the Shoot button based on shot legality, and refresh the
+	SHOOT box face, its swing meter and the THIS SHOT line."""
+	if shoot_button == null:
+		return
+	var stroke_text := "STROKE %d" % ((run_state.strokes_this_hole if run_state else 0) + 1)
+	var swing_box := shoot_button as SwingButton
+	if putting_active:
 		shoot_button.disabled = false
 		shoot_button.text = "Putt"
+		if swing_box:
+			swing_box.set_face("PUTT", stroke_text, false)
+		_set_this_shot(_this_shot_text({}))
 		return
-	if shoot_button:
-		shoot_button.disabled = not _is_shoot_legal()
-		var plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {}) if shot_manager and shot_manager.current_context else {}
+	shoot_button.disabled = not _is_shoot_legal()
+	var plan: Dictionary = shot_manager.current_context.get_metadata("shot_plan", {}) if shot_manager and shot_manager.current_context else {}
+	if shoot_button.disabled:
+		shoot_button.text = _shoot_block_reason()
+	elif plan.is_empty() or current_club < 0:
+		shoot_button.text = "Shoot"
+	elif int(plan.over) > 0:
+		shoot_button.text = "Shoot  %d/%d\n+%d Strain" % [plan.cost, plan.power, plan.over]
+	else:
+		shoot_button.text = "Shoot  %d/%d" % [plan.cost, plan.power]
+	if swing_box:
 		if shoot_button.disabled:
-			shoot_button.text = _shoot_block_reason()
-		elif plan.is_empty() or current_club < 0:
-			shoot_button.text = "Shoot"
-		elif int(plan.over) > 0:
-			shoot_button.text = "Shoot  %d/%d\n+%d Strain" % [plan.cost, plan.power, plan.over]
+			swing_box.set_face(_shoot_block_reason(), "", false)
 		else:
-			shoot_button.text = "Shoot  %d/%d" % [plan.cost, plan.power]
+			var sub := stroke_text
+			if not plan.is_empty() and int(plan.over) > 0:
+				sub += "  ·  +%d STRAIN" % int(plan.over)
+			swing_box.set_face("SHOOT", sub, true)
+			var diff := _swing_difficulty(plan)
+			swing_box.set_difficulty(diff.x, diff.y)
+	_set_this_shot(_this_shot_text(plan))
+
+
+func _swing_difficulty(plan: Dictionary) -> Vector2:
+	"""(green half-width, meter period) for the SHOOT meter: the target shrinks
+	and the box speeds up for bad lies, long clubs, stacked cards, overswinging
+	and wind."""
+	var green := 0.34
+	if golf_ball:
+		var ball := world_to_grid(golf_ball.position)
+		green -= {SurfaceType.ROUGH: 0.05, SurfaceType.DEEP_ROUGH: 0.1, SurfaceType.SAND: 0.1, SurfaceType.TREE: 0.12}.get(get_cell(ball.x, ball.y), 0.0)
+	var band_max: int = CLUB_STATS.get(current_club, {}).get("band_max", 0)
+	if band_max >= 20:
+		green -= 0.06
+	elif band_max >= 15:
+		green -= 0.03
+	green -= 0.025 * planned_cards.size()
+	if not plan.is_empty():
+		green -= 0.06 * int(plan.get("over", 0))
+	var ignore_wind := false
+	for card in planned_cards:
+		for e in card.data.effects:
+			if e is EffectShotShape and e.ignore_wind:
+				ignore_wind = true
+	if wind_system and not ignore_wind:
+		green -= 0.02 * wind_system.strength
+	green = clampf(green, 0.1, 0.4)
+	var period := lerpf(1.4, 2.2, inverse_lerp(0.1, 0.4, green))
+	return Vector2(green, period)
+
+
+func _this_shot_text(plan: Dictionary) -> String:
+	"""THIS SHOT, pencilled: "3 Iron + Fade + Stop -> 150-170"."""
+	var parts: Array[String] = []
+	parts.append(CLUB_STATS.get(current_club, {}).get("name", "—"))
+	var cards: Array = putt_cards.keys() if putting_active else planned_cards.keys()
+	for card in cards:
+		parts.append(card.get_display_name())
+	var text := " + ".join(parts)
+	if not putting_active and not plan.is_empty():
+		var lo := maxi(0, int(plan.carry) - int(plan.ring))
+		var hi := int(plan.carry) + int(plan.ring)
+		text += "  →  %d–%d" % [int(lo * YARDS_PER_CELL), int(hi * YARDS_PER_CELL)]
+	return text
+
+
+func _set_this_shot(text: String) -> void:
+	if main_ui_ref and main_ui_ref.has_method("set_this_shot"):
+		main_ui_ref.set_this_shot(text)
+	_refresh_tray()
+
+
+func _refresh_tray() -> void:
+	"""Scorecard (pars / scores so far, the hole in play), hand and deck counts,
+	points and the run's score line."""
+	if main_ui_ref == null or not main_ui_ref.has_method("update_scorecard") or run_state == null:
+		return
+	var pars := {}
+	var scores := {}
+	for h in run_state.hole_history:
+		pars[h.hole] = h.par
+		scores[h.hole] = h.strokes
+	if not pars.has(run_state.current_hole):
+		pars[run_state.current_hole] = current_par
+	main_ui_ref.update_scorecard(run_state.current_hole, pars, scores, run_state.strokes_this_hole)
+	var hand: Array = putt_hand if putting_active else shot_hand
+	var left: int = putt_deck.size() if putting_active else shot_deck.size()
+	var total: int = (putt_deck.size() + putt_discard.size() + putt_hand.size()) if putting_active else (shot_deck.size() + shot_discard.size() + shot_hand.size())
+	var points: int = currency_manager.get_balance() if currency_manager else 0
+	var run_text := "RUN %s  ·  BLOWOUT %s" % [run_state.format_vs_par(run_state.get_live_vs_par()), run_state.format_vs_par(run_state.blowout_limit)]
+	main_ui_ref.set_tray_info(hand.size(), left, total, points, run_text)
 
 
 # --- FEAT-003: deal the hand into the live hand UI at hole start ----------
@@ -1563,6 +1662,10 @@ func _on_modifier_card_selected(card_instance) -> void:
 		if putt_hand.has(card_instance):
 			_toggle_putt_card(card_instance)
 		return
+	var utility := _utility_action(card_instance.data)
+	if utility != "" and shot_hand.has(card_instance):
+		_play_utility_card(card_instance, utility)
+		return
 	if planned_cards.has(card_instance):
 		if modifier_manager:
 			modifier_manager.remove_modifier(planned_cards[card_instance])
@@ -1577,6 +1680,38 @@ func _on_modifier_card_selected(card_instance) -> void:
 	rebuild_turn_plan()
 
 
+func _utility_action(data: CardData) -> String:
+	for e in data.effects:
+		if e is EffectCourseUtility:
+			return e.action
+	return ""
+
+
+func _play_utility_card(card_instance, action: String) -> void:
+	"""Utility cards act at once on the course, then go to the discard."""
+	if course_features:
+		match action:
+			"extinguish":
+				for cell in course_features.tiles.keys():
+					if course_features.tiles[cell].kind == "fire":
+						course_features.tiles[cell] = {"kind": "scorched", "dir": 0, "age": 0}
+			"groundskeeper":
+				course_features.place(self, _feature_rng)
+			"shutoff":
+				for cell in course_features.tiles.keys():
+					if course_features.tiles[cell].kind in ["tunnel", "sprinkler"]:
+						course_features.tiles.erase(cell)
+		if feature_overlay:
+			feature_overlay.show_features(course_features, self)
+	shot_hand.erase(card_instance)
+	shot_discard.append(card_instance)
+	if main_ui_ref and main_ui_ref.has_method("set_hand"):
+		var clubs := _legal_club_cards()
+		main_ui_ref.set_hand(clubs, shot_hand, _club_subtitles(clubs))
+	rebuild_turn_plan()
+	_refresh_hole_label()
+
+
 func _clear_planned_cards() -> void:
 	"""Take this shot's played cards back out of the modifier manager."""
 	for card in planned_cards:
@@ -1589,6 +1724,8 @@ func _begin_shot() -> void:
 	"""Every shot: a fresh hand, then aim at the flag with a suggested club."""
 	_spread_fire_for_turn()
 	_deal_shot_hand()
+	if turn_controller:
+		turn_controller.swing = {}
 	putting_active = false
 	if green_overlay:
 		green_overlay.hide_target()
@@ -3514,10 +3651,18 @@ func _on_shot_completed(context: ShotContext) -> void:
 			_trigger_hole_complete()
 		else:
 			# Only a ball that finishes on the cup drops (fast balls run over it)
+			var prev := carry_tile
 			for t in context.get_metadata("roll_tiles", []):
-				await _animate_ball_roll(golf_ball.position, get_tile_surface_position(t), false)
+				if hex_distance(prev, t) > 1:  # a trampoline bounce
+					await _animate_ball_hop(golf_ball.position, get_tile_surface_position(t))
+				else:
+					await _animate_ball_roll(golf_ball.position, get_tile_surface_position(t), false)
+				prev = t
 			if context.landing_tile == flag_position:
 				_trigger_hole_complete()
+			elif context.get_metadata("hit_water", false):  # blown or bounced into water
+				hit_water = true
+				await _handle_water_hazard()
 			elif context.get_metadata("hit_fire", false):
 				hit_water = true  # same penalty: a stroke, and back where it was hit from
 				await _handle_water_hazard()
@@ -3801,6 +3946,7 @@ func _trigger_hole_complete() -> void:
 		_show_blowout()
 		return
 	
+	_refresh_tray()  # pencil the score into the card
 	# Show hole complete popup
 	if shot_ui:
 		var strokes = run_state.strokes_this_hole if run_state else (shot_manager.current_context.shot_index if shot_manager and shot_manager.current_context else 0)
@@ -4259,6 +4405,7 @@ func _show_blowout() -> void:
 
 func _refresh_hole_label(extra: String = "") -> void:
 	"""HUD hole label: run score line on top, then hole info (+ optional debug)."""
+	_refresh_tray()
 	if holelabel == null:
 		return
 	# Prototype: one status line, no hole stats or tile debug
@@ -4706,6 +4853,20 @@ func _is_valid_roll_tile(tile: Vector2i) -> bool:
 	if surface == -1 or surface == SurfaceType.WATER or surface == SurfaceType.TREE:
 		return false
 	return true
+
+
+func _animate_ball_hop(start_pos: Vector3, end_pos: Vector3) -> void:
+	"""A short bounce off a trampoline."""
+	if golf_ball == null:
+		return
+	var speed_mult: float = shot_manager.get_animation_speed() if shot_manager else 1.0
+	var peak := 1.5 + start_pos.distance_to(end_pos) * 0.2
+	var hop := func(t: float) -> void:
+		golf_ball.position = start_pos.lerp(end_pos, t) + Vector3(0, sin(t * PI) * peak, 0)
+	current_ball_tween = create_tween()
+	current_ball_tween.tween_method(hop, 0.0, 1.0, 0.45 / speed_mult)
+	await current_ball_tween.finished
+	golf_ball.position = end_pos
 
 
 func _animate_ball_roll(start_pos: Vector3, end_pos: Vector3, is_spin_roll: bool = false) -> void:

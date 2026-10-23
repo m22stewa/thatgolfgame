@@ -12,6 +12,10 @@ class_name CourseFeatures
 ##                ends in fire is a penalty stroke, returned like water
 ##   scorched   - burnt-out ground; cosmetic
 ##   sprinkler  - a ball that stops on it is knocked one hex its facing way
+##   tunnel     - a wind tunnel (a straight run of 3-5 hexes): a ball touching
+##                it is pushed along it 1 + wind strength hexes and stops
+##   trampoline - a ball touching it bounces TRAMPOLINE_HOP hexes on in its
+##                direction of travel and keeps rolling
 ##
 ## Coins are the existing course pickups (hex_grid), not part of this map.
 
@@ -21,6 +25,7 @@ const SURF_DEEP_ROUGH := 3
 const SURF_TREE := 7
 
 const ICE_LANDING_ROLL := 2
+const TRAMPOLINE_HOP := 3
 const FIRE_LIFETIME := 4       # turns a hex burns before it scorches
 const FIRE_SPREAD_CHANCE := 0.6
 const FIRE_MAX_BURNING := 8
@@ -71,6 +76,30 @@ func place(hole, rng: RandomNumberGenerator) -> void:
 		if not tiles.has(cell):
 			tiles[cell] = {"kind": "sprinkler", "dir": rng.randi_range(0, 5), "age": 0}
 
+	# Wind tunnel: half the holes, a straight run of 3-5 hexes
+	if rng.randf() < 0.5:
+		var playable := fairway + rough
+		for _try in range(10):
+			var start: Vector2i = playable[rng.randi_range(0, playable.size() - 1)]
+			var d := rng.randi_range(0, 5)
+			var run: Array[Vector2i] = [start]
+			for _i in range(rng.randi_range(2, 4)):
+				var n := neighbor(run[run.size() - 1], d)
+				if not playable.has(n) or tiles.has(n):
+					break
+				run.append(n)
+			if run.size() >= 3 and run.all(func(c): return not tiles.has(c)):
+				for cell in run:
+					tiles[cell] = {"kind": "tunnel", "dir": d, "age": 0, "group": start}
+				break
+
+	# Trampolines: 0-2 on the fairway or rough
+	for _t in range(rng.randi_range(0, 2)):
+		var playable := fairway + rough
+		var cell: Vector2i = playable[rng.randi_range(0, playable.size() - 1)]
+		if not tiles.has(cell):
+			tiles[cell] = {"kind": "trampoline", "dir": 0, "age": 0}
+
 	# Fire: par 4 / 5, half the time, somewhere in the rough
 	if hole.current_par >= 4 and not open_rough.is_empty() and rng.randf() < 0.5:
 		var cell: Vector2i = open_rough[rng.randi_range(0, open_rough.size() - 1)]
@@ -102,6 +131,14 @@ func spread_fire(hole, rng: RandomNumberGenerator) -> bool:
 			tiles[options[rng.randi_range(0, options.size() - 1)]] = {"kind": "fire", "dir": 0, "age": 0}
 			changed = true
 	return changed
+
+
+static func neighbor(cell: Vector2i, dir: int) -> Vector2i:
+	"""Course hex neighbour, same direction convention as AOESystem
+	(0 = up, then clockwise; odd columns sit half a hex lower)."""
+	var odd := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1), Vector2i(-1, 0)]
+	var even := [Vector2i(0, -1), Vector2i(1, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(-1, -1)]
+	return cell + (odd[dir] if cell.x % 2 == 1 else even[dir])
 
 
 func kind_at(cell: Vector2i) -> String:

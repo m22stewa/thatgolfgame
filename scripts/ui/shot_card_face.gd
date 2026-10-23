@@ -23,6 +23,8 @@ static func kind_for(data: CardData) -> Dictionary:
 				return {"kind": "firm", "tag": "GREEN", "strength": 1.0}
 			if e.dead_weight:
 				return {"kind": "dead", "tag": "GREEN", "strength": 1.0}
+		if e is EffectCourseUtility:
+			return {"kind": e.action, "tag": "UTILITY", "strength": 1.0}
 		if e is EffectShotShape:
 			if e.bulge > 0.0:
 				return {"kind": "draw", "tag": "SHAPE", "strength": 2.0 if e.bulge > 2.0 else 1.0}
@@ -115,6 +117,35 @@ func _draw() -> void:
 			# A ball sitting on a weight
 			draw_rect(Rect2(c + Vector2(-h * 0.6, h * 0.1), Vector2(h * 1.2, h * 0.55)), ACCENT)
 			draw_circle(c + Vector2(0, -h * 0.25), 7.0, INK)
+		"extinguish":
+			# Red canister and a nozzle
+			draw_rect(Rect2(c + Vector2(-h * 0.25, -h * 0.4), Vector2(h * 0.5, h * 1.3)), Color(0.75, 0.15, 0.1))
+			draw_rect(Rect2(c + Vector2(-h * 0.12, -h * 0.6), Vector2(h * 0.24, h * 0.2)), INK)
+			draw_line(c + Vector2(h * 0.12, -h * 0.55), c + Vector2(h * 0.75, -h * 0.75), INK, 3.0, true)
+			for i in range(3):
+				draw_circle(c + Vector2(h * 0.85 + i * 4.0, -h * 0.85 + i * 6.0), 3.0, Color(0.6, 0.6, 0.6))
+		"groundskeeper":
+			# Rake
+			draw_line(c + Vector2(-h * 0.8, h * 0.9), c + Vector2(h * 0.3, -h * 0.4), INK, 3.0, true)
+			var head := c + Vector2(h * 0.3, -h * 0.4)
+			draw_line(head + Vector2(-h * 0.35, -h * 0.35), head + Vector2(h * 0.35, h * 0.35), INK, 3.0, true)
+			for i in range(5):
+				var p := head + Vector2(-h * 0.35, -h * 0.35).lerp(Vector2(h * 0.35, h * 0.35), i / 4.0)
+				draw_line(p, p + Vector2(h * 0.2, -h * 0.2), ACCENT, 2.0, true)
+		"shutoff":
+			# Valve wheel
+			draw_arc(c, h * 0.7, 0, TAU, 32, INK, 3.0, true)
+			for i in range(4):
+				var a := i * PI / 2.0 + PI / 4.0
+				draw_line(c, c + Vector2(cos(a), sin(a)) * h * 0.7, INK, 2.5, true)
+			draw_circle(c, h * 0.18, ACCENT)
+		"eraser":
+			# A pencil eraser rubbing out a stroke
+			draw_line(c + Vector2(-h, h * 0.55), c + Vector2(h, h * 0.55), INK, 2.0, true)
+			draw_line(c + Vector2(-h * 0.2, h * 0.75), c + Vector2(h * 0.2, h * 0.35), Color(0.75, 0.25, 0.2), 3.0, true)
+			var body := PackedVector2Array([c + Vector2(-h * 0.5, h * 0.2), c + Vector2(h * 0.1, -h * 0.6), c + Vector2(h * 0.55, -h * 0.25), c + Vector2(-h * 0.05, h * 0.55)])
+			draw_colored_polygon(body, Color(0.93, 0.55, 0.6))
+			draw_polyline(body + PackedVector2Array([body[0]]), INK, 2.0, true)
 		"strain":
 			var pts := PackedVector2Array([c + Vector2(-h, -h * 0.3), c + Vector2(-h * 0.4, h * 0.3), c + Vector2(0, -h * 0.3), c + Vector2(h * 0.4, h * 0.3), c + Vector2(h, -h * 0.3)])
 			draw_polyline(pts, Color(0.75, 0.25, 0.2), 3.0, true)

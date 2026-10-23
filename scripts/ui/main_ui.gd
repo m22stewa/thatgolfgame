@@ -9,12 +9,6 @@ class_name MainUI
 signal club_card_selected(card_instance)
 signal modifier_card_selected(card_instance)
 
-# Lightweight card control size inside the strip (Button + card name).
-const CLUB_BUTTON_MIN_SIZE := Vector2(104, 52)
-const SHOT_CARD_SIZE := Vector2(136, 150)
-const CARD_PAPER := Color(0.97, 0.95, 0.89)
-const CARD_INK := Color(0.13, 0.13, 0.11)
-const CARD_BRASS := Color(0.86, 0.62, 0.2)
 var _selected_club_instance = null
 
 @onready var shot_ui: Control = $ShotUI
@@ -30,8 +24,8 @@ var _selected_club_instance = null
 @onready var generate_unique_button: Button = %GenerateUniqueButton
 @onready var shoot_button: Button = get_node_or_null("%ShootButton")  # Turn-based "Shoot" confirm (FEAT-003)
 @onready var hand_strip: Control = get_node_or_null("%HandStrip")  # 2D hand strip (club + modifier rows)
-@onready var hand_club_row: HBoxContainer = get_node_or_null("%ClubRow")
-@onready var hand_modifier_row: HBoxContainer = get_node_or_null("%ModifierRow")
+@onready var hand_club_row: BoxContainer = get_node_or_null("%ClubRow")
+@onready var hand_modifier_row: BoxContainer = get_node_or_null("%ModifierRow")
 @onready var lie_info_panel: PanelContainer = %LieInfoPanel
 # FEAT-003: on-screen hole-view controls (zoom / rotate / reset) in the HUD.
 @onready var zoom_in_button: Button = get_node_or_null("%ZoomInButton")
@@ -50,7 +44,7 @@ const PROTOTYPE_HIDDEN := [
 	"ShotUI/scorebg darkgreen", "ShotUI/ScoreInfo", "ShotUI/TopBar",
 	"ShotUI/ShotCounter", "ShotUI/ActionPanel", "ShotUI/BottomPanel",
 	"HoleViewer/HoleHUD/GenerateButton", "HoleViewer/HoleHUD/GenerateUniqueButton",
-	"HoleViewer/HoleHUD/LieInfoPanel",
+	"HoleViewer/HoleHUD/LieInfoPanel", "HoleViewer/HoleHUD/HoleInfoLabel",
 ]
 var _prototype_saved_visibility: Dictionary = {}  # NodePath -> visible before hiding
 
@@ -58,6 +52,14 @@ var _prototype_saved_visibility: Dictionary = {}  # NodePath -> visible before h
 var card_inspection_overlay: ColorRect = null
 var card_inspection_panel: PanelContainer = null
 var inspected_card: CardInstance = null
+
+# Scorecard tray (built in code on top of the scene's ClubRow / ModifierRow /
+# ShootButton): club table | hand | scorecard + THIS SHOT + SHOOT
+var scorecard_table: ScorecardTable
+var _hand_label: Label
+var _this_shot_label: Label
+var _deck_label: Label
+var _run_label: Label
 
 func _ready() -> void:
 	set_prototype_ui.call_deferred(prototype_ui)
@@ -72,11 +74,7 @@ func _ready() -> void:
 	# Create card inspection overlay (hidden initially)
 	_create_card_inspection_ui()
 
-	# Keep the felt tray shader's stitch dashes square by feeding it the tray's
-	# live width/height ratio (FEAT-002).
-	if tray:
-		tray.resized.connect(_on_tray_resized)
-		_on_tray_resized()
+	_build_scorecard_tray()
 
 	# Wire the on-screen hole-view controls to the HoleViewer camera (FEAT-003).
 	if hole_viewer:
@@ -90,14 +88,119 @@ func _ready() -> void:
 			reset_view_button.pressed.connect(hole_viewer.on_reset_view_pressed)
 
 
-func _on_tray_resized() -> void:
-	"""Refresh the felt_tray shader's tray_aspect uniform from the tray size."""
-	if not tray or not (tray.material is ShaderMaterial):
+func _build_scorecard_tray() -> void:
+	"""Restyle the tray as a paper scorecard and lay it out: CLUB IN HAND table
+	(ClubRow), the hand (ModifierRow), then the scorecard, THIS SHOT, deck and
+	points, and the SHOOT box (ShootButton)."""
+	if tray == null or hand_club_row == null or hand_modifier_row == null or shoot_button == null:
 		return
-	var size := tray.size
-	if size.y <= 0.0:
-		return
-	(tray.material as ShaderMaterial).set_shader_parameter("tray_aspect", size.x / size.y)
+	tray.material = null
+	var paper := ScorecardStyle.paper_box(ScorecardStyle.INK, 0, ScorecardStyle.PAPER, 0)
+	paper.border_width_top = 3
+	tray.add_theme_stylebox_override("panel", paper)
+	var margin := tray.get_node("TrayMargin") as MarginContainer
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	var content := margin.get_node("TrayContent") as HBoxContainer
+	content.add_theme_constant_override("separation", 22)
+	content.alignment = BoxContainer.ALIGNMENT_BEGIN
+
+	# Left: CLUB IN HAND | YARDS
+	var clubs := VBoxContainer.new()
+	clubs.name = "ClubTable"
+	clubs.custom_minimum_size = Vector2(240, 0)
+	clubs.add_theme_constant_override("separation", 2)
+	content.add_child(clubs)
+	content.move_child(clubs, 0)
+	var club_head := HBoxContainer.new()
+	clubs.add_child(club_head)
+	club_head.add_child(_tray_caption("CLUB IN HAND"))
+	var fill := Control.new()
+	fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	club_head.add_child(fill)
+	club_head.add_child(_tray_caption("YARDS"))
+	clubs.add_child(_rule())
+	hand_club_row.reparent(clubs, false)
+
+	# Middle: HAND · N OF M
+	hand_strip.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	var rows := hand_modifier_row.get_parent() as BoxContainer
+	_hand_label = _tray_caption("HAND")
+	rows.add_child(_hand_label)
+	rows.move_child(_hand_label, 0)
+	rows.add_theme_constant_override("separation", 4)
+	hand_modifier_row.add_theme_constant_override("separation", 12)
+	hand_modifier_row.alignment = BoxContainer.ALIGNMENT_BEGIN
+
+	# Right: scorecard, THIS SHOT, deck / points / run, and SHOOT
+	var right := HBoxContainer.new()
+	right.name = "ScorePanel"
+	right.add_theme_constant_override("separation", 16)
+	content.add_child(right)
+	var card_col := VBoxContainer.new()
+	card_col.add_theme_constant_override("separation", 4)
+	card_col.custom_minimum_size = Vector2(380, 0)
+	right.add_child(card_col)
+	scorecard_table = ScorecardTable.new()
+	card_col.add_child(scorecard_table)
+	card_col.add_child(_tray_caption("THIS SHOT"))
+	_this_shot_label = ScorecardStyle.label("", 26, ScorecardStyle.PENCIL, ScorecardStyle.pencil_font())
+	_this_shot_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_this_shot_label.clip_text = true
+	_this_shot_label.custom_minimum_size = Vector2(380, 0)
+	card_col.add_child(_this_shot_label)
+	var foot := HBoxContainer.new()
+	card_col.add_child(foot)
+	_deck_label = _tray_caption("")
+	foot.add_child(_deck_label)
+	var foot_fill := Control.new()
+	foot_fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	foot.add_child(foot_fill)
+	_run_label = _tray_caption("")
+	foot.add_child(_run_label)
+	for b in [zoom_in_button, zoom_out_button, rotate_button, reset_view_button]:
+		if b:
+			ScorecardStyle.flat_button(b)
+			b.add_theme_font_size_override("font_size", 16)
+			b.custom_minimum_size = Vector2(120, 38)
+	shoot_button.reparent(right, false)
+	shoot_button.custom_minimum_size = Vector2(190, 0)
+	shoot_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+
+func _tray_caption(text: String) -> Label:
+	var l := ScorecardStyle.label(text, 13, ScorecardStyle.INK_SOFT, ScorecardStyle.header_font(false))
+	return l
+
+
+func _rule() -> ColorRect:
+	var r := ColorRect.new()
+	r.color = ScorecardStyle.RULE
+	r.custom_minimum_size = Vector2(0, 2)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
+
+
+func update_scorecard(current_hole: int, pars: Dictionary, scores: Dictionary, live_strokes: int) -> void:
+	if scorecard_table:
+		scorecard_table.set_state(current_hole, pars, scores, live_strokes)
+
+
+func set_this_shot(text: String) -> void:
+	if _this_shot_label:
+		_this_shot_label.text = text
+
+
+func set_tray_info(hand_size: int, deck_left: int, deck_total: int, points: int, run_text: String) -> void:
+	"""HAND · 4 OF 15, MOD DECK left/total, PTS, and the run's score line."""
+	if _hand_label:
+		_hand_label.text = "HAND  ·  %d OF %d" % [hand_size, deck_total]
+	if _deck_label:
+		_deck_label.text = "MOD DECK  %d/%d     %d PTS" % [deck_left, deck_total, points]
+	if _run_label:
+		_run_label.text = run_text
 
 
 func _create_card_inspection_ui() -> void:
@@ -269,6 +372,9 @@ func set_card_pressed(card_instance, pressed: bool) -> void:
 	for c in hand_modifier_row.get_children():
 		if c is Button and c.has_meta("card_instance") and c.get_meta("card_instance") == card_instance:
 			c.set_pressed_no_signal(pressed)
+			var face := c.get_node_or_null("Face") as CardFaceView
+			if face:
+				face.played = pressed
 
 
 func set_hand(club_cards: Array, modifier_cards: Array, club_subtitles: Dictionary = {}) -> void:
@@ -289,83 +395,29 @@ func set_hand(club_cards: Array, modifier_cards: Array, club_subtitles: Dictiona
 		if instance == null or instance.data == null:
 			continue
 		var is_club: bool = instance.data.card_type == CardData.CardType.CLUB
-		var row: HBoxContainer = hand_club_row if is_club else hand_modifier_row
+		var row: BoxContainer = hand_club_row if is_club else hand_modifier_row
 		var card_control := _make_hand_card(instance, is_club, club_subtitles.get(instance, ""))
 		row.add_child(card_control)
 
 
 func build_shot_card(btn: Button, instance) -> void:
-	"""Card face: tag + cost row, name, drawn icon, one-line effect."""
-	var info := ShotCardFace.kind_for(instance.data)
-	var is_curse: bool = info.kind == "strain"
-	btn.custom_minimum_size = SHOT_CARD_SIZE
+	"""Scorecard card face (CardFaceView) on a see-through button. Played cards
+	get a pencil tick; Strain can't be played."""
+	var face := CardFaceView.for_instance(instance)
+	face.name = "Face"
+	btn.custom_minimum_size = CardFaceView.SIZE
 	btn.tooltip_text = instance.get_full_description()
-	btn.disabled = is_curse  # Strain: dead weight in the hand
-	var paper := Color(0.78, 0.76, 0.72) if is_curse else CARD_PAPER
-	btn.add_theme_stylebox_override("normal", _card_box(paper, CARD_INK, 2))
-	btn.add_theme_stylebox_override("hover", _card_box(paper, CARD_BRASS, 3))
-	btn.add_theme_stylebox_override("disabled", _card_box(paper, Color(0.4, 0.38, 0.35), 2))
-	btn.add_theme_stylebox_override("pressed", _card_box(Color(1.0, 0.88, 0.6), CARD_BRASS, 5))
-	btn.add_theme_stylebox_override("hover_pressed", _card_box(Color(1.0, 0.88, 0.6), CARD_BRASS, 5))
-	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-
-	var col := VBoxContainer.new()
-	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	col.offset_left = 10
-	col.offset_right = -10
-	col.offset_top = 8
-	col.offset_bottom = -8
-	col.add_theme_constant_override("separation", 2)
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	btn.add_child(col)
-
-	var top := HBoxContainer.new()
-	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(top)
-	top.add_child(_card_label(info.tag, 11, Color(0.4, 0.38, 0.33)))
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	top.add_child(spacer)
-	var cost := ShotCardFace.cost_for(instance.data, instance.upgrade_level)
-	if not is_curse:
-		top.add_child(_card_label("%d" % cost if cost > 0 else "free", 13, CARD_BRASS.darkened(0.3)))
-
-	var title := _card_label(instance.get_display_name(), 16, CARD_INK)
-	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	title.clip_text = true
-	col.add_child(title)
-
-	var face := ShotCardFace.new()
-	face.kind = info.kind
-	face.strength = info.strength
-	face.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	face.custom_minimum_size = Vector2(0, 40)
-	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(face)
-
-	var blurb := _card_label(instance.data.description.split(" (")[0], 11, Color(0.3, 0.29, 0.26))
-	blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(blurb)
-
-
-func _card_label(text: String, font_size: int, color: Color) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", color)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return label
-
-
-func _card_box(bg: Color, border: Color, border_width: int) -> StyleBoxFlat:
-	var box := StyleBoxFlat.new()
-	box.bg_color = bg
-	box.border_color = border
-	box.set_border_width_all(border_width)
-	box.set_corner_radius_all(8)
-	return box
+	btn.disabled = face.unplayable
+	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled", "focus"]:
+		btn.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_child(face)
+	face.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	face.played = btn.button_pressed
+	btn.toggled.connect(func(on: bool): face.played = on)
+	# Lift on hover, like picking a card up
+	btn.mouse_entered.connect(func(): if not btn.disabled: face.position.y = -6.0)
+	btn.mouse_exited.connect(func(): face.position.y = 0.0)
 
 
 func clear_hand() -> void:
@@ -395,20 +447,18 @@ func _make_hand_card(instance, is_club: bool, subtitle: String = "") -> Button:
 	   Clubs are compact two-line buttons (name + carry range); shot cards are
 	   card faces (tag, cost, drawn icon, effect). Both toggle: a club stays
 	   selected, a shot card is played/unplayed for this shot."""
-	var btn := Button.new()
-	btn.toggle_mode = true
-	btn.set_meta("card_instance", instance)
+	var btn: Button
 	if is_club:
-		btn.custom_minimum_size = CLUB_BUTTON_MIN_SIZE
-		btn.text = instance.data.card_name if subtitle == "" else "%s\n%s" % [instance.data.card_name, subtitle]
-		btn.add_theme_font_size_override("font_size", 15)
-		# Selected reads as "active" (brass), not the theme's greyed pressed look
-		btn.add_theme_stylebox_override("pressed", _card_box(Color(0.86, 0.66, 0.28), Color(1.0, 0.95, 0.8), 3))
-		btn.add_theme_stylebox_override("hover_pressed", _card_box(Color(0.86, 0.66, 0.28), Color(1.0, 0.95, 0.8), 3))
-		btn.add_theme_color_override("font_pressed_color", Color(0.12, 0.1, 0.05))
-		btn.add_theme_color_override("font_hover_pressed_color", Color(0.12, 0.1, 0.05))
+		var line := ClubLine.new()
+		line.club_name = instance.data.card_name
+		line.yards = subtitle.replace(" yd", "").replace("-", "–")
+		line.tooltip_text = "%s  %s" % [instance.data.card_name, subtitle]
+		btn = line
 	else:
+		btn = Button.new()
+		btn.toggle_mode = true
 		build_shot_card(btn, instance)
+	btn.set_meta("card_instance", instance)
 	btn.pressed.connect(func() -> void:
 		var bound = btn.get_meta("card_instance")
 		if is_club:

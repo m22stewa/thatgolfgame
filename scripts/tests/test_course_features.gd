@@ -56,6 +56,7 @@ class StubHole extends Node3D:
 var hole: StubHole
 var aoe: AOESystem
 var tc: TurnController
+var wind: WindSystem
 
 
 func _ready() -> void:
@@ -69,11 +70,16 @@ func _ready() -> void:
 	tc.aoe_system = aoe
 	tc.hex_grid = hole
 	tc.course_features = CourseFeatures.new()
+	wind = WindSystem.new()
+	add_child(wind)
+	tc.wind_system = wind
 
 	_test_ice()
 	_test_sprinkler()
 	_test_fire_penalty()
 	_test_fire_spread()
+	_test_tunnel()
+	_test_trampoline()
 	_test_placement()
 	print("=== course features test complete: %d checks, %d failures ===" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
@@ -149,6 +155,38 @@ func _test_fire_spread() -> void:
 		hole.grid[4][r] = FAIRWAY
 
 
+func _test_tunnel() -> void:
+	print("-- wind tunnel --")
+	var f: CourseFeatures = tc.course_features
+	f.tiles.clear()
+	# A tunnel along column 4 pointing up (dir 0), rows 8-10
+	for r in [8, 9, 10]:
+		f.tiles[Vector2i(4, r)] = {"kind": "tunnel", "dir": 0, "age": 0, "group": Vector2i(4, 10)}
+	wind.strength = 0
+	_check(_roll(Vector2i(4, 9), 3).landing_tile == Vector2i(4, 8), "landing in a calm tunnel: pushed 1 along it, roll ends")
+	wind.strength = 3
+	_check(_roll(Vector2i(4, 9), 3).landing_tile == Vector2i(4, 5), "wind 3: pushed 4 hexes along it")
+	wind.strength = 1
+	var c := _roll(Vector2i(4, 6), 4)
+	_check(c.landing_tile == Vector2i(4, 6), "rolling into the tunnel pushes it back up (at %s)" % str(c.landing_tile))
+	hole.grid[4][6] = TREE
+	_check(_roll(Vector2i(4, 9), 3).landing_tile == Vector2i(4, 7), "a tunnel push stops short of a tree")
+	hole.grid[4][6] = FAIRWAY
+	wind.strength = 0
+
+
+func _test_trampoline() -> void:
+	print("-- trampoline --")
+	var f: CourseFeatures = tc.course_features
+	f.tiles.clear()
+	f.tiles[Vector2i(4, 6)] = {"kind": "trampoline", "dir": 0, "age": 0}
+	_check(_roll(Vector2i(4, 6), 0).landing_tile == Vector2i(4, 9), "landing on a trampoline bounces 3 hexes on")
+	_check(_roll(Vector2i(4, 5), 2).landing_tile == Vector2i(4, 10), "rolling onto it: bounce 3, keep the last hex of roll")
+	f.tiles[Vector2i(4, 9)] = {"kind": "trampoline", "dir": 0, "age": 0}
+	_check(_roll(Vector2i(4, 6), 0).landing_tile == Vector2i(4, 12), "trampoline onto trampoline chains")
+	f.tiles.clear()
+
+
 func _test_placement() -> void:
 	print("-- placement --")
 	var f := CourseFeatures.new()
@@ -162,6 +200,23 @@ func _test_placement() -> void:
 	rng2.seed = 11
 	again.place(hole, rng2)
 	_check(again.tiles == f.tiles, "same seed, same features")
+	var tunnels := 0
+	var tramps := 0
+	var straight := true
+	for sd in range(40):
+		var g := CourseFeatures.new()
+		var r := RandomNumberGenerator.new()
+		r.seed = sd
+		g.place(hole, r)
+		tramps += g.count("trampoline")
+		var t := g.count("tunnel")
+		if t > 0:
+			tunnels += 1
+			if t < 3 or t > 5:
+				straight = false
+	_check(tunnels > 5 and tunnels < 35, "wind tunnels on about half the holes (%d / 40)" % tunnels)
+	_check(straight, "tunnels are 3-5 hexes long")
+	_check(tramps > 10, "trampolines get placed (%d over 40 holes)" % tramps)
 
 
 func _check(cond: bool, label: String) -> void:

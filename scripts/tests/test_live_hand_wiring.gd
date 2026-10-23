@@ -154,9 +154,12 @@ func _run() -> void:
 		_check(plan_cost.call() == base_cost + card_cost, "(i) %s adds its %d power (%d -> %d)" % [costly.data.card_name, card_cost, base_cost, plan_cost.call()])
 		main_ui.emit_signal("modifier_card_selected", costly)
 		_check(not hex_grid.planned_cards.has(costly) and plan_cost.call() == base_cost, "(i) tapping it again takes it back")
-	for c in hex_grid.shot_hand:
+	# Shot cards only: utility cards (Fire Extinguisher...) play at once and leave the hand
+	var shape_cards: Array = hex_grid.shot_hand.filter(func(c): return c.data.effects.size() > 0 and c.data.effects[0] is EffectShotShape)
+	for c in shape_cards:
 		main_ui.emit_signal("modifier_card_selected", c)
-	_check(hex_grid.planned_cards.size() == hex_grid.MAX_PLANNED_CARDS, "(i) at most %d cards per shot (played %d of %d)" % [hex_grid.MAX_PLANNED_CARDS, hex_grid.planned_cards.size(), hex_grid.shot_hand.size()])
+	var expect: int = mini(hex_grid.MAX_PLANNED_CARDS, shape_cards.size())
+	_check(hex_grid.planned_cards.size() == expect, "(i) at most %d cards per shot (played %d of %d shot cards)" % [hex_grid.MAX_PLANNED_CARDS, hex_grid.planned_cards.size(), shape_cards.size()])
 	hex_grid._clear_planned_cards()
 	hex_grid.rebuild_turn_plan()
 	var discard_before: int = hex_grid.shot_discard.size()

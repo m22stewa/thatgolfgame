@@ -69,6 +69,12 @@ var ball_tile: Vector2i = Vector2i(-1, -1)
 # Hex the player aimed at. When set, the shot follows the true line to it and
 # the club band caps the carry; (-1,-1) falls back to the 6-direction aim_dir.
 var aim_target: Vector2i = Vector2i(-1, -1)
+# The SHOOT meter's grade for the shot about to be hit ({kind: pure / thin /
+# slice / hook}); empty = a plain strike. Cleared by the host each shot.
+var swing: Dictionary = {}
+const SWING_THIN_SHORT := 2   # hexes a thin strike comes up short
+const SWING_SLICE_SIDE := 1   # hexes right
+const SWING_HOOK_SIDE := 2    # hexes left
 # Prototype: with a tapped target, build the card-shaped flight (ShotPlan)
 # instead of the club-band projection.
 var path_mode: bool = true
@@ -221,9 +227,11 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 	var target := aim_target
 	if ctx.band_min > 0 and _hex_distance(ball_tile, target) < ctx.band_min:
 		target = _point_along(ball_tile, aim_target, ctx.band_min)
+	var swung := _apply_swing(target, float(ctx.get_metadata("shape_bulge", 0.0)), int(ctx.get_metadata("ring_mod", 0)) + ctx.spread_mod)
+	target = swung.target
 	var plan := ShotPlan.build(hex_grid, ball_tile, target, {
 		"power": ctx.band_max + lie_power(ctx.distance_mod),
-		"bulge": float(ctx.get_metadata("shape_bulge", 0.0)),
+		"bulge": swung.bulge,
 		"loft": ctx.get_metadata("loft", false),
 		"ignore_wind": ctx.get_metadata("ignore_wind", false) or played_club == int(hex_grid.ClubType.PUTTER),
 		"wind_vec": wind_vec,
@@ -231,8 +239,10 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 		"extra_cost": int(ctx.get_metadata("power_cost", 0)),
 		"spread": ctx.base_spread,
 		"exact_usage": ShotPlan.PUTT_EXACT_USAGE if played_club == int(hex_grid.ClubType.PUTTER) else ShotPlan.EXACT_USAGE,
-		"ring_mod": int(ctx.get_metadata("ring_mod", 0)) + ctx.spread_mod,
+		"ring_mod": swung.ring_mod,
 	})
+	if not swing.is_empty():
+		ctx.add_metadata("swing", swing.get("kind", ""))
 	var center: Vector2i = plan.end
 	ctx.aim_tile = center
 	# Putts are all ground: the path IS the roll
@@ -248,6 +258,40 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 	if played_club == int(hex_grid.ClubType.PUTTER) and center == _cup() and plan.ring > 0:
 		_weigh_putt(ctx, center, int(plan.carry))
 	ctx.add_metadata("footprint_built", true)
+
+
+func _apply_swing(target: Vector2i, bulge: float, ring_mod: int) -> Dictionary:
+	"""The SHOOT meter's grade: pure tightens the ring, thin comes up short,
+	a slice misses right and a hook further left (with the flight bending
+	that way). No swing (a plain tap) changes nothing."""
+	var dist := _hex_distance(ball_tile, target)
+	match swing.get("kind", ""):
+		"pure":
+			ring_mod -= 1
+		"thin":
+			target = _point_along(ball_tile, target, maxi(1, dist - SWING_THIN_SHORT))
+		"slice":
+			target = _side_step(target, SWING_SLICE_SIDE)
+			bulge -= 1.5
+		"hook":
+			target = _side_step(target, -SWING_HOOK_SIDE)
+			bulge += 2.0
+	return {"target": target, "bulge": bulge, "ring_mod": ring_mod}
+
+
+func _side_step(target: Vector2i, hexes: int) -> Vector2i:
+	"""The hex `hexes` to the golfer's right (+) or left (-) of target, square
+	to the line from the ball. Stays put if that's off the course."""
+	var fwd := _shot_vector(ball_tile, target).normalized()
+	if fwd == Vector2.ZERO:
+		return target
+	var right := Vector2(-fwd.y, fwd.x)
+	var at := Vector2(target.x * 1.5, target.y * sqrt(3.0) + (target.x % 2) * sqrt(3.0) / 2.0) + right * float(hexes) * sqrt(3.0)
+	var q := at.x / 1.5
+	var r := at.y / sqrt(3.0) - q / 2.0
+	var cube := _cube_round(Vector3(q, -q - r, r))
+	var tile := _cube_to_offset(cube)
+	return tile if _in_bounds(tile) else target
 
 
 static func lie_power(lie_distance_mod: int) -> int:
@@ -346,11 +390,18 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 	# (1 hex of roll or less left).
 	var budget := roll
 	var ice_crossed := 0
+	var roll_dir := ctx.aim_dir
+	var triggered := {}  # tunnels / trampolines act once per shot
+	if not on_cup:
+		var hit := _contact(tile, roll_dir, triggered, rolled)
+		tile = hit.tile
+		if hit.stop:
+			budget = 0
 	for _step in range(40):
 		if budget <= 0:
 			break
 		var is_odd := tile.x % 2 == 1
-		var next: Vector2i = aoe_system._get_neighbor_in_direction(tile, ctx.aim_dir, is_odd)
+		var next: Vector2i = aoe_system._get_neighbor_in_direction(tile, roll_dir, is_odd)
 		if not _in_bounds(next):
 			break
 		var next_surface := _surface_at(next)
@@ -369,6 +420,10 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 			var rng: RandomNumberGenerator = hole_context.rng if hole_context else null
 			if (rng.randf() if rng else randf()) < ROLL_IN_CHANCE:
 				break
+		var hit := _contact(tile, roll_dir, triggered, rolled)
+		tile = hit.tile
+		if hit.stop:
+			break
 
 	# Deterministic green slope nudge (design §4.3).
 	if _surface_at(tile) == SURF_GREEN and tile != cup:
@@ -394,6 +449,10 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 		ctx.add_metadata("hit_fire", true)
 	if ice_crossed >= 3:
 		ctx.add_metadata("ice_run", ice_crossed)
+	if triggered.values().has("trampoline"):
+		ctx.add_metadata("bounced", true)
+	if triggered.values().has("tunnel"):
+		ctx.add_metadata("tunnel_ride", true)
 
 	# The ball's actual journey, replayed exactly by the animation
 	ctx.add_metadata("carry_tile", landing)
@@ -415,6 +474,45 @@ func _modifier_manager():
 	if shot_manager == null:
 		return null
 	return shot_manager.modifier_manager
+
+
+func _contact(tile: Vector2i, dir: int, triggered: Dictionary, rolled: Array[Vector2i]) -> Dictionary:
+	"""A ball touching a wind tunnel or trampoline (landing or rolling onto it).
+	Tunnel: pushed along it 1 + wind strength hexes, then stops (it can be
+	blown into water). Trampoline: bounces 3 hexes on in its direction of
+	travel and keeps rolling. Each acts once per shot. Returns {tile, stop}."""
+	var kind := _feature_at(tile)
+	if course_features == null or (kind != "tunnel" and kind != "trampoline"):
+		return {"tile": tile, "stop": false}
+	var f: Dictionary = course_features.tiles[tile]
+	var key = f.get("group", tile)
+	if triggered.has(key):
+		return {"tile": tile, "stop": false}
+	triggered[key] = kind
+	if kind == "tunnel":
+		var push := 1 + (wind_system.strength if wind_system else 0)
+		for _i in range(push):
+			var next: Vector2i = aoe_system._get_neighbor_in_direction(tile, f.dir, tile.x % 2 == 1)
+			if not _in_bounds(next) or _surface_at(next) == SURF_TREE:
+				break
+			tile = next
+			rolled.append(tile)
+			if _surface_at(tile) == SURF_WATER:
+				break
+		return {"tile": tile, "stop": true}
+	# Trampoline: airborne over the hexes in between
+	var land := tile
+	for _i in range(CourseFeatures.TRAMPOLINE_HOP):
+		var next: Vector2i = aoe_system._get_neighbor_in_direction(land, dir, land.x % 2 == 1)
+		if not _in_bounds(next):
+			break
+		land = next
+	if land == tile:
+		return {"tile": tile, "stop": false}
+	rolled.append(land)
+	if _surface_at(land) == SURF_WATER:
+		return {"tile": land, "stop": true}
+	return _contact(land, dir, triggered, rolled)
 
 
 func _feature_at(tile: Vector2i) -> String:

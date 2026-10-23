@@ -31,6 +31,7 @@ const POOL := [
 	"draw_shot", "fade_shot", "hard_draw", "hard_fade", "loft", "stop",
 	"release", "dart", "knockdown", "stinger", "flag_hunter",
 	"read_green", "firm_putt", "dead_weight",
+	"extinguisher", "groundskeeper", "shutoff",
 ]
 
 var offers: Array[CardData] = []

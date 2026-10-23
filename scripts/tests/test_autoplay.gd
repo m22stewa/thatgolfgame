@@ -25,12 +25,19 @@ var _shop_visits := 0
 var _fire_hits := 0
 var _ice_runs := 0
 var _ice_touches := 0
+var _bounces := 0
+var _swings := {"pure": 0, "thin": 0, "slice": 0, "hook": 0}
+var _swing_rng := RandomNumberGenerator.new()
+const SWING_TIMING_SD := 0.08  # seconds: how far off a decent player's release is
+var _extinguished := 0
+var _tunnel_rides := 0
 var _fires_seen := 0
 var _bought := 0
 var _removed := 0
 
 
 func _ready() -> void:
+	_swing_rng.seed = 7
 	Engine.time_scale = 8.0
 	var golf: Node = load(GOLF_SCENE).instantiate()
 	add_child(golf)
@@ -72,7 +79,7 @@ func _ready() -> void:
 			_problems.append("hole %d: next hole never became playable (%s)" % [hole + 2, _state()])
 
 	_print_balance()
-	print("FEATURES fires seen %d, fire hits %d, ice hexes rolled over %d, ice runs %d" % [_fires_seen, _fire_hits, _ice_touches, _ice_runs])
+	print("FEATURES fires seen %d, fire hits %d, ice hexes rolled over %d, ice runs %d, trampoline bounces %d, tunnel rides %d, extinguishers played %d" % [_fires_seen, _fire_hits, _ice_touches, _ice_runs, _bounces, _tunnel_rides, _extinguished])
 	print("--- %d shots fired (%d from the green view), %d shop visits (%d bought, %d removed), %d problems ---" % [_shots_fired, _green_turns, _shop_visits, _bought, _removed, _problems.size()])
 	for p in _problems:
 		printerr("  [PROBLEM] %s" % p)
@@ -104,6 +111,7 @@ func _play_hole(n: int) -> void:
 		var overlay_on: bool = hg.green_overlay != null and hg.green_overlay.visible
 		if on_green != viewing or on_green != overlay_on:
 			_problems.append("hole %d stroke %d: green view %s / overlay %s while ball %s the green" % [n, stroke + 1, viewing, overlay_on, "on" if on_green else "off"])
+		_play_extinguisher(n)
 		if on_green and hg.putting_active:
 			if hg.putt_hand.size() != hg.PUTT_HAND_SIZE:
 				_problems.append("hole %d stroke %d: green hand has %d cards" % [n, stroke + 1, hg.putt_hand.size()])
@@ -137,10 +145,14 @@ func _play_hole(n: int) -> void:
 				_fire_hits += 1
 			if ctx.has_metadata("ice_run"):
 				_ice_runs += 1
+			if ctx.has_metadata("bounced"):
+				_bounces += 1
+			if ctx.has_metadata("tunnel_ride"):
+				_tunnel_rides += 1
 			for t in ctx.get_metadata("roll_tiles", []):
 				if hg.course_features and hg.course_features.kind_at(t) == "ice":
 					_ice_touches += 1
-			print("    %s from %s(%d) aim %s -> landing %s(%d), %d from flag" % [club_name, from, hg.get_cell(from.x, from.y), aim, ctx.landing_tile, hg.get_cell(ctx.landing_tile.x, ctx.landing_tile.y), hg.hex_distance(ctx.landing_tile, hg.flag_position)])
+			print("    %s%s from %s(%d) aim %s -> landing %s(%d), %d from flag" % [club_name, " (%s)" % ctx.get_metadata("swing", "") if ctx.has_metadata("swing") else "", from, hg.get_cell(from.x, from.y), aim, ctx.landing_tile, hg.get_cell(ctx.landing_tile.x, ctx.landing_tile.y), hg.hex_distance(ctx.landing_tile, hg.flag_position)])
 			if club_name == "Putter" and ctx.landing_tile != hg.flag_position and hg.hex_distance(from, hg.flag_position) <= 1:
 				var pl: Dictionary = ctx.get_metadata("shot_plan", {})
 				print("      MISSED SHORT PUTT flag %s surface %d | plan end %s ring %s carry %s blocked %s | make %s | aoe %s weights %s" % [hg.flag_position, hg.get_cell(hg.flag_position.x, hg.flag_position.y), pl.get("end"), pl.get("ring"), pl.get("carry"), pl.get("blocked"), ctx.get_metadata("putt_make_chance", "-"), ctx.aoe_tiles, ctx.aoe_weights])
@@ -149,6 +161,8 @@ func _play_hole(n: int) -> void:
 			print("    Putt from %s -> %s, %d hexes, holed %s, off green %s" % [from, result.end, result.touched, result.holed, result.off_green])
 		hg.shot_manager.shot_completed.connect(on_done)
 		hg.putt_resolved.connect(on_putt)
+		if club_name != "Putter" and OS.get_environment("AUTOPLAY_SWING") != "off":
+			hg.pending_swing = _model_swing()
 		shoot_button.emit_signal("pressed")
 		hg.shot_manager.shot_completed.disconnect(on_done)
 		hg.putt_resolved.disconnect(on_putt)
@@ -184,6 +198,7 @@ func _print_balance() -> void:
 		if r.strokes == 1:
 			aces += 1
 	var finished := _results.size() - blown
+	print("SWING pure %d, thin %d, slice %d, hook %d" % [_swings.pure, _swings.thin, _swings.slice, _swings.hook])
 	print("BALANCE holes=%d finished=%d avg_vs_par=%+.2f putts/hole=%.2f aces=%d (%.0f%%) blowouts=%d" % [
 		_results.size(), finished, float(total_diff) / maxf(1, finished), float(putts) / maxf(1, finished),
 		aces, 100.0 * aces / maxf(1, finished), blown])
@@ -278,3 +293,32 @@ func _wait(cond: Callable, timeout_s: float) -> bool:
 			return false
 		await get_tree().process_frame
 	return true
+
+
+func _play_extinguisher(n: int) -> void:
+	"""A Fire Extinguisher in hand with fire on the hole: play it, check it worked."""
+	if hg.course_features == null or hg.course_features.count("fire") == 0:
+		return
+	for card in hg.shot_hand:
+		if card.data.card_id == "extinguisher":
+			hg.main_ui_ref.emit_signal("modifier_card_selected", card)
+			_extinguished += 1
+			if hg.course_features.count("fire") > 0:
+				_problems.append("hole %d: Fire Extinguisher left fire burning" % n)
+			if hg.shot_hand.has(card) or not hg.shot_discard.has(card):
+				_problems.append("hole %d: Fire Extinguisher didn't go to the discard" % n)
+			return
+
+
+func _model_swing() -> Dictionary:
+	"""A decent player on the SHOOT meter: aims to let go with the box most of
+	the way across the green target (on its way out), give or take
+	SWING_TIMING_SD. Harder shots have a smaller, faster target."""
+	var plan: Dictionary = hg.shot_manager.current_context.get_metadata("shot_plan", {}) if hg.shot_manager.current_context else {}
+	var d: Vector2 = hg._swing_difficulty(plan)
+	var target_t := 0.7 * d.x * d.y / 2.0
+	var t := maxf(0.0, target_t + _swing_rng.randfn(0.0, SWING_TIMING_SD))
+	var w := SwingButton.meter_width(t, d.y)
+	var kind := SwingButton.grade(w, d.x, minf(d.x + 0.22, 0.92))
+	_swings[kind] += 1
+	return {"kind": kind, "width": w}
