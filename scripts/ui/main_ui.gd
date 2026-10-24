@@ -212,9 +212,20 @@ func _build_scorecard_tray() -> void:
 			ScorecardStyle.flat_button(b)
 			b.add_theme_font_size_override("font_size", 16)
 			b.custom_minimum_size = Vector2(120, 38)
+	# SHOOT is always square: as tall as the tray's content, or narrower if
+	# the rest of the tray needs the width (then centred). Sized from the
+	# anchored tray and the other sections, so it can't feed back into itself.
 	shoot_button.reparent(right, false)
-	shoot_button.custom_minimum_size = Vector2(190, 0)
-	shoot_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	shoot_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var square := func():
+		var others := content.get_combined_minimum_size().x - shoot_button.custom_minimum_size.x
+		var room := get_viewport_rect().size.x - 36.0 - others  # the screen less the tray's side margins
+		var side := maxf(80.0, minf(tray.size.y - 22.0, room))  # top + bottom margins
+		if not shoot_button.custom_minimum_size.is_equal_approx(Vector2(side, side)):
+			shoot_button.custom_minimum_size = Vector2(side, side)
+	tray.resized.connect(square)
+	get_viewport().size_changed.connect(square)
+	square.call()
 
 
 func _tray_caption(text: String) -> Label:

@@ -122,6 +122,12 @@ func _ready() -> void:
 	# but only when idle so we never yank a tracked or mid-gesture camera.
 	if viewport_container:
 		viewport_container.resized.connect(_on_viewport_resized)
+		resized.connect(_fit_render_size)
+		get_viewport().size_changed.connect(_fit_render_size)
+		var settings := get_node_or_null("/root/Settings")
+		if settings:
+			settings.changed.connect(_fit_render_size)
+		_fit_render_size()
 	
 	# Create wind UI elements
 	_setup_wind_display()
@@ -134,7 +140,8 @@ func _setup_viewport() -> void:
 	# Create SubViewportContainer (this Control will contain it)
 	viewport_container = SubViewportContainer.new()
 	viewport_container.name = "ViewportContainer"
-	viewport_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Sized in code (_fit_render_size): the UI is scaled to the window, and
+	# the 3D renders at the window's real resolution, not the 1920x1080 design
 	viewport_container.stretch = true
 	# IMPORTANT: Use PASS so we can handle input on the parent Control
 	viewport_container.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -283,6 +290,34 @@ func _center_on_hole() -> void:
 		var needed_for_x := (hole_bounds.size.x * X_FIT_FACTOR) / aspect
 		target_zoom = clamp(max(needed_for_z, needed_for_x), min_zoom, max_zoom)
 		current_zoom = target_zoom
+
+
+func _render_scale() -> float:
+	"""Real screen pixels per UI pixel (the window's stretch: 2 at 4K, 0.5 at
+	960x540), capped in fullscreen by the chosen resolution (Settings)."""
+	var k := get_tree().root.get_final_transform().get_scale().x
+	var settings := get_node_or_null("/root/Settings")
+	if settings:
+		k = minf(k, settings.render_scale_cap())
+	return clampf(k, 0.25, 4.0)
+
+
+func _fit_render_size() -> void:
+	"""Give the 3D view the window's real resolution: the container is k
+	times the band's size, drawn at 1/k, so the SubViewport (sized by the
+	container) has one pixel per screen pixel and still fills the band."""
+	if viewport_container == null:
+		return
+	var k := _render_scale()
+	viewport_container.position = Vector2.ZERO
+	viewport_container.scale = Vector2.ONE / k
+	viewport_container.size = size * k
+
+
+func _screen_to_viewport(screen_pos: Vector2) -> Vector2:
+	"""A point in this control (UI units) to a pixel in the 3D viewport."""
+	var shown := viewport_container.size * viewport_container.scale
+	return screen_pos * (Vector2(viewport.size) / shown)
 
 
 func _on_viewport_resized() -> void:
@@ -935,7 +970,7 @@ func _handle_tile_click(screen_pos: Vector2) -> void:
 	tap returns false, locks nothing, and leaves the preview on the last valid aim."""
 	# Green view: putts aim at small hexes on the green's surface
 	if is_green_view and hex_grid and hex_grid.has_method("putt_aim_ray") and camera and viewport:
-		var vp_pos := screen_pos * (Vector2(viewport.size) / viewport_container.size)
+		var vp_pos := _screen_to_viewport(screen_pos)
 		if hex_grid.putt_aim_ray(camera.project_ray_origin(vp_pos), camera.project_ray_normal(vp_pos)):
 			return
 	var world_pos = _screen_to_world(screen_pos)
@@ -985,12 +1020,7 @@ func _screen_to_world(screen_pos: Vector2) -> Variant:
 	if not camera or not viewport:
 		return null
 	
-	# Adjust screen_pos to viewport coordinates
-	var viewport_size = viewport.size
-	var container_size = viewport_container.size
-	
-	# Scale screen position to viewport
-	var viewport_pos = screen_pos * (Vector2(viewport_size) / container_size)
+	var viewport_pos := _screen_to_viewport(screen_pos)
 	
 	# Create ray from camera
 	var from = camera.project_ray_origin(viewport_pos)

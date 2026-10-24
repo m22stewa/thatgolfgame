@@ -771,7 +771,7 @@ func _show_points_popup(points: int, reason: String) -> void:
 	else:
 		popup.add_theme_color_override("font_color", ScorecardStyle.RED)
 	
-	popup.position = Vector2(get_viewport().size.x / 2 - 50, get_viewport().size.y / 2)
+	popup.position = Vector2(get_viewport().get_visible_rect().size.x / 2 - 50, get_viewport().get_visible_rect().size.y / 2)
 	add_child(popup)
 	
 	# Animate and remove
@@ -801,7 +801,7 @@ func _show_golf_bonus_popup(bonus_name: String, bonus_points: int, with_points: 
 	popup.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	
 	popup.set_anchors_preset(Control.PRESET_CENTER)
-	popup.position = Vector2(get_viewport().size.x / 2 - 100, get_viewport().size.y / 2 - 50)
+	popup.position = Vector2(get_viewport().get_visible_rect().size.x / 2 - 100, get_viewport().get_visible_rect().size.y / 2 - 50)
 	add_child(popup)
 	
 	# Animate with scale and fade
