@@ -6,11 +6,12 @@ class_name ClubTile
 ## and its features. Toggles in and out of the bag for the hole; a picked club
 ## gets a red border and a pencil tick. The putter is always in (locked).
 
-const SIZE := Vector2(150, 150)
+const SIZE := Vector2(150, 168)
 
 var item: ClubItem
 var yards: String = ""
 var locked := false  # the putter: always in the bag
+var uses := 0        # swings per hole (0: unlimited)
 
 
 func _init() -> void:
@@ -57,3 +58,5 @@ func _draw() -> void:
 		ScorecardStyle.check_mark(self, Vector2(w - 34, 32), 24)
 	if locked:
 		draw_string(head_light, Vector2(8, h - 10), "ALWAYS IN THE BAG", HORIZONTAL_ALIGNMENT_LEFT, w - 16, 12, ScorecardStyle.INK_SOFT)
+	elif uses > 0:
+		draw_string(head_light, Vector2(8, h - 10), "%d USE%s A HOLE" % [uses, "" if uses == 1 else "S"], HORIZONTAL_ALIGNMENT_LEFT, w - 16, 12, ScorecardStyle.INK)

@@ -2,7 +2,7 @@ extends Node
 
 ## test_shot_plan.gd - Headless harness for the prototype card-built flight
 ## (ShotPlan): power costs, landing ring, shape bulge, wind in the air, and
-## trees blocking unlofted shots. Exits 0 on success, 1 on any failure.
+## trees blocking unlofted shots, and the fire updraft. Exits 0 on success, 1 on any failure.
 
 const FAIRWAY := 1
 const TREE := 7
@@ -16,6 +16,7 @@ class StubHole extends RefCounted:
 	var w := 21
 	var h := 40
 	var grid: Array = []
+	var course_features: CourseFeatures = null
 
 	func _init() -> void:
 		for c in range(w):
@@ -91,6 +92,21 @@ func _ready() -> void:
 	_check(not ShotPlan.build(hole, ball, target, {"power": 20, "loft": true}).blocked, "Loft clears the tree")
 	var around := ShotPlan.build(hole, ball, target, {"power": 20, "bulge": 3.5})
 	_check(not around.blocked and around.end == target, "a Hard Draw curves around the tree onto the target")
+	hole.set_cell(10, 8, FAIRWAY)
+
+	print("-- fire updraft --")
+	var fire := CourseFeatures.new()
+	fire.tiles[Vector2i(10, 8)] = {"kind": "fire", "dir": 0, "age": 0}
+	hole.course_features = fire
+	var lifted := ShotPlan.build(hole, ball, target, {"power": 20})
+	var on := Vector2i(10, 14 + CourseFeatures.FIRE_UPDRAFT)
+	_check(lifted.updraft and lifted.end == on, "flying over fire carries %d hexes further (%s)" % [CourseFeatures.FIRE_UPDRAFT, str(lifted.end)])
+	_check(lifted.cost == 12, "the updraft's carry is free (cost %d)" % lifted.cost)
+	_check(not ShotPlan.build(hole, ball, target, {"power": 20, "ground": true}).updraft, "a putt rolls through: no updraft")
+	fire.tiles.clear()
+	fire.tiles[target] = {"kind": "fire", "dir": 0, "age": 0}
+	_check(not ShotPlan.build(hole, ball, target, {"power": 20}).updraft, "landing in fire is no updraft")
+	hole.course_features = null
 
 	print("=== shot plan test complete: %d checks, %d failures ===" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)

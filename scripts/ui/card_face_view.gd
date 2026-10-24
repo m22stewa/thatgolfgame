@@ -2,7 +2,7 @@ extends Control
 class_name CardFaceView
 
 ## CardFaceView - A shot card drawn as a scorecard slip: coloured category bar,
-## a gold coin with the card's Money cost, a condensed title, the drawn icon on
+## a casino chip with the card's cost in Chips, a condensed title, the drawn icon on
 ## grid paper, a one-line effect, and a stat row with pencilled values. A played
 ## card gets a pencil tick; a Strain card is stamped UNPLAYABLE.
 ##
@@ -14,8 +14,6 @@ const BAR_H := 28.0
 const ART_TOP := 74.0
 const ART_H := 74.0
 const STAT_H := 52.0
-const COIN := Color(0.95, 0.76, 0.26)
-const COIN_RIM := Color(0.6, 0.42, 0.08)
 
 var tag: String = "SHOT"
 var cost_text: String = ""
@@ -28,7 +26,7 @@ var played: bool = false:
 		queue_redraw()
 var unplayable: bool = false
 var cost: int = 0
-var affordable: bool = true:  # false: the coin turns red (not enough Money)
+var affordable: bool = true:  # false: the chip turns grey (not enough Chips)
 	set(v):
 		affordable = v
 		queue_redraw()
@@ -85,11 +83,16 @@ static func stats_for(data: CardData) -> Array:
 				roll = "0"
 			elif e.roll_mod != 0:
 				roll = "%+d" % e.roll_mod
+			if e.spin_back > 0:
+				mid = ["SPIN", "BACK"]
+				roll = "%d" % -e.spin_back
+			elif e.topspin:
+				mid = ["SPIN", "TOP"]
 			return [["CURVE", curve], mid, ["ROLL", roll]]
 		if e is EffectPuttCard:
 			return [["READ", "YES" if e.read_green else "–"], ["REACH", "+%d" % e.reach_bonus if e.reach_bonus > 0 else "–"], ["ROLL", "DEAD" if e.dead_weight else "–"]]
 		if e is EffectCourseUtility:
-			var target: String = {"extinguish": "FIRE", "groundskeeper": "ALL", "shutoff": "WIND+H2O"}.get(e.action, "–")
+			var target: String = {"extinguish": "FIRE", "groundskeeper": "ALL", "shutoff": "GUSTS"}.get(e.action, "–")
 			return [["USE", "NOW"], ["HITS", target]]
 	if data.card_type == CardData.CardType.NEGATIVE:
 		return [["CURVE", "–"], ["CARRY", "–"], ["ROLL", "–"]]
@@ -154,17 +157,9 @@ func _draw() -> void:
 
 	draw_rect(Rect2(Vector2.ZERO, size), ink, false, 2.0 * k)
 
-	# Cost: a gold coin on the top-right corner, the card's price in Money
+	# Cost: a casino chip on the top-right corner, the card's price in Chips
 	if not unplayable and cost_text != "":
-		var at := Vector2(w - 24 * k, 22 * k)
-		var r := 19.0 * k
-		draw_circle(at + Vector2(0, 2 * k), r, Color(0, 0, 0, 0.25))
-		draw_circle(at, r, COIN if affordable else ScorecardStyle.PAPER_DARK)
-		draw_arc(at, r, 0, TAU, 32, COIN_RIM if affordable else ScorecardStyle.RED, 2.5 * k, true)
-		draw_arc(at, r - 4 * k, 0, TAU, 32, Color(COIN_RIM, 0.45), k, true)
-		var fs := int(26 * k)
-		var tw := head.get_string_size(cost_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		draw_string(head, at + Vector2(-tw.x / 2.0, fs * 0.36), cost_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink if affordable else ScorecardStyle.RED)
+		ScorecardStyle.draw_chip(self, Vector2(w - 24 * k, 22 * k), 20.0 * k, cost_text, int(22 * k), affordable)
 
 	if played:
 		ScorecardStyle.check_mark(self, Vector2(w - 40 * k, bar_h + 26 * k), 30 * k)

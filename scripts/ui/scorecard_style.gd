@@ -100,6 +100,25 @@ static func flat_button(b: Button, text_color: Color = INK, border: Color = RULE
 	b.add_theme_color_override("font_disabled_color", Color(INK, 0.35))
 
 
+const CHIP := Color(0.72, 0.1, 0.12)  # casino chip red (a ball marker)
+
+
+static func draw_chip(ci: CanvasItem, at: Vector2, r: float, text: String, font_size: int, ok: bool = true) -> void:
+	"""A casino chip, the play currency: red with white edge spots, a cream
+	inlay and the amount. ok = false (can't afford) greys it, number in red."""
+	var base := CHIP if ok else Color(0.55, 0.53, 0.5)
+	ci.draw_circle(at + Vector2(0, r * 0.1), r, Color(0, 0, 0, 0.25))
+	ci.draw_circle(at, r, base)
+	for i in range(6):
+		var a := i * TAU / 6.0
+		ci.draw_arc(at, r * 0.84, a - 0.2, a + 0.2, 6, PAPER, r * 0.26)
+	ci.draw_circle(at, r * 0.6, PAPER)
+	ci.draw_arc(at, r * 0.6, 0, TAU, 32, base.darkened(0.15), maxf(1.0, r * 0.07), true)
+	var font := header_font()
+	var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	ci.draw_string(font, at + Vector2(-tw.x / 2.0, font_size * 0.36), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, INK if ok else RED)
+
+
 static func wobble_ellipse(ci: CanvasItem, rect: Rect2, color: Color = PENCIL, width: float = 2.0, seed_value: int = 0) -> void:
 	"""A hand-drawn pencil ellipse round rect: slightly off-round, overshooting
 	where the pencil comes back to the start."""

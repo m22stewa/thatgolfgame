@@ -1,6 +1,6 @@
-[gd_resource type="ArrayMesh" load_steps=4 format=4 uid="uid://63eyw8eh73m1"]
+[gd_resource type="ArrayMesh" format=4 uid="uid://63eyw8eh73m1"]
 
-[ext_resource type="Shader" path="res://scripts/sand.gdshader" id="1_sand"]
+[ext_resource type="Shader" uid="uid://bfbd3hfj183u6" path="res://scripts/sand.gdshader" id="1_sand"]
 
 [sub_resource type="ShaderMaterial" id="StandardMaterial3D_pocud"]
 render_priority = 0

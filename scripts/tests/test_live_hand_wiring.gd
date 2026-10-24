@@ -157,8 +157,8 @@ func _run() -> void:
 		var card_cost := int(costly.data.effects[0].power_cost)
 		main_ui.emit_signal("modifier_card_selected", costly)
 		_check(hex_grid.planned_cards.has(costly), "(i) playing %s marks it played" % costly.data.card_name)
-		_check(plan_cost.call() == base_cost, "(i) %s costs no power: cards are paid in Money (%d -> %d)" % [costly.data.card_name, base_cost, plan_cost.call()])
-		_check(hex_grid._planned_cost() == card_cost, "(i) %s puts %d Money on the mat" % [costly.data.card_name, card_cost])
+		_check(plan_cost.call() == base_cost, "(i) %s costs no power: cards are paid in Chips (%d -> %d)" % [costly.data.card_name, base_cost, plan_cost.call()])
+		_check(hex_grid._planned_cost() == card_cost, "(i) %s puts %d Chips on the mat" % [costly.data.card_name, card_cost])
 		main_ui.emit_signal("modifier_card_selected", costly)
 		_check(not hex_grid.planned_cards.has(costly) and plan_cost.call() == base_cost, "(i) tapping it again takes it back")
 	# Shot cards only: utility cards (Fire Extinguisher...) play at once and leave the hand
@@ -199,15 +199,43 @@ func _run() -> void:
 			break
 	_check(enabled_after_pick, "(d) selecting a legal club enables the Shoot button")
 	_check(int(hex_grid.get("current_club")) >= 0, "(d) hex_grid.current_club set by selection (=%d)" % int(hex_grid.get("current_club")))
+	# Picking a club re-aims inside its carry band, so the preview shows its distance
+	var ball_tile: Vector2i = hex_grid.world_to_grid(hex_grid.golf_ball.position)
+	var in_band := true
+	var carries: Array = []
+	for inst in ordered:
+		var club: int = int(club_type_enum.get(inst.data.target_club, -1))
+		# A short hole may have no hex in a long club's band: nothing to aim at
+		if club < 0 or not hex_grid._is_club_legal_at(club, ball_tile) or hex_grid._caddie_pick(club).is_empty():
+			continue
+		main_ui.emit_signal("club_card_selected", inst)
+		await get_tree().process_frame
+		var stats: Dictionary = hex_grid.get_club_stats(club, {})
+		var carry: int = hex_grid.hex_distance(ball_tile, hex_grid.turn_aim_target)
+		carries.append("%s %d" % [inst.data.target_club, carry])
+		if carry < int(stats.get("band_min", 0)) or carry > int(stats.get("band_max", 0)):
+			in_band = false
+	_check(in_band and carries.size() > 0, "(d) each picked club aims inside its own carry band (%s)" % ", ".join(carries))
+	# Back to the shortest legal club, so (e)'s shot stays short and predictable
+	for inst in ordered:
+		main_ui.emit_signal("club_card_selected", inst)
+		await get_tree().process_frame
+		if not shoot_button.disabled:
+			break
 
 	# --- (g) points: trick detector wired, coins pay out, wallet matches the log ---
 	var currency = hex_grid.get("currency_manager")
 	_check(shot_manager.trick_detector != null, "(g) ShotManager scores through the trick detector")
 	var coin: Node3D = null
-	for child in hex_grid.get_children():
-		if child.is_in_group("coins") and not child.is_queued_for_deletion():
-			coin = child
+	for _pass in range(2):
+		for child in hex_grid.get_children():
+			if child.is_in_group("coins") and not child.is_queued_for_deletion():
+				coin = child
+				break
+		if coin:
 			break
+		# (e)'s shot can fly through the hole's coins and take them: lay one
+		hex_grid._range_spawn_coin(Vector2i(6, 6))
 	_check(coin != null and currency != null, "(g) a coin spawned on the hole and a wallet exists")
 	if coin and currency:
 		var before: int = currency.get_balance()
@@ -221,6 +249,21 @@ func _run() -> void:
 		for entry in hex_grid.hole_points_log:
 			logged += entry.points
 		_check(logged == currency.get_balance(), "(g) wallet (%d) equals points logged this hole (%d)" % [currency.get_balance(), logged])
+	# Flying through the hex next to a coin's column picks it up (+Chips)
+	var spot := Vector2i(2, 2)
+	hex_grid._range_spawn_coin(spot)
+	var beam_ok := false
+	for child in hex_grid.get_children():
+		if child.is_in_group("coins") and child.get_meta("cell", Vector2i(-9, -9)) == spot:
+			beam_ok = child.get_node_or_null("Beam") != null
+	_check(beam_ok, "(g) a coin stands in a column of light")
+	var chips_before: int = hex_grid.chip_stack
+	hex_grid._collect_coins_in_flight(Vector2i(3, 2))  # an adjacent hex
+	var still_there := false
+	for child in hex_grid.get_children():
+		if child.is_in_group("coins") and child.get_meta("cell", Vector2i(-9, -9)) == spot:
+			still_there = true
+	_check(not still_there and hex_grid.chip_stack == chips_before + hex_grid.CHIPS_PER_COIN, "(g) flying past a coin collects it (+%d Chips)" % hex_grid.CHIPS_PER_COIN)
 
 	# --- (e) pressing Shoot resolves a shot that moves the ball ---
 	var start_tile: Vector2i = hex_grid.world_to_grid(golf_ball.position)

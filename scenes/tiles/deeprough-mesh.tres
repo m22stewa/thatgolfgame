@@ -1,6 +1,6 @@
-[gd_resource type="ArrayMesh" load_steps=4 format=4 uid="uid://b6vfv1t0jvu0r"]
+[gd_resource type="ArrayMesh" format=4 uid="uid://b6vfv1t0jvu0r"]
 
-[ext_resource type="Shader" path="res://scripts/rough_turf.gdshader" id="1_rough"]
+[ext_resource type="Shader" uid="uid://c5pmoiaagmepu" path="res://scripts/rough_turf.gdshader" id="1_rough"]
 
 [sub_resource type="ShaderMaterial" id="StandardMaterial3D_pocud"]
 render_priority = 0

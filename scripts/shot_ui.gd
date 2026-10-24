@@ -785,7 +785,7 @@ func _show_points_popup(points: int, reason: String) -> void:
 
 
 func show_callout(text: String) -> void:
-	"""Prominent popup with no points (e.g. a Money change)."""
+	"""Prominent popup with no points (e.g. a Chips change)."""
 	_show_golf_bonus_popup(text, 0, false)
 
 
@@ -815,7 +815,7 @@ func _show_golf_bonus_popup(bonus_name: String, bonus_points: int, with_points: 
 	_track_overlay(popup, tween)
 
 
-# Notifications over the hole view ("Over the Water +30", "+20", Money
+# Notifications over the hole view ("Over the Water +30", "+20", Chips
 # callouts) fade out as soon as the camera moves, so they never sit over the
 # view you're looking at.
 const OVERLAY_GRACE := 0.4   # seconds a fresh notification stays put

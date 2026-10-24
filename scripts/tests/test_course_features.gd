@@ -2,7 +2,7 @@ extends Node
 
 ## test_course_features.gd - Headless harness for course features: placement,
 ## fire spreading and burning out, and how TurnController's roll-out treats
-## ice, sprinklers and fire. Exits 0 on success, 1 on any failure.
+## ice, fire, wind gusts and trampolines. Exits 0 on success, 1 on any failure.
 
 const FAIRWAY := 1
 const ROUGH := 2
@@ -79,25 +79,62 @@ func _ready() -> void:
 	tc.wind_system = wind
 
 	_test_ice()
-	_test_sprinkler()
 	_test_fire_penalty()
 	_test_fire_spread()
 	_test_tunnel()
 	_test_trampoline()
 	_test_placement()
+	_test_spin()
+	_test_card_costs()
 	print("=== course features test complete: %d checks, %d failures ===" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
 
 
-func _roll(landing: Vector2i, base_roll: int) -> ShotContext:
+func _roll(landing: Vector2i, base_roll: int, meta: Dictionary = {}, roll_mod: int = 0) -> ShotContext:
 	"""Resolve a roll-out straight down column 4 (hex direction 3 = +row)."""
 	var ctx := ShotContext.new()
 	ctx.add_metadata("footprint_built", true)
+	for k in meta:
+		ctx.add_metadata(k, meta[k])
 	ctx.landing_tile = landing
 	ctx.base_roll = base_roll
+	ctx.roll_mod = roll_mod
 	ctx.aim_dir = 3
 	tc.apply_board_resolution(ctx)
 	return ctx
+
+
+func _test_spin() -> void:
+	print("-- spin --")
+	tc.course_features.tiles.clear()
+	_check(_roll(Vector2i(4, 10), 2, {"spin_back": 1}).landing_tile == Vector2i(4, 9), "backspin 1: spins back one hex toward the golfer, no roll on")
+	_check(_roll(Vector2i(4, 10), 2, {"spin_back": 3}).landing_tile == Vector2i(4, 7), "Zip Back: spins back 3 hexes")
+	hole.grid[4][10] = ROUGH
+	_check(_roll(Vector2i(4, 10), 2, {"spin_back": 1}).landing_tile == Vector2i(4, 10), "rough grabs a 1-hex backspin: it stays put")
+	_check(_roll(Vector2i(4, 10), 1, {}, 3).landing_tile == Vector2i(4, 13), "without topspin the rough takes a hex off (+3 roll from rough: 3 hexes)")
+	_check(_roll(Vector2i(4, 10), 1, {"topspin": true}, 3).landing_tile == Vector2i(4, 14), "topspin: the rough doesn't slow it (4 hexes)")
+	hole.grid[4][10] = FAIRWAY
+
+
+func _test_card_costs() -> void:
+	"""Every playable card costs 1-6 Chips; upgrades never take it below 1."""
+	print("-- card costs --")
+	var lib := CardLibrary.new()
+	add_child(lib)
+	var bad: Array = []
+	for id in RunShop.POOL:
+		var data: CardData = lib.get_card(id)
+		var cost := CardCost.of(data) if data else -1
+		if cost < CardCost.MIN or cost > CardCost.MAX:
+			bad.append("%s=%d" % [id, cost])
+	_check(bad.is_empty(), "every shop card costs 1-6 Chips %s" % str(bad))
+	var draw := CardInstance.create_from_data(lib.get_card("draw_shot"))
+	_check(not RunShop.can_upgrade(draw), "a 1-Chip card can't be upgraded")
+	var zip := CardInstance.create_from_data(lib.get_card("zip_back"))
+	zip.upgrade_level = 10
+	_check(CardCost.of(zip.data, zip.upgrade_level) == CardCost.MIN, "upgrades stop at 1 Chip")
+	zip.upgrade_level = 1
+	_check(RunShop.upgrade_price(zip) > RunShop.UPGRADE_PRICE, "each upgrade costs more than the last")
 
 
 func _test_ice() -> void:
@@ -113,15 +150,6 @@ func _test_ice() -> void:
 	var run := _roll(Vector2i(4, 5), 2)
 	_check(run.landing_tile == Vector2i(4, 10), "crossing 3 ice hexes costs no roll (roll 2 -> 5 hexes, at %s)" % str(run.landing_tile))
 	_check(run.has_metadata("ice_run"), "3+ ice hexes rolled over is an Ice Run")
-
-
-func _test_sprinkler() -> void:
-	print("-- sprinkler --")
-	var f: CourseFeatures = tc.course_features
-	f.tiles.clear()
-	f.tiles[Vector2i(4, 6)] = {"kind": "sprinkler", "dir": 0, "age": 0}  # knocks it back up
-	_check(_roll(Vector2i(4, 5), 1).landing_tile == Vector2i(4, 5), "stopping on a sprinkler knocks the ball one hex its way")
-	_check(_roll(Vector2i(4, 4), 3).landing_tile == Vector2i(4, 7), "rolling over a sprinkler doesn't trigger it")
 
 
 func _test_fire_penalty() -> void:
@@ -224,11 +252,18 @@ func _test_trampoline() -> void:
 	print("-- trampoline --")
 	var f: CourseFeatures = tc.course_features
 	f.tiles.clear()
+	var hop := CourseFeatures.TRAMPOLINE_HOP
 	f.tiles[Vector2i(4, 6)] = {"kind": "trampoline", "dir": 0, "age": 0}
-	_check(_roll(Vector2i(4, 6), 0).landing_tile == Vector2i(4, 9), "landing on a trampoline bounces 3 hexes on")
-	_check(_roll(Vector2i(4, 5), 2).landing_tile == Vector2i(4, 10), "rolling onto it: bounce 3, keep the last hex of roll")
-	f.tiles[Vector2i(4, 9)] = {"kind": "trampoline", "dir": 0, "age": 0}
-	_check(_roll(Vector2i(4, 6), 0).landing_tile == Vector2i(4, 12), "trampoline onto trampoline chains")
+	_check(_roll(Vector2i(4, 6), 0).landing_tile == Vector2i(4, 6 + hop), "landing on a trampoline bounces %d hexes on" % hop)
+	_check(_roll(Vector2i(4, 5), 2).landing_tile == Vector2i(4, 7 + hop), "rolling onto it: bounce %d, keep the last hex of roll" % hop)
+	f.tiles[Vector2i(4, 6 + hop)] = {"kind": "trampoline", "dir": 0, "age": 0}
+	_check(_roll(Vector2i(4, 6), 0).landing_tile == Vector2i(4, 6 + 2 * hop), "trampoline onto trampoline chains")
+	# A round 7-hex pad bounces once, however many of its hexes the ball touches
+	f.tiles.clear()
+	for c in CourseFeatures.trampoline_cells(Vector2i(4, 12)):
+		f.tiles[c] = {"kind": "trampoline", "dir": 0, "age": 0, "group": Vector2i(4, 12)}
+	_check(CourseFeatures.trampoline_cells(Vector2i(4, 12)).size() == 7, "a trampoline pad is 7 hexes")
+	_check(_roll(Vector2i(4, 11), 0).landing_tile == Vector2i(4, 11 + hop), "a ball crossing the pad bounces once (lands %d on)" % hop)
 	f.tiles.clear()
 
 
@@ -238,7 +273,8 @@ func _test_placement() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	f.place(hole, rng)
-	_check(f.count("ice") >= 3 and f.count("sprinkler") >= 2, "a hole gets ice patches and sprinklers (ice %d, sprinklers %d)" % [f.count("ice"), f.count("sprinkler")])
+	_check(f.count("ice") >= 3, "a hole gets ice patches (ice %d)" % f.count("ice"))
+	_check(f.count("sprinkler") == 0, "no sprinklers any more")
 	_check(not f.tiles.has(hole.flag_position), "nothing on the cup")
 	var again := CourseFeatures.new()
 	var rng2 := RandomNumberGenerator.new()
@@ -248,20 +284,24 @@ func _test_placement() -> void:
 	var tunnels := 0
 	var tramps := 0
 	var straight := true
+	var round_pads := true
 	for sd in range(40):
 		var g := CourseFeatures.new()
 		var r := RandomNumberGenerator.new()
 		r.seed = sd
 		g.place(hole, r)
-		tramps += g.count("trampoline")
+		var pads := g.count("trampoline")
+		tramps += pads
+		if pads % 7 != 0:
+			round_pads = false
 		var t := g.count("tunnel")
 		if t > 0:
 			tunnels += 1
-			if t < 3 or t > 5:
+			if t < 6 or t > 8:
 				straight = false
-	_check(tunnels > 5 and tunnels < 35, "wind tunnels on about half the holes (%d / 40)" % tunnels)
-	_check(straight, "tunnels are 3-5 hexes long")
-	_check(tramps > 10, "trampolines get placed (%d over 40 holes)" % tramps)
+	_check(tunnels > 5 and tunnels < 35, "wind gusts on about half the holes (%d / 40)" % tunnels)
+	_check(straight, "a gust is a 2-wide band of 6-8 adjacent hexes")
+	_check(tramps > 10 and round_pads, "trampolines get placed as 7-hex pads (%d hexes over 40 holes)" % tramps)
 
 
 func _check(cond: bool, label: String) -> void:

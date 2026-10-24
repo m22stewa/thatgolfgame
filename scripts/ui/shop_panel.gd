@@ -18,7 +18,7 @@ const SOFT := ScorecardStyle.INK_SOFT
 const RED := ScorecardStyle.RED
 const DECK_COLUMNS := 6
 const DECK_SCALE := 0.7   # deck cards a little smaller than the offers
-const OFFER_SCALE := 0.8
+const OFFER_SCALE := 0.74
 
 var shop: RunShop
 var host  # hex_grid: shop_balance(), shop_deck_cards(), shop_buy(i), shop_buy_eraser(), shop_reroll(), shop_remove(card), shop_upgrade(card), shop_continue()
@@ -28,7 +28,7 @@ var _balance: Label
 var _bag_caption: Label
 var _bag_row: HBoxContainer
 var _club_offers: HBoxContainer
-var _hole := 1
+var _hole := 1  # the hole this visit is for
 var _hole_title: Label
 var _hole_details: Label
 var _offers: GridContainer
@@ -40,6 +40,7 @@ var _reroll_button: Button
 var _continue_button: Button
 var _note: Label
 var _zoom: CardZoom
+var _tapped: Control = null  # the card last tapped
 
 
 func _init() -> void:
@@ -192,7 +193,7 @@ func refresh() -> void:
 		slot.add_theme_constant_override("separation", 8)
 		slot.add_child(_card(instance, OFFER_SCALE, func():
 			_zoom.open(instance, [{"label": "BUY  ·  %d PTS" % price, "on_press": buy, "disabled": balance < price}],
-				"" if balance >= price else "Not enough points: %d." % balance)))
+				"" if balance >= price else "Not enough points: %d." % balance, true, _tapped)))
 		var buy_button := _button("BUY  ·  %d" % price, buy)
 		buy_button.disabled = balance < price
 		slot.add_child(buy_button)
@@ -200,7 +201,7 @@ func refresh() -> void:
 	# The item: Eraser
 	var item := VBoxContainer.new()
 	item.add_theme_constant_override("separation", 8)
-	var eraser := _item_face("Eraser", "-1 stroke off your run score. Used at once.")
+	var eraser := _item_face("Eraser", "-1 stroke off your run score.")
 	eraser.custom_minimum_size = CardFaceView.SIZE * OFFER_SCALE
 	item.add_child(eraser)
 	var buy_item := _button("BUY  ·  %d" % RunShop.ERASER_PRICE, func(): host.shop_buy_eraser())
@@ -248,9 +249,11 @@ func _refresh_bag(balance: int) -> void:
 	putter.yards = "the green"
 	_bag_row.add_child(putter)
 	var needed: int = host.shop_bag_needed()
-	_bag_caption.text = "YOUR BAG FOR HOLE %d  ·  PICK %d CLUBS  ·  THE PUTTER IS ALWAYS IN" % [_hole, host.shop_bag_size()]
+	var picked: int = host.hole_bag.size()
+	_bag_caption.text = "YOUR BAG FOR HOLE %d  ·  PICK UP TO %d  ·  FEWER CLUBS, MORE POINTS: 4 %s · 3 %s · 2 %s · 1 %s  ·  PUTTER ALWAYS IN" % [
+		_hole, host.shop_bag_size(), host.shop_bag_multiplier(4), host.shop_bag_multiplier(3), host.shop_bag_multiplier(2), host.shop_bag_multiplier(1)]
 	_continue_button.disabled = needed > 0
-	_continue_button.text = ("PICK %d MORE CLUB%s" % [needed, "" if needed == 1 else "S"]) if needed > 0 else "TEE OFF HOLE %d  →" % _hole
+	_continue_button.text = "PICK A CLUB" if needed > 0 else "TEE OFF  ·  %s POINTS  →" % host.shop_bag_multiplier(picked)
 
 	for c in _club_offers.get_children():
 		c.queue_free()
@@ -274,6 +277,7 @@ func _club_tile(item: ClubItem) -> ClubTile:
 	var tile := ClubTile.new()
 	tile.item = item
 	tile.yards = host.shop_club_yards(item.club)
+	tile.uses = host.shop_club_uses(item.club)
 	return tile
 
 
@@ -293,9 +297,9 @@ func _open_deck_card(card) -> void:
 	_zoom.open(card, [
 		{"label": "REMOVE  ·  %d PTS" % RunShop.REMOVE_PRICE, "on_press": func(): host.shop_remove(card),
 			"disabled": balance < RunShop.REMOVE_PRICE},
-		{"label": "UPGRADE  ·  %d PTS  (−1 COST)" % RunShop.UPGRADE_PRICE, "on_press": func(): host.shop_upgrade(card),
-			"disabled": balance < RunShop.UPGRADE_PRICE or not can_up},
-	], note)
+		{"label": "UPGRADE  ·  %d PTS  (−1 COST)" % RunShop.upgrade_price(card), "on_press": func(): host.shop_upgrade(card),
+			"disabled": balance < RunShop.upgrade_price(card) or not can_up},
+	], note, true, _tapped)
 
 
 func _card(instance, scale: float, on_tap: Callable) -> Button:
@@ -307,7 +311,9 @@ func _card(instance, scale: float, on_tap: Callable) -> Button:
 	var drawn := face.get_node_or_null("Face") as Control
 	if drawn:
 		drawn.custom_minimum_size = CardFaceView.SIZE * scale  # the face draws at whatever size it is given
-	face.pressed.connect(on_tap)
+	face.pressed.connect(func():
+		_tapped = face  # the zoom grows out of it
+		on_tap.call())
 	return face
 
 

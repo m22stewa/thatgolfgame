@@ -1,4 +1,4 @@
-[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://ctreefoliagemat0"]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://6kft6nk7br24"]
 
 [ext_resource type="Shader" uid="uid://cob3bs4macsia" path="res://scripts/tree_toon.gdshader" id="1_toon"]
 [ext_resource type="Shader" uid="uid://cfg5kwvm3amc4" path="res://scripts/tree_outline.gdshader" id="2_outline"]
@@ -12,11 +12,11 @@ shader_parameter/outline_width = 0.04
 
 [resource]
 render_priority = 0
+next_pass = SubResource("ShaderMaterial_outline")
 shader = ExtResource("1_toon")
+shader_parameter/albedo_texture = ExtResource("3_grad")
 shader_parameter/foliage_colour = Color(0.18, 0.4, 0.12, 1)
 shader_parameter/foliage_tint = 0.7
 shader_parameter/band_count = 3.0
 shader_parameter/shade_floor = 0.55
 shader_parameter/roughness = 1.0
-shader_parameter/albedo_texture = ExtResource("3_grad")
-next_pass = SubResource("ShaderMaterial_outline")

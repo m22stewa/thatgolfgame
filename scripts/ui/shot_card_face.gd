@@ -34,6 +34,10 @@ static func kind_for(data: CardData) -> Dictionary:
 				return {"kind": "loft", "tag": "FLIGHT", "strength": 1.0}
 			if e.ignore_wind:
 				return {"kind": "wind", "tag": "FLIGHT", "strength": 1.0}
+			if e.spin_back > 0:
+				return {"kind": "backspin", "tag": "SPIN", "strength": 2.0 if e.spin_back > 1 else 1.0}
+			if e.topspin:
+				return {"kind": "topspin", "tag": "SPIN", "strength": 2.0 if e.roll_mod > 3 else 1.0}
 			if e.roll_mod < 0:
 				return {"kind": "stop", "tag": "LANDING", "strength": 1.0}
 			if e.roll_mod > 0:
@@ -44,10 +48,7 @@ static func kind_for(data: CardData) -> Dictionary:
 
 
 static func cost_for(data: CardData, upgrade_level: int = 0) -> int:
-	for e in data.effects:
-		if e is EffectShotShape:
-			return maxi(0, e.power_cost - upgrade_level)
-	return 0
+	return CardCost.of(data, upgrade_level)
 
 
 const BASE_H := 70.0  # icon height on a card in the hand; bigger = zoomed in
@@ -99,6 +100,22 @@ func _draw() -> void:
 				var x := c.x - h * 0.4 + i * h * 0.45
 				draw_line(Vector2(x, c.y), Vector2(x + h * 0.25, c.y), INK, w, true)
 			draw_colored_polygon(PackedVector2Array([c + Vector2(h, 0), c + Vector2(h * 0.7, -7), c + Vector2(h * 0.7, 7)]), INK)
+		"topspin", "backspin":
+			# The ball turning over its top: forward (right) for topspin,
+			# back (left) for backspin; doubled arrows for the hard ones
+			var fwd := 1.0 if kind == "topspin" else -1.0
+			var ball := c + Vector2(-fwd * h * 0.2, h * 0.1)
+			draw_circle(ball, h * 0.32, INK)
+			draw_line(c + Vector2(-h, h * 0.45), c + Vector2(h, h * 0.45), INK, 2.0, true)
+			for i in range(int(strength)):
+				var r := h * (0.6 + 0.22 * i)
+				var a0 := PI * 1.1 if fwd > 0.0 else -PI * 0.1
+				var a1 := PI * 1.9 if fwd > 0.0 else -PI * 0.9
+				draw_arc(ball, r, a0, a1, 20, ACCENT, 3.0, true)
+				var tip := ball + Vector2(cos(a1), sin(a1)) * r
+				var travel := Vector2(-sin(a1), cos(a1)) * fwd  # the arc's direction at its end
+				var side := travel.rotated(PI / 2.0) * 6.0
+				draw_colored_polygon(PackedVector2Array([tip + travel * 8.0, tip + side, tip - side]), ACCENT)
 		"dart":
 			draw_arc(c, h * 0.9, 0, TAU, 32, INK, 2.0, true)
 			draw_arc(c, h * 0.55, 0, TAU, 32, INK, 2.0, true)

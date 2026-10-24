@@ -406,14 +406,14 @@ func _handle_ball_tracking(delta: float) -> void:
 	elif not ball_in_flight and was_in_flight:
 		_on_ball_flight_ended()
 	
-	# Only do smooth tracking when ball is at rest and tracking is enabled
-	# Skip tracking during flight to reduce per-frame calculations
-	if is_tracking_ball and not ball_in_flight:
+	# Track the ball at rest; after a shot is struck, chase it through the air
+	# too (a little behind, so the flight reads)
+	if is_tracking_ball and (following_shot or not ball_in_flight):
 		var target = Vector3(ball_pos.x, 0, ball_pos.z)
 		# Only lerp if we're not already close enough
 		var dist_sq = (target_position - target).length_squared()
 		if dist_sq > 0.1:  # Only move if more than ~0.3 units away
-			target_position = target_position.lerp(target, delta * follow_speed)
+			target_position = target_position.lerp(target, minf(1.0, delta * (FOLLOW_SHOT_SPEED if following_shot else follow_speed)))
 
 
 func _on_ball_flight_started() -> void:
@@ -1162,10 +1162,14 @@ func add_to_viewport(node: Node3D) -> void:
 # no keyboard camera); a flyover can be skipped with any press.
 
 const SHOT_GLIDE_TIME := 1.1
+const SHOOT_RESET_TIME := 0.35  # SHOOT pressed: back behind the ball this fast
+const FOLLOW_SHOT_SPEED := 6.0  # how tightly the camera chases a struck ball
 const FLY_LOW_ZOOM := 26.0
 const FLY_LOW_PITCH := 46.0
 
 var is_flying := false
+var following_shot := false  # a struck ball: the camera chases it until the next shot
+var _pitch_tween: Tween = null
 var _cam_tween: Tween = null
 var _shot_pose: Dictionary = {}  # where the camera settles for the next shot
 
@@ -1189,6 +1193,7 @@ func shot_pose(ball: Vector3, aim: Vector3) -> Dictionary:
 
 func frame_shot(ball: Vector3, aim: Vector3) -> void:
 	"""Next shot: glide to the ball, turned to face where it's aimed."""
+	following_shot = false
 	if is_green_view:
 		return
 	_shot_pose = shot_pose(ball, aim)
@@ -1198,10 +1203,41 @@ func frame_shot(ball: Vector3, aim: Vector3) -> void:
 	_glide_to(_shot_pose, SHOT_GLIDE_TIME)
 
 
+func shot_camera_ready(pose: Dictionary = {}) -> void:
+	"""SHOOT pressed: snap back behind the ball, facing the shot (pose, from
+	shot_pose(); default the last framed one), however the player has moved
+	the camera. Eased by the camera's own smoothing (not a scripted move), so
+	it can hand straight over to following the ball."""
+	if not pose.is_empty():
+		_shot_pose = pose
+	if is_green_view or is_flying or _shot_pose.is_empty():
+		return
+	_stop_camera_tween()
+	is_tracking_ball = true
+	target_yaw = _shot_pose.yaw
+	target_zoom = _shot_pose.zoom
+	target_pitch = _shot_pose.pitch
+	if _pitch_tween and _pitch_tween.is_valid():
+		_pitch_tween.kill()
+	_pitch_tween = create_tween()
+	_pitch_tween.tween_property(self, "camera_angle", float(_shot_pose.pitch), SHOOT_RESET_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+
+func follow_shot(pose: Dictionary = {}) -> void:
+	"""The ball is struck: keep it in view through the air and the roll."""
+	if is_green_view:
+		return
+	if is_flying:
+		skip_flyover()
+	shot_camera_ready(pose)  # a quick tap skips the press: still turn behind the ball
+	following_shot = true
+
+
 func play_flyover(tee: Vector3, green: Vector3, end_pose: Dictionary, start_delay: float = 0.0) -> void:
 	"""New hole: whole-hole overview, down to the tee, along the hole to the
 	green, a slow circle round it, then back to the tee framed for the shot."""
 	_stop_camera_tween()
+	following_shot = false
 	_shot_pose = end_pose
 	_flyover_end_pose = end_pose
 	is_flying = true
@@ -1295,6 +1331,7 @@ func enter_green_view(center: Vector3, extent: float, yaw: float) -> void:
 	"""Frame the whole green: look at its centre from yaw (radians, ball side),
 	pitched down, zoomed so a circle of diameter extent fits the band."""
 	_stop_camera_tween()
+	following_shot = false
 	if not is_green_view:
 		_pre_green_view = {"angle": camera_angle, "pitch": target_pitch, "zoom": target_zoom, "yaw": target_yaw}
 	_green_frame = [center, extent, yaw]

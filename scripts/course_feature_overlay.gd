@@ -2,10 +2,10 @@ extends Node3D
 class_name CourseFeatureOverlay
 
 ## CourseFeatureOverlay - Draws CourseFeatures on the course hexes: glossy ice,
-## flickering fire, scorched ground, sprinkler heads with a chevron showing
-## which way they knock the ball, wind tunnels (hoops over a tinted run with
-## chevrons along it) and trampolines. Rebuilt whenever the features change
-## (fire spreading).
+## flickering fire, scorched ground, wind gusts (a column of pale light over
+## each hex, like the coins', with streaks flowing the way it blows and
+## chevrons on the ground) and round trampolines (one big pad over its 7
+## hexes). Rebuilt whenever the features change (fire spreading).
 
 const LIFT := 0.035
 const HEX_RADIUS := 0.92
@@ -33,12 +33,12 @@ func show_features(features: CourseFeatures, hole) -> void:
 				_add_flames(at, cell)
 			"scorched":
 				_add_hex(at, _flat(Color(0.12, 0.1, 0.09, 0.8), false))
-			"sprinkler":
-				_add_sprinkler(at, cell, f.dir, hole)
 			"tunnel":
 				_add_tunnel(at, cell, f.dir, hole)
 			"trampoline":
-				_add_trampoline(at)
+				# One big pad, drawn from its centre hex
+				if f.get("group", cell) == cell:
+					_add_trampoline(at)
 
 
 func _process(delta: float) -> void:
@@ -128,68 +128,60 @@ func _add_flames(at: Vector3, cell: Vector2i) -> void:
 		_flames.append({"node": pivot, "phase": angle * 3.0})
 
 
-func _add_sprinkler(at: Vector3, cell: Vector2i, dir: int, hole) -> void:
-	var head := MeshInstance3D.new()
-	var disc := CylinderMesh.new()
-	disc.top_radius = 0.22
-	disc.bottom_radius = 0.26
-	disc.height = 0.18
-	disc.radial_segments = 12
-	head.mesh = disc
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color(0.55, 0.57, 0.6)
-	steel.metallic = 0.6
-	steel.roughness = 0.35
-	head.material_override = steel
-	head.position = at + Vector3(0, 0.09, 0)
-	add_child(head)
-	# Chevron toward the hex it knocks the ball onto
-	var next: Vector2i = hole.aoe_system._get_neighbor_in_direction(cell, dir, cell.x % 2 == 1)
-	var to: Vector3 = hole.get_tile_world_position(next) - hole.get_tile_world_position(cell)
-	var holder := Node3D.new()
-	holder.position = at + Vector3(0, 0.02, 0)
-	holder.rotation.y = atan2(to.x, to.z)
-	add_child(holder)
-	var water := _flat(Color(0.3, 0.8, 1.0, 1.0), true)
-	water.emission = Color(0.1, 0.45, 0.8)
-	water.render_priority = 2
-	for i in range(2):
-		var chev := MeshInstance3D.new()
-		chev.mesh = _chevron_mesh()
-		chev.material_override = water
-		chev.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		chev.position = Vector3(0, 0.02, 0.35 + i * 0.22)
-		chev.scale = Vector3(1.4, 1.0, 1.4)
-		holder.add_child(chev)
+const GUST_HEIGHT := 5.0
+const GUST_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec4 gust_color : source_color;
+uniform vec2 flow = vec2(0.0, 1.0);  // world x, z the gust blows toward
+varying vec3 world_pos;
+void vertex() {
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+void fragment() {
+	// Streaks in world space, so neighbouring columns read as one gust,
+	// racing along the flow; brightest low down, gone at the top
+	float along = dot(world_pos.xz, flow);
+	float across = dot(world_pos.xz, vec2(-flow.y, flow.x));
+	float streak = fract(along * 0.45 - TIME * 1.6 + sin(across * 2.3 + world_pos.y * 0.9) * 0.35);
+	float band = smoothstep(0.0, 0.08, streak) * (1.0 - smoothstep(0.08, 0.45, streak));
+	float fade = pow(UV.y, 1.4);
+	ALBEDO = gust_color.rgb;
+	ALPHA = gust_color.a * fade * (0.25 + 0.75 * band);
+}
+"""
 
 
 func _add_tunnel(at: Vector3, cell: Vector2i, dir: int, hole) -> void:
-	var tint := _flat(Color(0.75, 0.92, 1.0, 0.35), false)
+	"""A wind gust hex: a pale tint, a column of light streaming the way it
+	blows, and chevrons on the ground pointing that way."""
+	var tint := _flat(Color(0.75, 0.92, 1.0, 0.3), false)
 	_add_hex(at, tint)
 	var next: Vector2i = hole.aoe_system._get_neighbor_in_direction(cell, dir, cell.x % 2 == 1)
 	var to: Vector3 = hole.get_tile_world_position(next) - hole.get_tile_world_position(cell)
+	var flow := Vector2(to.x, to.z).normalized()
+	var column := MeshInstance3D.new()
+	var prism := CylinderMesh.new()
+	prism.radial_segments = 6  # the flat-top hex tiles
+	prism.rings = 1
+	prism.top_radius = HEX_RADIUS * 0.95
+	prism.bottom_radius = HEX_RADIUS * 0.95
+	prism.height = GUST_HEIGHT
+	prism.cap_top = false
+	prism.cap_bottom = false
+	column.mesh = prism
+	var mat := ShaderMaterial.new()
+	mat.shader = _gust_shader()
+	mat.set_shader_parameter("gust_color", Color(0.75, 0.92, 1.0, 0.5))
+	mat.set_shader_parameter("flow", flow)
+	column.material_override = mat
+	column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	column.position = at + Vector3(0, GUST_HEIGHT / 2.0, 0)
+	add_child(column)
 	var holder := Node3D.new()
 	holder.position = at
 	holder.rotation.y = atan2(to.x, to.z)
 	add_child(holder)
-	# A hoop across the run: the tunnel's ribs
-	var hoop := MeshInstance3D.new()
-	var torus := TorusMesh.new()
-	torus.inner_radius = 0.56
-	torus.outer_radius = 0.72
-	torus.rings = 24
-	torus.ring_segments = 8
-	hoop.mesh = torus
-	var rib := StandardMaterial3D.new()
-	rib.albedo_color = Color(0.55, 0.78, 0.95, 0.92)
-	rib.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	rib.roughness = 0.25
-	rib.metallic = 0.2
-	hoop.material_override = rib
-	hoop.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	hoop.rotation.x = PI / 2.0  # stand it up across the direction of travel
-	hoop.position = Vector3(0, 0.0, 0)
-	holder.add_child(hoop)
 	var air := _flat(Color(0.85, 0.97, 1.0, 1.0), true)
 	air.emission = Color(0.5, 0.8, 1.0)
 	air.render_priority = 2
@@ -203,39 +195,64 @@ func _add_tunnel(at: Vector3, cell: Vector2i, dir: int, hole) -> void:
 		holder.add_child(chev)
 
 
+static var _gust_shader_res: Shader = null
+
+
+static func _gust_shader() -> Shader:
+	if _gust_shader_res == null:
+		_gust_shader_res = Shader.new()
+		_gust_shader_res.code = GUST_SHADER
+	return _gust_shader_res
+
+
+const PAD_RADIUS := 2.5  # covers the centre hex and its ring
+
+
 func _add_trampoline(at: Vector3) -> void:
+	"""A big round trampoline over the centre hex and the six around it."""
 	var frame := MeshInstance3D.new()
 	var torus := TorusMesh.new()
-	torus.inner_radius = 0.5
-	torus.outer_radius = 0.64
-	torus.rings = 24
+	torus.inner_radius = PAD_RADIUS - 0.2
+	torus.outer_radius = PAD_RADIUS
+	torus.rings = 48
 	frame.mesh = torus
 	var red := StandardMaterial3D.new()
 	red.albedo_color = Color(0.85, 0.16, 0.12)
 	red.roughness = 0.4
 	frame.material_override = red
-	frame.position = at + Vector3(0, 0.12, 0)
+	frame.position = at + Vector3(0, 0.22, 0)
 	add_child(frame)
 	var mat := MeshInstance3D.new()
 	var disc := CylinderMesh.new()
-	disc.top_radius = 0.52
-	disc.bottom_radius = 0.52
+	disc.top_radius = PAD_RADIUS - 0.15
+	disc.bottom_radius = PAD_RADIUS - 0.15
 	disc.height = 0.02
-	disc.radial_segments = 20
+	disc.radial_segments = 40
 	mat.mesh = disc
 	mat.material_override = _flat(Color(0.08, 0.08, 0.1, 0.95), false)
-	mat.position = at + Vector3(0, 0.1, 0)
+	mat.position = at + Vector3(0, 0.2, 0)
 	add_child(mat)
-	for i in range(6):
+	# A target ring on the mat
+	var ring := MeshInstance3D.new()
+	var inner := TorusMesh.new()
+	inner.inner_radius = 0.75
+	inner.outer_radius = 0.9
+	inner.rings = 32
+	ring.mesh = inner
+	ring.material_override = _flat(Color(0.95, 0.85, 0.3, 0.9), false)
+	ring.scale = Vector3(1.0, 0.05, 1.0)
+	ring.position = at + Vector3(0, 0.22, 0)
+	add_child(ring)
+	for i in range(10):
 		var leg := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.03
-		cyl.bottom_radius = 0.03
-		cyl.height = 0.12
+		cyl.top_radius = 0.05
+		cyl.bottom_radius = 0.05
+		cyl.height = 0.22
 		leg.mesh = cyl
 		leg.material_override = red
-		var a := float(i) * TAU / 6.0
-		leg.position = at + Vector3(cos(a) * 0.57, 0.06, sin(a) * 0.57)
+		var a := float(i) * TAU / 10.0
+		leg.position = at + Vector3(cos(a) * (PAD_RADIUS - 0.1), 0.11, sin(a) * (PAD_RADIUS - 0.1))
 		add_child(leg)
 
 

@@ -4,6 +4,9 @@ class_name CourseFeatures
 ## CourseFeatures - Good / bad things on the course hexes (the green has its
 ## own, see GreenBoard). Seeded per hole from the hole RNG.
 ##
+## Each obstacle is a shape of at least SHAPE_MIN hexes (sometimes bigger): a
+## line, a 2-wide band, a rhombus "square" or a grown blob.
+##
 ##   ice        - frictionless: a ball landing on ice gets +ICE_LANDING_ROLL,
 ##                and a rolling ball doesn't slow down while crossing ice
 ##   fire       - a hazard that spreads, and gets worse the longer the hole
@@ -12,13 +15,16 @@ class_name CourseFeatures
 ##                the fairway burns too), new fires flare up in the rough, and
 ##                each hex burns out after FIRE_LIFETIME strokes (scorched
 ##                ground). With wind it only spreads downwind. A ball that
-##                lands in or rolls through fire costs a Money (hex_grid)
+##                lands in or rolls through fire costs a Chips (hex_grid); a
+##                ball flying over it rides the updraft (ShotPlan): it goes
+##                higher and carries FIRE_UPDRAFT hexes further
 ##   scorched   - burnt-out ground; cosmetic
-##   sprinkler  - a ball that stops on it is knocked one hex its facing way
-##   tunnel     - a wind tunnel (a straight run of 3-5 hexes): a ball touching
-##                it is pushed along it 1 + wind strength hexes and stops
-##   trampoline - a ball touching it bounces TRAMPOLINE_HOP hexes on in its
-##                direction of travel and keeps rolling
+##   tunnel     - a wind gust: a band of adjacent hexes (2 wide, 3-4 long)
+##                all blowing one way; a ball touching it is pushed that way
+##                1 + wind strength hexes and stops
+##   trampoline - a round pad of 7 hexes (a hex and its ring); a ball touching
+##                it bounces high, TRAMPOLINE_HOP hexes on in its direction of
+##                travel, and keeps rolling. One bounce per pad
 ##
 ## Coins are the existing course pickups (hex_grid), not part of this map.
 
@@ -28,26 +34,30 @@ const SURF_DEEP_ROUGH := 3
 const SURF_TREE := 7
 
 const ICE_LANDING_ROLL := 2
-const TRAMPOLINE_HOP := 3
-const FIRE_LIFETIME := 5        # strokes a hex burns before it scorches
-const FIRE_SPREAD_CHANCE := 0.5  # per fire per stroke, +FIRE_SPREAD_GROWTH each stroke
-const FIRE_SPREAD_GROWTH := 0.1
-const FIRE_MAX_BURNING := 6      # cap on burning hexes, +FIRE_MAX_GROWTH each stroke
-const FIRE_MAX_GROWTH := 4
+const TRAMPOLINE_HOP := 4
+const FIRE_LIFETIME := 6        # strokes a hex burns before it scorches
+const FIRE_SPREAD_CHANCE := 0.75 # per fire per stroke, +FIRE_SPREAD_GROWTH each stroke
+const FIRE_SPREAD_GROWTH := 0.15
+const FIRE_MAX_BURNING := 14     # cap on burning hexes, +FIRE_MAX_GROWTH each stroke
+const FIRE_MAX_GROWTH := 8
 const FIRE_FLARE_FROM := 2       # from this stroke on, a new fire may flare up in the rough
-const FIRE_FLARE_CHANCE := 0.35
-const FIRE_FAIRWAY_TURN := 3     # from this stroke on, fire spreads onto the fairway too
+const FIRE_FLARE_CHANCE := 0.5
+const FIRE_FAIRWAY_TURN := 2     # from this stroke on, fire spreads onto the fairway too
+const FIRE_UPDRAFT := 3          # extra hexes of carry for a ball flying over fire
 const FIRE_WIND_BOOST := 0.1     # spread chance per point of wind strength
 const FIRE_DOWNWIND_MIN := 0.35  # a neighbour within ~70 degrees of the wind is downwind
 const FLAMMABLE := [SURF_ROUGH, SURF_DEEP_ROUGH]  # not trees: the canopy would hide it
+const SHAPE_MIN := 4             # every obstacle covers at least this many hexes
+const SHAPE_BIGGER_CHANCE := 0.45  # ...and is sometimes bigger (up to about 9)
 
 var tiles: Dictionary = {}  # Vector2i course cell -> {kind: String, dir: int, age: int}
 
 
 func place(hole, rng: RandomNumberGenerator) -> void:
-	"""Seed the hole: 2-3 ice patches, a few sprinklers on the fairway and, on
-	par 4s and 5s, sometimes a fire in the rough. Never on the tee, the green,
-	the cup or water."""
+	"""Seed the hole: 2-3 ice patches, sometimes a wind gust and trampoline
+	pads and, on par 4s and 5s (half the par 3s), a fire in the rough. Each
+	is a shape of SHAPE_MIN+ hexes. Never on the tee, the green, the cup or
+	water."""
 	tiles.clear()
 	var fairway: Array[Vector2i] = []
 	var rough: Array[Vector2i] = []
@@ -66,55 +76,108 @@ func place(hole, rng: RandomNumberGenerator) -> void:
 		return hole.get_adjacent_cells(c.x, c.y).all(func(n): return hole.get_cell(n.x, n.y) != SURF_TREE))
 	if fairway.is_empty():
 		return
+	var playable := fairway + rough
+	var on_playable := func(c): return playable.has(c)
 
-	# Ice: patches of 3-6 hexes, grown from a fairway seed
+	# Ice: patches on the fairway / rough
 	for _p in range(rng.randi_range(2, 3)):
-		var seed_cell: Vector2i = fairway[rng.randi_range(0, fairway.size() - 1)]
-		var patch: Array[Vector2i] = [seed_cell]
-		for _g in range(rng.randi_range(2, 5)):
-			var from: Vector2i = patch[rng.randi_range(0, patch.size() - 1)]
-			var options: Array = hole.get_adjacent_cells(from.x, from.y).filter(
-				func(n): return (fairway.has(n) or rough.has(n)) and not patch.has(n))
-			if not options.is_empty():
-				patch.append(options[rng.randi_range(0, options.size() - 1)])
-		for cell in patch:
+		for cell in _shape_cells(rng, fairway, on_playable):
 			tiles[cell] = {"kind": "ice", "dir": 0, "age": 0}
 
-	# Sprinklers: 2-3 on the fairway, each facing a random way
-	for _s in range(rng.randi_range(2, 3)):
-		var cell: Vector2i = fairway[rng.randi_range(0, fairway.size() - 1)]
-		if not tiles.has(cell):
-			tiles[cell] = {"kind": "sprinkler", "dir": rng.randi_range(0, 5), "age": 0}
-
-	# Wind tunnel: half the holes, a straight run of 3-5 hexes
+	# Wind gust: half the holes, a 2-wide band of 3-4 hexes all blowing one way
 	if rng.randf() < 0.5:
-		var playable := fairway + rough
-		for _try in range(10):
+		for _try in range(12):
 			var start: Vector2i = playable[rng.randi_range(0, playable.size() - 1)]
 			var d := rng.randi_range(0, 5)
-			var run: Array[Vector2i] = [start]
-			for _i in range(rng.randi_range(2, 4)):
-				var n := neighbor(run[run.size() - 1], d)
-				if not playable.has(n) or tiles.has(n):
-					break
-				run.append(n)
-			if run.size() >= 3 and run.all(func(c): return not tiles.has(c)):
-				for cell in run:
+			var band := gust_cells(start, d, rng.randi_range(3, 4))
+			if band.all(func(c): return playable.has(c) and not tiles.has(c)):
+				for cell in band:
 					tiles[cell] = {"kind": "tunnel", "dir": d, "age": 0, "group": start}
 				break
 
-	# Trampolines: 0-2 on the fairway or rough
+	# Trampolines: 0-2 round pads of 7 hexes on the fairway or rough
 	for _t in range(rng.randi_range(0, 2)):
-		var playable := fairway + rough
-		var cell: Vector2i = playable[rng.randi_range(0, playable.size() - 1)]
-		if not tiles.has(cell):
-			tiles[cell] = {"kind": "trampoline", "dir": 0, "age": 0}
+		for _try in range(12):
+			var centre: Vector2i = playable[rng.randi_range(0, playable.size() - 1)]
+			var pad := trampoline_cells(centre)
+			if pad.all(func(c): return playable.has(c) and not tiles.has(c)):
+				for cell in pad:
+					tiles[cell] = {"kind": "trampoline", "dir": 0, "age": 0, "group": centre}
+				break
 
-	# Fire: every par 4 / 5 and half the par 3s start with one in the rough
+	# Fire: every par 4 / 5 and half the par 3s start with a blaze in the rough
 	if not open_rough.is_empty() and (hole.current_par >= 4 or rng.randf() < 0.5):
-		var cell: Vector2i = open_rough[rng.randi_range(0, open_rough.size() - 1)]
-		if not tiles.has(cell):
+		for cell in _shape_cells(rng, open_rough, func(c): return rough.has(c)):
 			tiles[cell] = {"kind": "fire", "dir": 0, "age": 0}
+
+
+func _shape_cells(rng: RandomNumberGenerator, seeds: Array, ok: Callable) -> Array[Vector2i]:
+	"""An obstacle shape grown from a random seed hex: SHAPE_MIN hexes, or
+	bigger now and then. Every hex must pass ok and be free; a few seeds are
+	tried before giving up (empty)."""
+	if seeds.is_empty():
+		return []
+	for _try in range(12):
+		var start: Vector2i = seeds[rng.randi_range(0, seeds.size() - 1)]
+		var big := rng.randf() < SHAPE_BIGGER_CHANCE
+		var d := rng.randi_range(0, 5)
+		var cells: Array[Vector2i] = []
+		match rng.randi_range(0, 3):
+			0:  # line
+				cells = _line(start, d, rng.randi_range(SHAPE_MIN + 1, SHAPE_MIN + 3) if big else SHAPE_MIN)
+			1:  # band: two rows side by side
+				cells = _rhombus(start, d, rng.randi_range(3, 4) if big else 2, 2)
+			2:  # "square": a rhombus of hexes
+				cells = _rhombus(start, d, 3, rng.randi_range(2, 3)) if big else _rhombus(start, d, 2, 2)
+			_:  # blob
+				cells = _blob(rng, start, rng.randi_range(SHAPE_MIN + 1, SHAPE_MIN + 4) if big else SHAPE_MIN, ok)
+		if cells.size() >= SHAPE_MIN and cells.all(func(c): return ok.call(c) and not tiles.has(c)):
+			return cells
+	return []
+
+
+static func trampoline_cells(centre: Vector2i) -> Array[Vector2i]:
+	"""A round trampoline pad: the centre hex and the six around it."""
+	var out: Array[Vector2i] = [centre]
+	for d in range(6):
+		out.append(neighbor(centre, d))
+	return out
+
+
+static func gust_cells(start: Vector2i, dir: int, length: int) -> Array[Vector2i]:
+	"""A wind gust: two side-by-side rows of length hexes along dir."""
+	return _rhombus(start, dir, length, 2)
+
+
+static func _line(start: Vector2i, dir: int, length: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = [start]
+	for _i in range(length - 1):
+		out.append(neighbor(out[out.size() - 1], dir))
+	return out
+
+
+static func _rhombus(start: Vector2i, dir: int, length: int, rows: int) -> Array[Vector2i]:
+	"""rows lines of length hexes along dir, each row stepped off the last
+	toward dir + 1 (60 degrees round): 2 x 2 is a little diamond."""
+	var out: Array[Vector2i] = []
+	var row_start := start
+	for _r in range(rows):
+		out.append_array(_line(row_start, dir, length))
+		row_start = neighbor(row_start, (dir + 1) % 6)
+	return out
+
+
+func _blob(rng: RandomNumberGenerator, start: Vector2i, size: int, ok: Callable) -> Array[Vector2i]:
+	"""A clump grown hex by hex from start."""
+	var out: Array[Vector2i] = [start]
+	for _g in range(size * 3):
+		if out.size() >= size:
+			break
+		var from: Vector2i = out[rng.randi_range(0, out.size() - 1)]
+		var n := neighbor(from, rng.randi_range(0, 5))
+		if not out.has(n) and ok.call(n) and not tiles.has(n):
+			out.append(n)
+	return out
 
 
 func spread_fire(hole, rng: RandomNumberGenerator, turn: int = 1, wind := Vector2.ZERO, wind_strength: int = 0) -> bool:
@@ -133,7 +196,7 @@ func spread_fire(hole, rng: RandomNumberGenerator, turn: int = 1, wind := Vector
 	var windy := wind_strength > 0 and wind.length() > 0.001
 	var chance := minf(FIRE_SPREAD_CHANCE + FIRE_SPREAD_GROWTH * (turn - 1) + (FIRE_WIND_BOOST * wind_strength if windy else 0.0), 0.95)
 	var cap := FIRE_MAX_BURNING + FIRE_MAX_GROWTH * (turn - 1)
-	var catches := 1 + turn / 3  # neighbours one fire can light in a stroke
+	var catches := 2 + turn / 2  # neighbours one fire can light in a stroke
 	var flammable := FLAMMABLE + ([SURF_FAIRWAY] if turn >= FIRE_FAIRWAY_TURN else [])
 	for cell in burning:
 		tiles[cell].age += 1

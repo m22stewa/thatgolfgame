@@ -25,7 +25,7 @@ var aoe_system: AOESystem = null
 var wind_system: WindSystem = null
 var lie_system: LieSystem = null
 var hole_context: HoleContext = null
-var course_features: CourseFeatures = null  # ice / fire / sprinklers on the course
+var course_features: CourseFeatures = null  # ice / fire / gusts / trampolines on the course
 var hex_grid: Node3D = null            # Hole controller (get_cell/get_tile_surface_position/...)
 
 # --- Tuning constants ---
@@ -236,10 +236,11 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 		"ignore_wind": ctx.get_metadata("ignore_wind", false) or played_club == int(hex_grid.ClubType.PUTTER),
 		"wind_vec": wind_vec,
 		"wind_strength": strength,
-		# Cards are paid for in Money (hex_grid), not out of the club's power
+		# Cards are paid for in Chips (hex_grid), not out of the club's power
 		"spread": ctx.base_spread,
 		"exact_usage": ShotPlan.PUTT_EXACT_USAGE if played_club == int(hex_grid.ClubType.PUTTER) else ShotPlan.EXACT_USAGE,
 		"ring_mod": swung.ring_mod,
+		"ground": played_club == int(hex_grid.ClubType.PUTTER),
 	})
 	if not swing.is_empty():
 		ctx.add_metadata("swing", swing.get("kind", ""))
@@ -254,6 +255,8 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 	ctx.add_metadata("shot_plan", plan)
 	if plan.blocked:
 		ctx.add_metadata("path_blocked", true)
+	if plan.updraft:
+		ctx.add_metadata("updraft", true)
 	_weigh_disk(ctx, center, plan.ring)
 	if played_club == int(hex_grid.ClubType.PUTTER) and center == _cup() and plan.ring > 0:
 		_weigh_putt(ctx, center, int(plan.carry))
@@ -359,7 +362,16 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 	var landing := ctx.landing_tile
 	var landing_surface := _surface_at(landing)
 	var cup := _cup()
-	var roll := maxi(0, ctx.base_roll + ctx.roll_mod + _terrain_roll(landing_surface))
+	# Topspin: the lie doesn't take any roll off
+	var lie_roll := _terrain_roll(landing_surface)
+	if ctx.get_metadata("topspin", false):
+		lie_roll = maxi(0, lie_roll)
+	var roll := maxi(0, ctx.base_roll + ctx.roll_mod + lie_roll)
+	# Backspin: instead of running on, the ball checks and spins back toward
+	# the golfer; a heavy lie (rough, sand) grabs some of the spin
+	var spin_back := int(ctx.get_metadata("spin_back", 0))
+	if spin_back > 0:
+		roll = maxi(0, spin_back + mini(0, _terrain_roll(landing_surface)))
 	if ctx.get_metadata("path_blocked", false):
 		roll = 0  # dropped out of the trees
 	# No roll out of the water or off the course
@@ -390,7 +402,7 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 	# (1 hex of roll or less left).
 	var budget := roll
 	var ice_crossed := 0
-	var roll_dir := ctx.aim_dir
+	var roll_dir := (ctx.aim_dir + 3) % 6 if spin_back > 0 else ctx.aim_dir
 	var triggered := {}  # tunnels / trampolines act once per shot
 	if not on_cup:
 		var hit := _contact(tile, roll_dir, triggered, rolled)
@@ -432,19 +444,11 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 			tile = nudged
 			rolled.append(tile)
 
-	# Sprinkler head: a ball stopping on it is knocked one hex its facing way
-	if _feature_at(tile) == "sprinkler" and tile != cup:
-		var dir: int = course_features.tiles[tile].dir
-		var knocked: Vector2i = aoe_system._get_neighbor_in_direction(tile, dir, tile.x % 2 == 1)
-		if _in_bounds(knocked) and _surface_at(knocked) != SURF_WATER and _surface_at(knocked) != SURF_TREE:
-			tile = knocked
-			rolled.append(tile)
-
 	# Water handling: if the final hex is water, flag it (drop logic lives in the
 	# loop; here we only tag so scoring/loop can react).
 	if _surface_at(tile) == SURF_WATER:
 		ctx.add_metadata("hit_water", true)
-	# Fire: landing in it or rolling through it costs a Money (hex_grid)
+	# Fire: landing in it or rolling through it costs a Chips (hex_grid)
 	for t in [landing] + rolled:
 		if _feature_at(t) == "fire":
 			ctx.add_metadata("hit_fire", true)
@@ -455,6 +459,8 @@ func apply_board_resolution(ctx: ShotContext) -> void:
 		ctx.add_metadata("bounced", true)
 	if triggered.values().has("tunnel"):
 		ctx.add_metadata("tunnel_ride", true)
+	if spin_back > 0 and not rolled.is_empty():
+		ctx.add_metadata("spun_back", rolled.size())
 
 	# The ball's actual journey, replayed exactly by the animation
 	ctx.add_metadata("carry_tile", landing)

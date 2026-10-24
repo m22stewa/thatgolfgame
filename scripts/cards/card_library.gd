@@ -381,30 +381,35 @@ func _register_shot_shape_cards() -> void:
 
 func _register_path_cards() -> void:
 	# Prototype path cards (ShotPlan): each shapes the card-built flight and
-	# spends power. Draw/Fade bow the flight so it still finishes on the
-	# tapped hex; Hard versions bow further for more power.
+	# costs 1-6 Chips, more for a bigger effect. Draw/Fade bow the flight so it
+	# still finishes on the tapped hex; Hard versions bow further.
 	_register_path_card("draw_shot", "Draw", "Curves left onto the target.", 1, {"bulge": 1.5})
 	_register_path_card("fade_shot", "Fade", "Curves right onto the target.", 1, {"bulge": -1.5})
-	_register_path_card("hard_draw", "Hard Draw", "Big curve left, around trouble.", 2, {"bulge": 3.5}, CardData.Rarity.UNCOMMON)
-	_register_path_card("hard_fade", "Hard Fade", "Big curve right, around trouble.", 2, {"bulge": -3.5}, CardData.Rarity.UNCOMMON)
-	_register_path_card("loft", "Loft", "Flies over trees.", 1, {"loft": true}, CardData.Rarity.UNCOMMON)
-	_register_path_card("stop", "Stop", "No roll after landing.", 0, {"roll_mod": -99})
-	_register_path_card("release", "Release", "+2 roll after landing.", 0, {"roll_mod": 2})
-	_register_path_card("dart", "Dart", "Tighter landing ring.", 1, {"ring_mod": -1}, CardData.Rarity.UNCOMMON)
-	_register_path_card("knockdown", "Knockdown", "Low flight: wind can't move it.", 1, {"ignore_wind": true}, CardData.Rarity.UNCOMMON)
+	_register_path_card("release", "Release", "+2 roll after landing.", 1, {"roll_mod": 2})
+	_register_path_card("stop", "Stop", "No roll after landing.", 2, {"roll_mod": -99})
+	_register_path_card("dart", "Dart", "Tighter landing ring.", 2, {"ring_mod": -1}, CardData.Rarity.UNCOMMON)
+	_register_path_card("knockdown", "Knockdown", "Low flight: wind can't move it.", 2, {"ignore_wind": true}, CardData.Rarity.UNCOMMON)
+	_register_path_card("hard_draw", "Hard Draw", "Big curve left, around trouble.", 3, {"bulge": 3.5}, CardData.Rarity.UNCOMMON)
+	_register_path_card("hard_fade", "Hard Fade", "Big curve right, around trouble.", 3, {"bulge": -3.5}, CardData.Rarity.UNCOMMON)
+	_register_path_card("loft", "Loft", "Flies over trees.", 3, {"loft": true}, CardData.Rarity.UNCOMMON)
+	# Spin: works on the ball after it lands
+	_register_path_card("topspin", "Topspin", "+3 roll, and the rough doesn't slow it.", 2, {"roll_mod": 3, "topspin": true})
+	_register_path_card("backspin", "Backspin", "Lands and spins back 1 hex.", 3, {"spin_back": 1}, CardData.Rarity.UNCOMMON)
 	# Shop-only rares
-	_register_path_card("stinger", "Stinger", "Wind can't move it, +2 roll.", 1, {"ignore_wind": true, "roll_mod": 2}, CardData.Rarity.RARE)
-	_register_path_card("flag_hunter", "Flag Hunter", "Landing ring 2 tighter.", 2, {"ring_mod": -2}, CardData.Rarity.RARE)
+	_register_path_card("stinger", "Stinger", "Wind can't move it, +2 roll.", 4, {"ignore_wind": true, "roll_mod": 2}, CardData.Rarity.RARE)
+	_register_path_card("heavy_topspin", "Heavy Topspin", "+5 roll, and the rough doesn't slow it.", 4, {"roll_mod": 5, "topspin": true}, CardData.Rarity.RARE)
+	_register_path_card("flag_hunter", "Flag Hunter", "Landing ring 2 tighter.", 5, {"ring_mod": -2}, CardData.Rarity.RARE)
+	_register_path_card("zip_back", "Zip Back", "Lands and spins back 3 hexes.", 5, {"spin_back": 3}, CardData.Rarity.RARE)
 
 	# Green cards: dealt on the green from their own deck
-	_register_putt_card("read_green", "Read the Green", "See where the ball will end up.", {"read_green": true}, CardData.Rarity.UNCOMMON)
-	_register_putt_card("firm_putt", "Firm Putt", "Strike it 2 hexes further.", {"reach_bonus": 2})
-	_register_putt_card("dead_weight", "Dead Weight", "Stops where it's struck.", {"dead_weight": true})
+	_register_putt_card("firm_putt", "Firm Putt", "Strike it 2 hexes further.", 1, {"reach_bonus": 2})
+	_register_putt_card("dead_weight", "Dead Weight", "Stops where it's struck.", 2, {"dead_weight": true})
+	_register_putt_card("read_green", "Read the Green", "See where the ball will end up.", 3, {"read_green": true}, CardData.Rarity.UNCOMMON)
 
 	# Utility cards: act on the course's obstacles as soon as they're played
-	_register_utility_card("extinguisher", "Fire Extinguisher", "Put out every fire on the hole.", "extinguish")
-	_register_utility_card("groundskeeper", "Groundskeeper", "Move the hole's obstacles somewhere else.", "groundskeeper", CardData.Rarity.UNCOMMON)
-	_register_utility_card("shutoff", "Shut-Off Valve", "Wind tunnels and sprinklers off for the hole.", "shutoff", CardData.Rarity.UNCOMMON)
+	_register_utility_card("extinguisher", "Fire Extinguisher", "Put out every fire on the hole.", 3, "extinguish")
+	_register_utility_card("shutoff", "Shut-Off Valve", "Wind gusts off for the hole.", 4, "shutoff", CardData.Rarity.UNCOMMON)
+	_register_utility_card("groundskeeper", "Groundskeeper", "Move the hole's obstacles somewhere else.", 6, "groundskeeper", CardData.Rarity.UNCOMMON)
 
 	# Strain: added to your deck when you overspend power. Dead weight in hand.
 	if not _cards.has("strain"):
@@ -414,28 +419,30 @@ func _register_path_cards() -> void:
 		_register(strain)
 
 
-func _register_putt_card(id: String, card_name: String, description: String, fields: Dictionary, rarity: CardData.Rarity = CardData.Rarity.COMMON) -> void:
+func _register_putt_card(id: String, card_name: String, description: String, cost: int, fields: Dictionary, rarity: CardData.Rarity = CardData.Rarity.COMMON) -> void:
 	if _cards.has(id):
 		return
 	var card = CardData.create(id, card_name, rarity)
 	card.card_type = CardData.CardType.SHOT
-	card.description = description
+	card.description = _with_cost(description, cost)
 	var effect := EffectPuttCard.new()
 	effect.effect_name = card_name
+	effect.power_cost = cost
 	for key in fields:
 		effect.set(key, fields[key])
 	card.effects.append(effect)
 	_register(card)
 
 
-func _register_utility_card(id: String, card_name: String, description: String, action: String, rarity: CardData.Rarity = CardData.Rarity.COMMON) -> void:
+func _register_utility_card(id: String, card_name: String, description: String, cost: int, action: String, rarity: CardData.Rarity = CardData.Rarity.COMMON) -> void:
 	if _cards.has(id):
 		return
 	var card = CardData.create(id, card_name, rarity)
 	card.card_type = CardData.CardType.SHOT
-	card.description = description
+	card.description = _with_cost(description, cost)
 	var effect := EffectCourseUtility.new()
 	effect.effect_name = card_name
+	effect.power_cost = cost
 	effect.action = action
 	card.effects.append(effect)
 	_register(card)
@@ -446,7 +453,7 @@ func _register_path_card(id: String, card_name: String, description: String, cos
 		return
 	var card = CardData.create(id, card_name, rarity)
 	card.card_type = CardData.CardType.SHOT
-	card.description = "%s (costs %d Money)" % [description, cost] if cost > 0 else description
+	card.description = _with_cost(description, cost)
 	var effect := EffectShotShape.new()
 	effect.effect_name = card_name
 	effect.power_cost = cost
@@ -454,6 +461,10 @@ func _register_path_card(id: String, card_name: String, description: String, cos
 		effect.set(key, fields[key])
 	card.effects.append(effect)
 	_register(card)
+
+
+static func _with_cost(description: String, cost: int) -> String:
+	return "%s (costs %d Chip%s)" % [description, cost, "" if cost == 1 else "s"]
 
 
 func _register_common_cards() -> void:

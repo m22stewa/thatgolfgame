@@ -1,6 +1,6 @@
-[gd_resource type="ArrayMesh" load_steps=4 format=4 uid="uid://bqg41n33wp0pa"]
+[gd_resource type="ArrayMesh" format=4 uid="uid://bqg41n33wp0pa"]
 
-[ext_resource type="Shader" path="res://scripts/turf.gdshader" id="1_turf"]
+[ext_resource type="Shader" uid="uid://c4pis2qfy3r5g" path="res://scripts/turf.gdshader" id="1_turf"]
 
 [sub_resource type="ShaderMaterial" id="StandardMaterial3D_td1sn"]
 render_priority = 0

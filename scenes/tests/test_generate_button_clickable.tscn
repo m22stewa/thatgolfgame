@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://b3genbtnclickable01"]
+[gd_scene format=3 uid="uid://do4w4q2gm3p5m"]
 
 [ext_resource type="Script" path="res://scripts/tests/test_generate_button_clickable.gd" id="1_genbtn"]
 

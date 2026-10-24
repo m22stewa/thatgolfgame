@@ -10,10 +10,10 @@ class_name RunShop
 
 const OFFER_COUNT := 3
 const PRICES := {
-	CardData.Rarity.COMMON: 60,
-	CardData.Rarity.UNCOMMON: 100,
-	CardData.Rarity.RARE: 150,
-	CardData.Rarity.LEGENDARY: 250,
+	CardData.Rarity.COMMON: 120,
+	CardData.Rarity.UNCOMMON: 200,
+	CardData.Rarity.RARE: 300,
+	CardData.Rarity.LEGENDARY: 500,
 }
 const RARITY_WEIGHT := {
 	CardData.Rarity.COMMON: 6.0,
@@ -21,15 +21,17 @@ const RARITY_WEIGHT := {
 	CardData.Rarity.RARE: 1.0,
 	CardData.Rarity.LEGENDARY: 0.3,
 }
-const REMOVE_PRICE := 50
-const UPGRADE_PRICE := 75
-const REROLL_PRICE := 25
-const ERASER_PRICE := 150  # item: -1 stroke off the run score
+const REMOVE_PRICE := 100
+const UPGRADE_PRICE := 400  # the first upgrade of a card; each one after costs UPGRADE_STEP more
+const UPGRADE_STEP := 250
+const REROLL_PRICE := 50
+const ERASER_PRICE := 300  # item: -1 stroke off the run score
 
 # Cards the shop can sell: shot cards (shot deck) and green cards (putt deck)
 const POOL := [
 	"draw_shot", "fade_shot", "hard_draw", "hard_fade", "loft", "stop",
 	"release", "dart", "knockdown", "stinger", "flag_hunter",
+	"topspin", "backspin", "heavy_topspin", "zip_back",
 	"read_green", "firm_putt", "dead_weight",
 	"extinguisher", "groundskeeper", "shutoff",
 ]
@@ -108,8 +110,10 @@ static func is_green_card(data: CardData) -> bool:
 
 
 static func can_upgrade(card: CardInstance) -> bool:
-	"""Upgrades take a shot card's power cost down by 1 (to 0)."""
-	for e in card.data.effects:
-		if e is EffectShotShape:
-			return e.power_cost - card.upgrade_level > 0
-	return false
+	"""Upgrades take a card's Chip cost down by 1, to CardCost.MIN."""
+	return CardCost.of(card.data, card.upgrade_level) > CardCost.MIN
+
+
+static func upgrade_price(card: CardInstance) -> int:
+	"""Points for the card's next upgrade: dearer each time."""
+	return UPGRADE_PRICE + UPGRADE_STEP * card.upgrade_level

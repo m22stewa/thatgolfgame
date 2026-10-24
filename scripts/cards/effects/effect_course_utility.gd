@@ -5,9 +5,10 @@ class_name EffectCourseUtility
 ## goes to the discard (it isn't one of the shot's planned cards).
 ##   extinguish   - every fire goes out (scorched ground)
 ##   groundskeeper - the hole's obstacles are moved somewhere else
-##   shutoff      - wind tunnels and sprinklers switched off for the hole
+##   shutoff      - wind gusts switched off for the hole
 
 @export var action: String = ""
+@export var power_cost: int = 1  # Chips to play it (CardCost)
 
 
 func _init() -> void:

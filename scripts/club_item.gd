@@ -17,7 +17,7 @@ const TIER_COLORS := [
 	Color(0.55, 0.3, 0.8),    # legendary: purple
 	Color(0.85, 0.62, 0.12),  # epic: gold
 ]
-const TIER_PRICES := [0, 80, 150, 240]  # points in the Pro Shop
+const TIER_PRICES := [0, 160, 300, 480]  # points in the Pro Shop
 const FEATURE_CAPS := {"distance": 2, "spin": 2, "forgiveness": 1}
 
 var club: int = -1

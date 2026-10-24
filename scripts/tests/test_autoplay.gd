@@ -49,6 +49,8 @@ func _ready() -> void:
 	var holes := int(OS.get_environment("AUTOPLAY_HOLES")) if OS.get_environment("AUTOPLAY_HOLES") != "" else HOLES_TO_PLAY
 	print("=== autoplay: %d holes ===" % holes)
 
+	# The opening hole's flyover ends in the Pro Shop too
+	await _shop_for_hole(1)
 	for hole in range(holes):
 		_putts_this_hole = 0
 		_shots_this_hole = 0
@@ -56,7 +58,7 @@ func _ready() -> void:
 		if hg.course_features and hg.course_features.count("fire") > 0:
 			_fires_seen += 1
 		if OS.get_environment("AUTOPLAY_SHOW_FEATURES") != "":
-			print("  SEED %d ice %d sprinklers %d fire %d tc_has_features %s" % [hg.hole_context.seed, hg.course_features.count("ice"), hg.course_features.count("sprinkler"), hg.course_features.count("fire"), hg.turn_controller.course_features != null])
+			print("  SEED %d ice %d gusts %d fire %d tc_has_features %s" % [hg.hole_context.seed, hg.course_features.count("ice"), hg.course_features.count("tunnel"), hg.course_features.count("fire"), hg.turn_controller.course_features != null])
 		print("  LENGTH par %d: %d hexes tee->flag" % [par, hg.hex_distance(hg.world_to_grid(hg.golf_ball.position), hg.flag_position)])
 		await _play_hole(hole + 1)
 		if _shots_this_hole == 0:
@@ -79,10 +81,7 @@ func _ready() -> void:
 			_problems.append("hole %d: next hole never became playable (%s)" % [hole + 2, _state()])
 		# Its flyover ends in the Pro Shop, where the bag is picked
 		else:
-			if await _wait(func(): return hg.shop_panel != null and hg.shop_panel.visible, 25.0):
-				_visit_shop(hole + 2)
-			else:
-				_problems.append("hole %d: the Pro Shop didn't open after the flyover" % (hole + 2))
+			await _shop_for_hole(hole + 2)
 
 	_print_balance()
 	print("FEATURES fires seen %d, fire hits %d, ice hexes rolled over %d, ice runs %d, trampoline bounces %d, tunnel rides %d, extinguishers played %d" % [_fires_seen, _fire_hits, _ice_touches, _ice_runs, _bounces, _tunnel_rides, _extinguished])
@@ -220,6 +219,17 @@ func _print_balance() -> void:
 		print("BALANCE  par %d: n=%d avg=%+.2f spread=%s" % [par, d.size(), float(sum) / d.size(), dist])
 
 
+func _shop_for_hole(n: int) -> void:
+	"""Wait for the Pro Shop the hole being played opens (after its flyover),
+	then visit it. n is the hole's number in the whole autoplay."""
+	var opened := func(): return hg.shop_panel != null and hg.shop_panel.visible and not hg._shop_wiping \
+		and hg.shop_panel._hole == hg.run_state.current_hole
+	if await _wait(opened, 25.0):
+		await _visit_shop(n)
+	else:
+		_problems.append("hole %d: the Pro Shop didn't open after the flyover" % n)
+
+
 func _visit_shop(n: int) -> void:
 	"""The Pro Shop after a hole's flyover: pick the bag (buying a better club
 	if we can), buy a card we can afford, strip a Strain card, then tee off."""
@@ -232,10 +242,22 @@ func _visit_shop(n: int) -> void:
 		if hg.owned_clubs[item.club] != item:
 			_problems.append("hole %d: buying a club didn't replace ours" % n)
 	for item in hg.shop_clubs():
-		if hg.shop_bag_needed() > 0 and not hg.shop_bag_has(item.club):
+		if hg.hole_bag.size() < hg.BAG_SIZE and not hg.shop_bag_has(item.club):
 			hg.shop_toggle_bag(item.club)
 	if hg.hole_bag.size() != hg.BAG_SIZE:
 		_problems.append("hole %d: picked %d clubs, not %d" % [n, hg.hole_bag.size(), hg.BAG_SIZE])
+	# A lighter bag multiplies the hole's points (checked on the real wallet, then undone)
+	var full: Array[int] = hg.hole_bag.duplicate()
+	hg.hole_bag = full.slice(0, 2)
+	var wallet: int = hg.shop_balance()
+	var paid: int = hg._award_points(10, "Bag test")
+	if paid != 20 or hg.shop_balance() != wallet + 20:
+		_problems.append("hole %d: a 2-club bag paid %d for 10 points, not 20" % [n, paid])
+	hg.currency_manager.remove_chips(paid, "Bag test undo")
+	hg.hole_points_log.pop_back()
+	hg.hole_bag = full
+	if hg.points_multiplier() != 1.0:
+		_problems.append("hole %d: a full bag should pay x1" % n)
 	if OS.get_environment("AUTOPLAY_SHOW_DECK") != "":
 		print("  DECK ", hg.shop_deck_cards().map(func(c): return "%s(%d)" % [c.data.card_id, c.data.card_type]))
 	var balance: int = hg.shop_balance()
@@ -255,7 +277,8 @@ func _visit_shop(n: int) -> void:
 			_removed += 1
 			break
 	hg.shop_continue()
-	if hg.shop_panel.visible:
+	# Tee off wipes back to the hole
+	if not await _wait(func(): return not hg.shop_panel.visible, 5.0):
 		_problems.append("hole %d: Tee off didn't close the Pro Shop" % n)
 	for card in hg._legal_club_cards():
 		var club: int = hg.ClubType.get(card.data.target_club)
@@ -330,14 +353,15 @@ func _play_extinguisher(n: int) -> void:
 
 
 func _model_swing() -> Dictionary:
-	"""A decent player on the SHOOT meter: aims to let go with the box most of
-	the way across the green target (on its way out), give or take
-	SWING_TIMING_SD. Harder shots have a smaller, faster target."""
+	"""A decent player on the SHOOT meter: aims to let go with the box in the
+	middle of the green band (on its way out), give or take SWING_TIMING_SD.
+	Harder shots have a thinner band and a faster box."""
 	var plan: Dictionary = hg.shot_manager.current_context.get_metadata("shot_plan", {}) if hg.shot_manager.current_context else {}
 	var d: Vector2 = hg._swing_difficulty(plan)
-	var target_t := 0.7 * d.x * d.y / 2.0
+	var b := SwingButton.bands(d.x)
+	var target_t: float = (b.lo + b.hi) / 2.0 * d.y / 2.0
 	var t := maxf(0.0, target_t + _swing_rng.randfn(0.0, SWING_TIMING_SD))
 	var w := SwingButton.meter_width(t, d.y)
-	var kind := SwingButton.grade(w, d.x, minf(d.x + 0.22, 0.92))
+	var kind := SwingButton.grade(w, d.x)
 	_swings[kind] += 1
 	return {"kind": kind, "width": w}

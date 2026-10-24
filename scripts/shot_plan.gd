@@ -7,6 +7,8 @@ class_name ShotPlan
 ## bow the flight to the side while still finishing on the target (a draw
 ## starts right and curves back left), wind bends the ball while it is in the
 ## air, and trees on the flight path stop it unless the shot is lofted.
+## Flying over fire, the hot air lifts the ball: it goes higher and carries
+## CourseFeatures.FIRE_UPDRAFT hexes further.
 ##
 ## Everything is priced in power: each hex of carry costs 1 and shape cards
 ## add their own cost. The club's power is the budget; going over is allowed
@@ -29,8 +31,9 @@ static func build(hole, ball: Vector2i, target: Vector2i, opts: Dictionary = {})
 	"""opts: power:int, bulge:float (hexes, + bows right / curves left),
 	   loft:bool, ignore_wind:bool, wind_vec:Vector2 (world x,z), wind_strength:int,
 	   extra_cost:int (shape cards), spread:int (club scatter, default 1), ring_mod:int,
-	   exact_usage:float (share of power at or under which the ring shrinks).
-	   Returns {tiles, points, end, blocked, carry, cost, power, over, ring, tangent}."""
+	   exact_usage:float (share of power at or under which the ring shrinks),
+	   ground:bool (a putt: rolls, so no updraft).
+	   Returns {tiles, points, end, blocked, updraft, carry, cost, power, over, ring, tangent}."""
 	var power: int = maxi(1, int(opts.get("power", 1)))
 	var bulge: float = float(opts.get("bulge", 0.0))
 	var loft: bool = opts.get("loft", false)
@@ -84,6 +87,28 @@ static func build(hole, ball: Vector2i, target: Vector2i, opts: Dictionary = {})
 				break
 		points = points.slice(0, cut + 1)
 
+	# Fire under the flight (not where it starts or lands): the updraft lifts
+	# the ball and carries it on along its line, over anything, but not off
+	# the course
+	var updraft := false
+	var features = hole.get("course_features")
+	if not blocked and features != null and not opts.get("ground", false):
+		for i in range(1, tiles.size() - 1):
+			if features.kind_at(tiles[i]) == "fire":
+				updraft = true
+				break
+	if updraft and points.size() >= 2:
+		var step: Vector2 = (points[points.size() - 1] - points[points.size() - 2]).normalized() * (HEX_STEP / SAMPLES_PER_HEX)
+		for _i in range(CourseFeatures.FIRE_UPDRAFT * SAMPLES_PER_HEX):
+			var p: Vector2 = points[points.size() - 1] + step
+			var tile: Vector2i = hole.world_to_grid(Vector3(p.x, 0.0, p.y))
+			if hole.get_cell(tile.x, tile.y) < 0:
+				break
+			points.append(p)
+			if tiles[tiles.size() - 1] != tile:
+				tiles.append(tile)
+	end = tiles[tiles.size() - 1]
+
 	var cost := carry + int(opts.get("extra_cost", 0))
 	var over := maxi(0, cost - power)
 	# Landing ring: the club's spread, one tighter for an easy swing, one wider
@@ -104,6 +129,7 @@ static func build(hole, ball: Vector2i, target: Vector2i, opts: Dictionary = {})
 		"points": points,
 		"end": end,
 		"blocked": blocked,
+		"updraft": updraft,
 		"carry": carry,
 		"cost": cost,
 		"power": power,

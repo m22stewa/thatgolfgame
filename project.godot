@@ -15,7 +15,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="GOLF"
-run/main_scene="uid://i0lqex70w705"
+run/main_scene="res://scenes/title_screen.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 boot_splash/bg_color=Color(0.063571535, 0.16677818, 0.09656479, 1)
 boot_splash/image="uid://0m3ktjyite15"
@@ -34,10 +34,6 @@ window/size/viewport_height=1080
 
 theme/default_font_multichannel_signed_distance_field=true
 theme/custom_font="uid://csixfh5trj68q"
-
-[input_devices]
-
-pointing/emulate_mouse_from_touch=false
 
 [input]
 
@@ -87,6 +83,10 @@ cam_zoom_out={
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":45,"physical_keycode":0,"key_label":0,"unicode":45,"location":0,"echo":false,"script":null)
 ]
 }
+
+[input_devices]
+
+pointing/emulate_mouse_from_touch=false
 
 [physics]
 
