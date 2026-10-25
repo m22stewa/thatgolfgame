@@ -37,7 +37,6 @@ const TRICKS := {
 	"tunnel_ride": {"name": "Tunnel Ride", "points": 15},
 }
 
-const COIN_POINTS := 25
 const STUCK_GREEN_MIN_DIST := 8     # approach length (hexes) to count as "stuck"
 const PIN_SEEKER_MIN_DIST := 6      # must start at least this far from the flag
 const PIN_SEEKER_RADIUS := 1        # finish within this many hexes of the flag

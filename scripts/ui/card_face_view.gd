@@ -83,6 +83,10 @@ static func stats_for(data: CardData) -> Array:
 				roll = "0"
 			elif e.roll_mod != 0:
 				roll = "%+d" % e.roll_mod
+			if e.range_finder:
+				return [["SHOWS", "PATH"], ["WHEN", "AIM"], ["ROLL", "–"]]
+			if e.locked_in:
+				return [["ARROWS", "12"], ["SLICE", "30°"], ["ROLL", "–"]]
 			if e.spin_back > 0:
 				mid = ["SPIN", "BACK"]
 				roll = "%d" % -e.spin_back
@@ -90,7 +94,9 @@ static func stats_for(data: CardData) -> Array:
 				mid = ["SPIN", "TOP"]
 			return [["CURVE", curve], mid, ["ROLL", roll]]
 		if e is EffectPuttCard:
-			return [["READ", "YES" if e.read_green else "–"], ["REACH", "+%d" % e.reach_bonus if e.reach_bonus > 0 else "–"], ["ROLL", "DEAD" if e.dead_weight else "–"]]
+			var add: String = PuttModifierDeck.card(e.deck_add).label if e.deck_add != "" else "–"
+			var remove: String = PuttModifierDeck.card(e.deck_remove).label if e.deck_remove != "" else "–"
+			return [["DECK", "PUTT"], ["ADDS", add], ["TAKES", remove]]
 		if e is EffectCourseUtility:
 			var target: String = {"extinguish": "FIRE", "groundskeeper": "ALL", "shutoff": "GUSTS"}.get(e.action, "–")
 			return [["USE", "NOW"], ["HITS", target]]

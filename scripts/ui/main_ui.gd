@@ -8,6 +8,8 @@ class_name MainUI
 # set_club_by_name() / activate_card_modifier().
 signal club_card_selected(card_instance)
 signal modifier_card_selected(card_instance)
+signal lag_putt_pressed
+signal caddie_peek_pressed
 
 var _selected_club_instance = null
 
@@ -73,6 +75,8 @@ var _committed := 0
 var club_tier_colors: Dictionary = {}  # ClubType name -> tier colour (set by hex_grid)
 var club_uses: Dictionary = {}  # ClubType name -> [uses left, uses per hole, worn out] (set by hex_grid)
 var conditions: ConditionsStrip  # wind + lie, under THIS SHOT
+var putt_panel: PuttPanel  # in place of the hand while putting
+var _hand_and_mat: Control
 
 func _ready() -> void:
 	set_prototype_ui.call_deferred(prototype_ui)
@@ -177,6 +181,12 @@ func _build_scorecard_tray() -> void:
 		emit_signal("modifier_card_selected", card)
 		_drop_at = Vector2.INF)
 	hand_and_mat.add_child(playmat)
+	_hand_and_mat = hand_and_mat
+	putt_panel = PuttPanel.new()
+	putt_panel.visible = false
+	putt_panel.lag_pressed.connect(func(): lag_putt_pressed.emit())
+	putt_panel.peek_pressed.connect(func(): caddie_peek_pressed.emit())
+	rows.add_child(putt_panel)
 
 	# Right: scorecard, THIS SHOT, deck / points / run, and SHOOT
 	var right := HBoxContainer.new()
@@ -274,6 +284,17 @@ func _update_wind() -> void:
 func set_lie(lie_name: String, effects: String) -> void:
 	if conditions:
 		conditions.set_lie(lie_name, effects)
+
+
+func set_putting(state: Dictionary) -> void:
+	"""On the green the hand gives way to the putting card; {} puts it back."""
+	if putt_panel == null:
+		return
+	putt_panel.visible = not state.is_empty()
+	if _hand_and_mat:
+		_hand_and_mat.visible = state.is_empty()
+	if not state.is_empty():
+		putt_panel.set_state(state)
 
 
 func set_this_shot(text: String) -> void:

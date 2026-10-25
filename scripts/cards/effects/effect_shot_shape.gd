@@ -13,6 +13,8 @@ class_name EffectShotShape
 @export var ring_mod: int = 0        # landing ring radius (-1 = tighter)
 @export var topspin: bool = false    # the landing lie doesn't take any roll off
 @export var spin_back: int = 0       # backspin: after landing it spins back this many hexes
+@export var range_finder: bool = false  # the trail shows before SHOOT is pressed (hex_grid)
+@export var locked_in: bool = false     # 12 aim directions instead of 6, narrower slices (hex_grid)
 
 
 func _init() -> void:

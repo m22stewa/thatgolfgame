@@ -117,13 +117,16 @@ func _test_spin() -> void:
 
 
 func _test_card_costs() -> void:
-	"""Every playable card costs 1-6 Chips; upgrades never take it below 1."""
+	"""Every playable card costs 1-6 Chips; upgrades never take it below 1.
+	(Green cards aren't played: they change the putting deck when bought.)"""
 	print("-- card costs --")
 	var lib := CardLibrary.new()
 	add_child(lib)
 	var bad: Array = []
 	for id in RunShop.POOL:
 		var data: CardData = lib.get_card(id)
+		if data and RunShop.is_green_card(data):
+			continue
 		var cost := CardCost.of(data) if data else -1
 		if cost < CardCost.MIN or cost > CardCost.MAX:
 			bad.append("%s=%d" % [id, cost])

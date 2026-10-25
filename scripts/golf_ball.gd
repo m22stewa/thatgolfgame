@@ -18,10 +18,12 @@ class_name GolfBall
 @export var shadow_max_height: float = 15.0  # Height at which shadow is smallest
 @export var shadow_opacity: float = 0.5
 
-# Printed mark on the ball, so spin and roll can be seen
+# A line drawn round the ball (like a golfer's alignment line), so spin and
+# roll can be seen
 @export var enable_decal: bool = true
-@export var decal_color: Color = Color(0.85, 0.12, 0.1)
-const DECAL_LAYER := 1 << 19  # render layer only the ball is on: the decal never prints on the course
+@export var decal_color: Color = Color(0.12, 0.35, 0.85)
+const LINE_WIDTH := 0.07   # of the ball's radius
+const LINE_RAISE := 0.015  # sits just proud of the surface, so it never z-fights
 
 # Reference to the actual mesh
 var ball_mesh: MeshInstance3D = null
@@ -73,36 +75,26 @@ func _mesh_radius() -> float:
 
 
 func _add_decal() -> void:
-	"""A small red alignment arrow printed on the ball. It turns with the ball,
-	so backspin, sidespin and the roll all read at a glance."""
+	"""A blue line all the way round the ball, over its top: it turns with
+	the ball, so backspin, sidespin and the roll all read at a glance."""
 	if ball_mesh == null or ball_mesh.mesh == null:
 		return
 	radius = _mesh_radius()
-	ball_mesh.layers |= DECAL_LAYER
-	var decal := Decal.new()
-	decal.name = "Decal"
-	decal.texture_albedo = _decal_texture()
-	decal.modulate = decal_color
-	decal.cull_mask = DECAL_LAYER
-	# The box covers one cap of the ball and projects straight down onto it
-	decal.size = Vector3(radius * 1.15, radius * 0.7, radius * 1.15)
-	decal.position = Vector3(0, radius * 0.95, 0)
-	decal.normal_fade = 0.2
-	add_child(decal)
-
-
-func _decal_texture() -> ImageTexture:
-	"""White arrow on clear (tinted by decal_color): a stripe with a head."""
-	var n := 128
-	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
-	img.fill(Color(1, 1, 1, 0))
-	img.fill_rect(Rect2i(14, 56, 78, 16), Color.WHITE)
-	for x in range(88, 118):
-		var half := int((118 - x) * 0.8)
-		for y in range(64 - half, 64 + half):
-			img.set_pixel(x, y, Color.WHITE)
-	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+	var ring := TorusMesh.new()
+	ring.inner_radius = radius * (1.0 - LINE_WIDTH / 2.0)
+	ring.outer_radius = radius * (1.0 + LINE_WIDTH / 2.0 + LINE_RAISE)
+	ring.rings = 48
+	ring.ring_segments = 6
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = decal_color
+	mat.roughness = 0.5
+	var line := MeshInstance3D.new()
+	line.name = "Line"
+	line.mesh = ring
+	line.material_override = mat
+	line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	line.rotation.x = PI / 2.0  # stand the ring up: over the top, along x (where the arrow pointed)
+	add_child(line)
 
 
 func _create_shadow() -> void:

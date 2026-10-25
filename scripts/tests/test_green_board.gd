@@ -1,8 +1,10 @@
 extends Node
 
 ## test_green_board.gd - Headless harness for GreenBoard: small-hex geometry
-## lines up with the course, every green gets a full range of arrows, and the
-## putting rules (struck roll, arrow pushes, cup, off green, loops, reach).
+## lines up with the course, greens are mostly flat with a few slopes, the
+## putting rules of design/claude/design_handoff_putting (pace, cup, slopes,
+## slick, spikes, fringe, lip out / sweet spot, the preview) and the putting
+## deck.
 ## Exits 0 on success, 1 on any failure.
 
 var _failures: int = 0
@@ -52,8 +54,10 @@ func _ready() -> void:
 	_test_geometry()
 	_test_build()
 	_test_putts()
+	_test_slopes()
 	_test_features()
-	_test_puzzle_pieces()
+	_test_preview()
+	_test_modifier_deck()
 	print("=== green board test complete: %d checks, %d failures ===" % [_checks, _failures])
 	get_tree().quit(1 if _failures > 0 else 0)
 
@@ -89,10 +93,6 @@ func _test_build() -> void:
 	var greens := 37  # course hexes within 3 of the flag
 	_check(board.tiles.size() >= greens * 3 and board.tiles.size() <= greens * 5, "about four small hexes per green hex (%d for %d)" % [board.tiles.size(), greens])
 	_check(board.tiles.has(board.cup) and board.tiles[board.cup].strength == 0, "the cup is on the board and flat")
-	var counts := [0, 0, 0, 0]
-	for t in board.tiles.values():
-		counts[t.strength] += 1
-	_check(counts[0] > 0 and counts[1] > 0 and counts[2] > 0 and counts[3] > 0, "every arrow strength appears %s" % str(counts))
 	var again := GreenBoard.new()
 	var rng2 := RandomNumberGenerator.new()
 	rng2.seed = 42
@@ -103,52 +103,38 @@ func _test_build() -> void:
 			same = false
 	_check(same, "same seed, same green")
 	var styles := {}
+	var sparse := true
+	var clean := true
+	var with_slick := 0
+	var dirs_total := 0
 	for seed in range(40):
 		var g := GreenBoard.new()
 		var r := RandomNumberGenerator.new()
 		r.seed = seed
 		g.build(hole, r)
 		styles[g.style] = true
-	_check(styles.size() == 4, "greens come in all four styles %s" % str(styles.keys()))
-	_test_variety(hole)
-
-
-func _test_variety(hole) -> void:
-	"""Greens should read in many directions and offer several long routes in:
-	plenty of hexes whose arrow chain feeds the cup, some of them long."""
-	var dirs_total := 0
-	var feeders_total := 0
-	var longest_total := 0
-	var seeds := 30
-	for seed in range(seeds):
-		var g := GreenBoard.new()
-		var r := RandomNumberGenerator.new()
-		r.seed = seed
-		g.build(hole, r)
+		var n := g.slope_count()
+		if n < GreenBoard.SLOPES_MIN or n > GreenBoard.SLOPES_MAX:
+			sparse = false
 		var dirs := {}
+		var slick := false
 		for a in g.tiles:
-			if g.tiles[a].strength > 0:
-				dirs[g.tiles[a].dir] = true
+			var t: Dictionary = g.tiles[a]
+			slick = slick or g.is_slick(a)
+			if t.strength > 0:
+				dirs[t.dir] = true
+				if t.strength > 3 or a == g.cup or g.is_slick(a) or g.features.get(a, {}).get("kind", "") == "spike":
+					clean = false
+			if g.is_slick(a) and GreenBoard.distance(a, g.cup) < 2:
+				clean = false
 		dirs_total += dirs.size()
-		# A ball resting on hex a after its struck roll: does the green take it in?
-		var feeders := 0
-		var longest := 0
-		for a in g.tiles:
-			if a == g.cup or g.tiles[a].strength == 0:
-				continue
-			var res := g.roll(a + GreenBoard.DIRS[0], a)  # struck one hex onto a
-			if res.holed:
-				feeders += 1
-				longest = maxi(longest, res.touched)
-		feeders_total += feeders
-		longest_total += longest
-	var avg_dirs := float(dirs_total) / seeds
-	var avg_feeders := float(feeders_total) / seeds
-	var avg_longest := float(longest_total) / seeds
-	print("   variety: %.1f arrow directions, %.1f feeder hexes, longest holed chain %.1f hexes (avg of %d greens)" % [avg_dirs, avg_feeders, avg_longest, seeds])
-	_check(avg_dirs >= 5.5, "arrows point many ways (%.1f of 6 directions)" % avg_dirs)
-	_check(avg_feeders >= 6.0, "several routes feed the cup (%.1f hexes)" % avg_feeders)
-	_check(avg_longest >= 6.0, "long holed chains exist (%.1f hexes)" % avg_longest)
+		if slick:
+			with_slick += 1
+	_check(styles.size() == 4, "greens come in all four styles %s" % str(styles.keys()))
+	_check(sparse, "every green has %d-%d slopes" % [GreenBoard.SLOPES_MIN, GreenBoard.SLOPES_MAX])
+	_check(clean, "slopes are strength 1-3 and never on the cup, a slick hex or spike marks")
+	_check(with_slick >= 30, "greens have slick patches (%d of 40)" % with_slick)
+	_check(float(dirs_total) / 40.0 >= 3.0, "slopes fall several ways (%.1f directions a green)" % (float(dirs_total) / 40.0))
 
 
 func _flat_board(radius: int) -> GreenBoard:
@@ -163,97 +149,70 @@ func _flat_board(radius: int) -> GreenBoard:
 	return b
 
 
+func _slope(b: GreenBoard, a: Vector2i, dir: int, strength: int) -> void:
+	b.tiles[a].dir = dir
+	b.tiles[a].strength = strength
+
+
 func _test_putts() -> void:
-	print("-- putting --")
+	print("-- pace and the cup --")
 	var b := _flat_board(5)
-	var start := Vector2i(-3, 0)
-
-	var plain := b.roll(start, Vector2i(-1, 0))
-	_check(not plain.holed and plain.end == Vector2i(-1, 0) and plain.touched == 2, "on a flat green the ball stops where it's struck")
-
-	var straight := b.roll(start, Vector2i(0, 0))
-	_check(not straight.holed and straight.end == Vector2i(-1, 0), "aiming at the cup from 3 stops just short (got %s)" % str(straight.end))
-	var through := b.roll(start, Vector2i(2, 0))
-	_check(not through.holed and through.end == Vector2i(2, 0), "a struck ball rolls over the cup")
-	var tap := b.roll(Vector2i(-1, 0), Vector2i(0, 0))
-	_check(tap.holed and tap.touched == 1, "a 1-hex tap-in drops")
-
-	# Arrows: land on (-1,0), which pushes 2 east (DIRS[1] = (1,0)) -> (1,0); that pushes 1 west -> (0,0) = cup
-	b.tiles[Vector2i(-1, 0)].dir = 1
-	b.tiles[Vector2i(-1, 0)].strength = 2
-	b.tiles[Vector2i(1, 0)].dir = 4
-	b.tiles[Vector2i(1, 0)].strength = 1
-	var chain := b.roll(start, Vector2i(-1, 0))
-	_check(chain.holed, "arrows carry the ball on and it rolls into the cup")
-	_check(chain.path == [Vector2i(-2, 0), Vector2i(-1, 0), Vector2i(0, 0)], "the push runs through the cup and drops (path %s)" % str(chain.path))
-
-	# A longer trick route around the cup: north, east, then south into the cup
-	var trick := _flat_board(5)
-	trick.tiles[Vector2i(-2, 0)].dir = 5   # (0,-1)
-	trick.tiles[Vector2i(-2, 0)].strength = 2
-	trick.tiles[Vector2i(-2, -2)].dir = 1  # (1,0)
-	trick.tiles[Vector2i(-2, -2)].strength = 2
-	trick.tiles[Vector2i(0, -2)].dir = 2   # (0,1)
-	trick.tiles[Vector2i(0, -2)].strength = 3
-	var route := trick.roll(start, Vector2i(-2, 0))
-	_check(route.holed and route.touched == 7, "a planned route around the green holes it touching 7 hexes (got %s, %d)" % [route.holed, route.touched])
-
+	var start := Vector2i(-3, 0)  # 3 hexes west of the cup; DIRS[1] is east
+	var still := b.simulate_putt(start, 1, 0)
+	_check(still.end == start and still.reason == "short", "no pace: the ball doesn't move")
+	var plain := b.simulate_putt(start, 1, 2)
+	_check(not plain.holed and plain.end == Vector2i(-1, 0) and plain.touched == 2, "on a flat green a putt rolls its pace in hexes")
+	_check(b.simulate_putt(start, 2, 2).end == start + GreenBoard.DIRS[2] * 2, "a putt leaves the hex in its direction")
+	_check(b.simulate_putt(start, 1, 3).holed, "reaching the cup with 0 pace left: it drops")
+	_check(b.simulate_putt(start, 1, 4).holed, "1 pace left at the cup: it still drops")
+	var firm := b.simulate_putt(start, 1, 5)
+	_check(not firm.holed and firm.end == Vector2i(2, 0) and firm.reason == "ran", "any firmer: it lips out and rolls on (%s)" % str(firm.end))
+	var lip := b.simulate_putt(start, 1, 3, "lip")
+	_check(not lip.holed and lip.end == Vector2i(-1, 0) and lip.reason == "lipout", "Lip out: it hangs on the edge, a hex short")
+	_check(b.simulate_putt(start, 1, 6, "star").holed, "Sweet spot: drops at any pace")
+	_check(b.simulate_putt(start, 1, 2, "star").holed, "Sweet spot: drops from a hex beside the cup")
 	var edge := _flat_board(2)
-	edge.cup = Vector2i(0, 2)  # out of the way of this putt
-	edge.tiles[Vector2i(-1, 0)].dir = 4
-	edge.tiles[Vector2i(-1, 0)].strength = 3
-	var off := edge.roll(Vector2i(1, 0), Vector2i(-1, 0))
-	_check(off.off_green and not edge.tiles.has(off.end), "an arrow can run the ball off the green")
+	edge.cup = Vector2i(0, 2)
+	var fringe := edge.simulate_putt(Vector2i(0, 0), 1, 5)
+	_check(fringe.end == Vector2i(2, 0) and fringe.reason == "fringe", "off the green it stops on the last green hex (%s)" % str(fringe.end))
+	_check(GreenBoard.par_for(Vector2i(-4, 0), Vector2i.ZERO) == 2 and GreenBoard.par_for(Vector2i(-5, 0), Vector2i.ZERO) == 3, "par 2 within 4 hexes, else 3")
 
-	var loop := _flat_board(4)
-	loop.tiles[Vector2i(-2, 0)].dir = 1
-	loop.tiles[Vector2i(-2, 0)].strength = 1
-	loop.tiles[Vector2i(-1, 0)].dir = 4
-	loop.tiles[Vector2i(-1, 0)].strength = 1
-	var settled := loop.roll(Vector2i(-3, 0), Vector2i(-2, 0))
-	_check(not settled.holed and not settled.off_green and settled.path.size() < 12, "a loop settles instead of rolling forever (%d moves)" % settled.path.size())
 
-	var far := _flat_board(8)
-	var clamped := far.roll(Vector2i(-8, 0), Vector2i(8, 0))
-	_check(GreenBoard.distance(Vector2i(-8, 0), clamped.end) == GreenBoard.PUTT_REACH, "a putt is struck at most %d hexes" % GreenBoard.PUTT_REACH)
+func _test_slopes() -> void:
+	print("-- slopes and slick --")
+	var start := Vector2i(-3, 0)
+	var down := _flat_board(5)
+	_slope(down, Vector2i(-2, 0), 1, 3)  # falls east, the way the putt goes
+	_check(down.simulate_putt(start, 1, 1).holed, "downhill adds strength - 1 pace (1 pace reaches the cup)")
+	_check(not down.simulate_putt(start, 1, 1, "", {"steady": true}).holed, "Steady: the slopes don't act")
+	var up := _flat_board(5)
+	_slope(up, Vector2i(-2, 0), 4, 2)  # falls west, against the putt
+	_check(up.simulate_putt(start, 1, 3).end == Vector2i(-1, 0), "uphill takes strength - 1 pace")
+	var side := _flat_board(5)
+	_slope(side, Vector2i(-2, 0), 2, 2)  # falls south-ish (DIRS[2]), across the line
+	var bent := side.simulate_putt(start, 1, 3)
+	_check(bent.end == Vector2i(-2, 2), "across a slope the ball turns 60 degrees toward the fall line (%s)" % str(bent.end))
+	var gentle := _flat_board(5)
+	_slope(gentle, Vector2i(-2, 0), 2, 1)
+	_check(gentle.simulate_putt(start, 1, 5).end == Vector2i(2, 0), "a strength-1 slope doesn't bend a quick ball")
+	_check(gentle.simulate_putt(start, 1, 3).end == Vector2i(-2, 2), "... but bends a slow one (pace 2 or less)")
+	_check(gentle.simulate_putt(start, 1, 5, "", {"slow_break": false}).end != Vector2i(2, 0), "slow-ball break off: it always bends")
+	var ice := _flat_board(5)
+	ice.tiles[Vector2i(-2, 0)].slick = true
+	_check(ice.simulate_putt(start, 1, 2).holed, "slick adds 1 pace")
 
 
 func _test_features() -> void:
 	print("-- green features --")
-	var b := _flat_board(5)
 	var start := Vector2i(-4, 0)
-
-	b.features[Vector2i(-2, 0)] = {"kind": "coin", "dir": 0}
-	var coin := b.roll(start, Vector2i(-1, 0))
+	var b := _flat_board(5)
+	b.features[Vector2i(-2, 0)] = {"kind": "coin"}
+	var coin := b.simulate_putt(start, 1, 3)
 	_check(coin.coins == [Vector2i(-2, 0)] and coin.end == Vector2i(-1, 0), "rolling over a coin collects it and carries on")
-
 	var s := _flat_board(5)
-	s.features[Vector2i(-2, 0)] = {"kind": "spike", "dir": 0}
-	var spiked := s.roll(start, Vector2i(0, 0))
-	_check(spiked.spiked and spiked.end == Vector2i(-2, 0), "spike marks stop the ball dead")
-
-	var p := _flat_board(5)
-	p.features[Vector2i(-1, 0)] = {"kind": "putter", "dir": 2}
-	p.features[Vector2i(-1, 1)] = {"kind": "putter", "dir": 2}
-	var bounce := p.roll(start, Vector2i(0, 0))  # stops short of the cup at (-1,0)... blocked by the putter
-	_check(bounce.banked and bounce.end.x < -2, "a struck ball bounces off the putter and rolls back (%s)" % str(bounce.end))
-
-	var bank := _flat_board(5)
-	bank.features[Vector2i(1, 0)] = {"kind": "putter", "dir": 2}
-	bank.features[Vector2i(1, 1)] = {"kind": "putter", "dir": 2}
-	bank.tiles[Vector2i(-1, 0)].dir = 1      # push east x3: (0,0) is the cup on the first step
-	bank.tiles[Vector2i(-1, 0)].strength = 3
-	bank.cup = Vector2i(-2, 0)               # cup behind: only a bank can reach it
-	var banked := bank.roll(Vector2i(-1, -1), Vector2i(-1, 0))
-	_check(banked.banked and banked.holed, "an arrow push banks off the putter back into the cup (%s)" % str(banked.path))
-
-	var dead := _flat_board(5)
-	dead.tiles[Vector2i(-2, 0)].dir = 1
-	dead.tiles[Vector2i(-2, 0)].strength = 2
-	_check(dead.roll(start, Vector2i(-2, 0), {"dead_weight": true}).end == Vector2i(-2, 0), "Dead Weight: the green doesn't push the ball")
-	var far := _flat_board(9)
-	_check(GreenBoard.distance(Vector2i(-9, 0), far.roll(Vector2i(-9, 0), Vector2i(9, 0), {"reach": 8}).end) == 8, "Firm Putt: reach 8")
-
+	s.features[Vector2i(-2, 0)] = {"kind": "spike"}
+	var spiked := s.simulate_putt(start, 1, 4)
+	_check(spiked.reason == "spike" and spiked.end == Vector2i(-2, 0), "spike marks stop the ball dead")
 	var hole := StubHole.new()
 	var built := GreenBoard.new()
 	var rng := RandomNumberGenerator.new()
@@ -265,65 +224,69 @@ func _test_features() -> void:
 		kinds[built.features[a].kind] = true
 		if GreenBoard.distance(a, built.cup) < 2:
 			near_cup = true
-	_check(kinds.has("spike") and kinds.has("coin") and not near_cup, "a built green has spikes and coins, none next to the cup %s" % str(kinds.keys()))
+	_check(kinds.has("spike") and kinds.has("coin") and not near_cup and not kinds.has("putter"), "a built green has spikes and coins, none next to the cup %s" % str(kinds.keys()))
 
 
-func _test_puzzle_pieces() -> void:
-	print("-- lips and slick patches --")
-	var start := Vector2i(-4, 0)
-	# A lip between (-2,0) and (-1,0): the struck ball stops against it
+func _test_preview() -> void:
+	print("-- the read --")
 	var b := _flat_board(5)
-	b.walls[GreenBoard.edge_key(Vector2i(-2, 0), Vector2i(-1, 0))] = [Vector2i(-2, 0), Vector2i(-1, 0)]
-	var stop := b.roll(start, Vector2i(0, 0))
-	_check(stop.end == Vector2i(-2, 0), "a lip stops the struck ball (got %s)" % str(stop.end))
-	# An arrow pushing into the lip: the ball rests against it
-	b.tiles[Vector2i(-3, 0)].dir = 1
-	b.tiles[Vector2i(-3, 0)].strength = 3
-	var push := b.roll(Vector2i(-3, 1), Vector2i(-3, 0))
-	_check(push.end == Vector2i(-2, 0), "an arrow push stops at a lip (got %s)" % str(push.end))
+	var read := b.preview(Vector2i(-3, 0), 1)
+	var holed_totals: Array = []
+	var covered := 0
+	for m in read.marks:
+		covered += m.totals.size()
+		if m.holed:
+			holed_totals.append_array(m.totals)
+	_check(covered == GreenBoard.PREVIEW_TOTALS + 1, "every pace 0-%d is labelled once" % GreenBoard.PREVIEW_TOTALS)
+	holed_totals.sort()
+	_check(holed_totals == [3, 4], "the cup's label holds the paces that drop (%s)" % str(holed_totals))
+	_check(read.base.size() == GreenBoard.PUTT_BASE + 1 and read.long.size() > read.base.size(), "base and long lines are drawn")
+	var odds := PuttModifierDeck.chain_odds(PuttModifierDeck.starter_ids())
+	var p := b.one_putt_chance(Vector2i(-3, 0), odds)
+	_check(p > 0.2 and p < 0.6, "one-putt chance from 3 hexes on a flat green is fair (%.2f)" % p)
 
-	# Slick: struck onto (-2,0) with (-1,0) slick too -> slides east to the cup and drops
-	var ice := _flat_board(5)
-	ice.tiles[Vector2i(-2, 0)].slick = true
-	ice.tiles[Vector2i(-1, 0)].slick = true
-	var slide := ice.roll(start, Vector2i(-2, 0))
-	_check(slide.holed and slide.path.size() == 4, "a ball struck onto a slick patch slides on and drops (path %s)" % str(slide.path))
-	# Slick ending on grippy green: stops there, then that hex's arrow acts
-	var ice2 := _flat_board(5)
-	ice2.tiles[Vector2i(-3, 1)].slick = true
-	ice2.tiles[Vector2i(-2, 1)].dir = 5  # (0,-1)
-	ice2.tiles[Vector2i(-2, 1)].strength = 1
-	var on := ice2.roll(Vector2i(-5, 1), Vector2i(-3, 1))
-	_check(on.end == Vector2i(-2, 0), "a slide stops on grippy green and its arrow takes over (got %s)" % str(on.end))
-	# A lip ends the slide on the ice
-	ice2.walls[GreenBoard.edge_key(Vector2i(-3, 1), Vector2i(-2, 1))] = [Vector2i(-3, 1), Vector2i(-2, 1)]
-	var held := ice2.roll(Vector2i(-5, 1), Vector2i(-3, 1))
-	_check(held.end == Vector2i(-3, 1), "a lip holds the ball on the slick patch (got %s)" % str(held.end))
 
-	# Built greens carry both, never touching the cup
-	var hole := StubHole.new()
-	var with_walls := 0
-	var with_slick := 0
-	var clean := true
-	for seed in range(30):
-		var g := GreenBoard.new()
-		var r := RandomNumberGenerator.new()
-		r.seed = seed
-		g.build(hole, r)
-		if not g.walls.is_empty():
-			with_walls += 1
-		for a in g.tiles:
-			if g.is_slick(a):
-				with_slick += 1
-				if GreenBoard.distance(a, g.cup) < 2:
-					clean = false
-				break
-		for key in g.walls:
-			if g.walls[key].has(g.cup):
-				clean = false
-	_check(with_walls >= 20, "most greens have lips (%d of 30)" % with_walls)
-	_check(with_slick >= 25, "greens have slick patches (%d of 30)" % with_slick)
-	_check(clean, "no lip or slick hex touches the cup")
+func _test_modifier_deck() -> void:
+	print("-- putting deck --")
+	var deck := PuttModifierDeck.new(11)
+	_check(deck.size() == 20 and deck.draw_pile.size() == 20, "the starter deck holds 20 cards")
+	var odds := PuttModifierDeck.chain_odds(PuttModifierDeck.starter_ids())
+	var sum := 0.0
+	for o in odds:
+		sum += o.p
+	_check(absf(sum - 1.0) < 0.0001, "flip odds add up to 1 (%.4f)" % sum)
+	var chained := false
+	var shuffled := false
+	var counts_ok := true
+	for i in range(200):
+		var top := deck.peek()
+		var f := deck.flip()
+		if f.cards[0] != top:
+			counts_ok = false  # Caddie Peek shows the card the next putt flips
+		if f.total != GreenBoard.PUTT_BASE + f.mod:
+			counts_ok = false
+		var last: Dictionary = PuttModifierDeck.card(f.cards[f.cards.size() - 1])
+		if last.get("rolling", false):
+			counts_ok = false  # a flip never ends on a rolling card
+		if f.cards.size() > 1:
+			chained = true
+		if f.special != "" and deck.discard.is_empty() and deck.draw_pile.size() == 20:
+			shuffled = true
+		if deck.size() != 20:
+			counts_ok = false
+	_check(chained, "rolling cards chain into another flip")
+	_check(shuffled, "Lip out / Sweet spot shuffle the discards back in")
+	_check(counts_ok, "peek matches the next flip, pace is 2 + the cards, no card is lost")
+	_check(PuttModifierDeck.describe({"cards": ["rolling_1", "minus_1"], "total": 2}) == "2 + 1 − 1 = 2", "the sum is pencilled in")
+	var a := PuttModifierDeck.new(5)
+	var b := PuttModifierDeck.new(5)
+	_check(a.draw_pile == b.draw_pile, "same seed, same deck order")
+	a.add("plus_3")
+	_check(a.size() == 21 and a.remove("plus_3") and not a.remove("plus_3"), "the shop can add and remove cards")
+	var cursed := PuttModifierDeck.new(3)
+	cursed.draw_pile.append("yips")
+	var y := cursed.flip()
+	_check(y.mod == -3 and not cursed.discard.has("yips") and not cursed.draw_pile.has("yips"), "Yips is -3 and leaves the deck once drawn")
 
 
 func _check(cond: bool, label: String) -> void:

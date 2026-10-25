@@ -3,28 +3,26 @@ class_name GreenOverlay
 
 ## GreenOverlay - Draws a GreenBoard (the small-hex putting surface).
 ##
-## After how golf games show greens (height colour gradients, flowing slope
-## markers), on small hexes:
-##   - Height tint: blue (lowest on this green) to red (highest).
-##   - Arrow chevrons: point the way the hex pushes the ball; the number of
-##     chevrons IS how many hexes it pushes (1-3). They drift slowly that way,
-##     faster when stronger. Flat hexes (the ball stops there) get a dot.
+## On small hexes (design/claude/design_handoff_putting):
+##   - Shading: flat hexes one even turf green, slope hexes a little darker.
+##   - Arrow chevrons on the slopes, pointing down the fall line; the number of
+##     chevrons is the slope's strength (1-3). They drift slowly that way.
 ##   - The cup: a bright ring.
-##   - Features: spinning gold coins, spike marks (a pair of shoe prints) and
-##     a forgotten putter lying across two hexes.
-##   - Puzzle pieces: lips are raised cream bars on the edge between two hexes;
-##     slick patches are glossy pale-blue hexes with streaks, no arrow.
+##   - Features: spinning chips and spike marks (a pair of shoe prints).
+##   - Slick patches: glossy pale-blue hexes with streaks, no arrow.
+##   - Aiming: six arrows on the hexes round the ball (the picked one bright),
+##     a label on every hex the read can stop on with the paces that stop
+##     there (red where they drop), and the flipped cards over the ball.
 
 const LIFT := 0.04            # above the course tile surface
-const TINT_MIX := 0.6         # how much height colour over the turf green
 const TINT_DEPTH := 0.6       # tints are solid columns this deep, so steps in the course below never show
 const TURF := Color(0.33, 0.6, 0.3)
 const CHEVRON_SPACING := 0.15
 const DRIFT_RANGE := 0.1      # how far chevrons drift before looping (world units)
 
-const LOW_COLOR := Color(0.2, 0.45, 0.95)
-const MID_COLOR := Color(0.95, 0.85, 0.3)
-const HIGH_COLOR := Color(0.95, 0.3, 0.22)
+const SLOPE_DARKEN := 0.25    # slope hexes: this much darker than flat ones
+const STOP_COLOR := Color(1.0, 0.98, 0.92)   # read labels: the ball stops here
+const DROP_COLOR := Color(1.0, 0.55, 0.45)   # ... and drops
 const MARK_COLOR := Color(1.0, 1.0, 1.0, 0.95)
 
 var board: GreenBoard = null
@@ -33,12 +31,10 @@ var _arrows: Array = []  # [{node, speed}] chevron stacks drifting along their l
 var _time := 0.0
 var _mark_material: StandardMaterial3D
 var _chevron_mesh: ArrayMesh
-var _dot_mesh: CylinderMesh
 var _tint_mesh: CylinderMesh
-var _target: MeshInstance3D = null
-var _gauge: Label3D = null      # pips over the target ring: how far of the putt's reach
-var _reach_marks: Node3D = null  # faint hex outlines at the edge of reach
-var _reach_key := ""            # ball + reach the marks were laid for
+var _endpoints: Node3D = null    # the read's stop labels
+var _aim_arrows: Array[MeshInstance3D] = []  # the six directions out of the ball's hex
+var _flip: Label3D = null       # the modifier cards flipped for this putt
 var _coins: Dictionary = {}  # small hex -> coin node (spins; removed when collected)
 
 
@@ -50,11 +46,6 @@ func _init() -> void:
 	_mark_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_mark_material.render_priority = 2
 	_chevron_mesh = _make_chevron_mesh()
-	_dot_mesh = CylinderMesh.new()
-	_dot_mesh.top_radius = 0.035
-	_dot_mesh.bottom_radius = 0.035
-	_dot_mesh.height = 0.01
-	_dot_mesh.radial_segments = 8
 	_tint_mesh = CylinderMesh.new()
 	_tint_mesh.top_radius = GreenBoard.SIZE * 1.01
 	_tint_mesh.bottom_radius = GreenBoard.SIZE * 1.01
@@ -67,37 +58,21 @@ func show_board(green: GreenBoard, hole) -> void:
 	of the course tile under each small hex."""
 	clear()
 	board = green
-	var span := maxf(board.high - board.low, 0.001)
 	for a in board.tiles:
 		var t: Dictionary = board.tiles[a]
 		var at := surface_point(a, hole)
-		_add_tint(at, (float(t.height) - board.low) / span)
+		_add_tint(at, t.strength > 0)
 		var kind: String = board.features.get(a, {}).get("kind", "")
 		if a == board.cup:
 			_add_cup_marker(at)
 		elif kind == "spike":
 			_add_spike_marks(at, a)
-		elif kind == "putter":
-			pass  # drawn once per putter below
 		elif t.get("slick", false):
 			_add_slick(at)
-		elif t.strength == 0:
-			_add_dot(at)
-		else:
+		elif t.strength > 0:
 			_add_arrow(at, t.dir, t.strength)
 		if kind == "coin":
 			_add_coin(at, a)
-	for key in board.walls:
-		var pair: Array = board.walls[key]
-		_add_lip(surface_point(pair[0], hole), surface_point(pair[1], hole))
-	var drawn := {}
-	for a in board.features:
-		var f: Dictionary = board.features[a]
-		var other: Vector2i = a + GreenBoard.DIRS[f.dir]
-		if f.kind == "putter" and not drawn.has(a) and board.features.has(other):
-			drawn[a] = true
-			drawn[other] = true
-			_add_putter(surface_point(a, hole), surface_point(other, hole))
 
 
 func clear() -> void:
@@ -105,10 +80,9 @@ func clear() -> void:
 		c.queue_free()
 	_arrows.clear()
 	_coins.clear()
-	_target = null
-	_gauge = null
-	_reach_marks = null
-	_reach_key = ""
+	_endpoints = null
+	_aim_arrows.clear()
+	_flip = null
 	board = null
 
 
@@ -131,9 +105,13 @@ func surface_point(a: Vector2i, hole) -> Vector3:
 
 
 func _process(delta: float) -> void:
-	if not visible or _arrows.is_empty():
+	if not visible:
 		return
 	_time += delta
+	for mi in _aim_arrows:
+		if mi.visible and mi.get_meta("picked", false):
+			var s := 0.62 + 0.08 * sin(_time * 6.0)
+			mi.scale = Vector3(s, 1.0, s)
 	for c in _coins.values():
 		if is_instance_valid(c):
 			c.rotation.y = _time * 2.0
@@ -143,11 +121,10 @@ func _process(delta: float) -> void:
 			node.position = Vector3(0, 0, fmod(_time * a.speed, DRIFT_RANGE))
 
 
-func _add_tint(at: Vector3, height: float) -> void:
-	var color := LOW_COLOR.lerp(MID_COLOR, height * 2.0) if height < 0.5 else MID_COLOR.lerp(HIGH_COLOR, (height - 0.5) * 2.0)
+func _add_tint(at: Vector3, slope: bool) -> void:
 	# Solid (not see-through): the course hexes under the green must not show
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = TURF.lerp(color, TINT_MIX)
+	mat.albedo_color = TURF.darkened(SLOPE_DARKEN) if slope else TURF
 	mat.roughness = 1.0
 	var mi := MeshInstance3D.new()
 	mi.mesh = _tint_mesh
@@ -186,31 +163,6 @@ func _add_slick(at: Vector3) -> void:
 		streak.position = at + Vector3(k * 0.06, 0.02, k * 0.1)
 		streak.rotation.y = 0.5
 		add_child(streak)
-
-
-func _add_lip(a: Vector3, b: Vector3) -> void:
-	"""A raised cream bar on the edge shared by two hexes."""
-	var lip := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(GreenBoard.SIZE * 0.95, 0.09, 0.07)
-	lip.mesh = box
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.96, 0.92, 0.78)
-	lip.material_override = mat
-	var mid := (a + b) * 0.5
-	lip.position = Vector3(mid.x, maxf(a.y, b.y) + 0.04, mid.z)
-	var across := Vector3(b.x - a.x, 0.0, b.z - a.z)
-	lip.rotation.y = atan2(-across.z, across.x) + PI / 2.0  # the bar runs along the edge
-	add_child(lip)
-
-
-func _add_dot(at: Vector3) -> void:
-	var dot := MeshInstance3D.new()
-	dot.mesh = _dot_mesh
-	dot.material_override = _mark_material
-	dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	dot.position = at + Vector3(0, 0.01, 0)
-	add_child(dot)
 
 
 func _add_arrow(at: Vector3, dir: int, strength: int) -> void:
@@ -257,24 +209,13 @@ func remove_coin(a: Vector2i) -> void:
 
 
 func _add_coin(at: Vector3, a: Vector2i) -> void:
-	var disc := CylinderMesh.new()
-	disc.top_radius = 0.2
-	disc.bottom_radius = 0.2
-	disc.height = 0.05
-	disc.radial_segments = 16
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1.0, 0.78, 0.2)
-	mat.metallic = 0.8
-	mat.roughness = 0.3
-	mat.emission_enabled = true
-	mat.emission = Color(0.4, 0.28, 0.0)
+	"""A chip collectable standing on the hex."""
 	var spin := Node3D.new()
 	spin.position = at + Vector3(0, 0.28, 0)
-	var mi := MeshInstance3D.new()
-	mi.mesh = disc
-	mi.material_override = mat
-	mi.rotation.x = PI / 2.0  # stand the disc up
-	spin.add_child(mi)
+	var chip := ChipModel.new()
+	chip.radius = 0.2
+	chip.thickness = 0.05
+	spin.add_child(chip)
 	add_child(spin)
 	_coins[a] = spin
 
@@ -305,134 +246,93 @@ func _add_spike_marks(at: Vector3, a: Vector2i) -> void:
 	add_child(pair)
 
 
-func _add_putter(a: Vector3, b: Vector3) -> void:
-	"""A putter lying on the green from hex a (head) to hex b (grip)."""
-	var steel := StandardMaterial3D.new()
-	steel.albedo_color = Color(0.78, 0.8, 0.84)
-	steel.metallic = 0.9
-	steel.roughness = 0.25
-	var grip_mat := StandardMaterial3D.new()
-	grip_mat.albedo_color = Color(0.08, 0.08, 0.09)
-	var putter := Node3D.new()
-	var dir := (b - a)
-	putter.position = (a + b) / 2.0 + Vector3(0, 0.05, 0)
-	putter.rotation.y = atan2(dir.x, dir.z)
-	add_child(putter)
-	var length := Vector2(dir.x, dir.z).length() + 0.5
-	var shaft := MeshInstance3D.new()
-	var shaft_mesh := CylinderMesh.new()
-	shaft_mesh.top_radius = 0.035
-	shaft_mesh.bottom_radius = 0.035
-	shaft_mesh.height = length
-	shaft.mesh = shaft_mesh
-	shaft.material_override = steel
-	shaft.rotation.x = PI / 2.0  # lie along +Z
-	putter.add_child(shaft)
-	var grip := MeshInstance3D.new()
-	var grip_mesh := CylinderMesh.new()
-	grip_mesh.top_radius = 0.055
-	grip_mesh.bottom_radius = 0.055
-	grip_mesh.height = length * 0.3
-	grip.mesh = grip_mesh
-	grip.material_override = grip_mat
-	grip.rotation.x = PI / 2.0
-	grip.position = Vector3(0, 0, length * 0.35)
-	putter.add_child(grip)
-	var head := MeshInstance3D.new()
-	var head_mesh := BoxMesh.new()
-	head_mesh.size = Vector3(0.42, 0.12, 0.16)
-	head.mesh = head_mesh
-	head.material_override = steel
-	head.position = Vector3(0.1, 0, -length * 0.5)
-	putter.add_child(head)
+func show_endpoints(marks: Array, hole) -> void:
+	"""The read: over every hex a previewed pace stops on, the paces that stop
+	there ("2", "3 4"), red where they drop. marks: GreenBoard.preview().marks."""
+	if _endpoints:
+		_endpoints.queue_free()
+	_endpoints = Node3D.new()
+	add_child(_endpoints)
+	for m in marks:
+		var totals: Array[String] = []
+		for t in m.totals:
+			totals.append(str(t))
+		var l := _make_label(30)
+		l.reparent(_endpoints, false)
+		l.text = " ".join(totals)
+		l.modulate = DROP_COLOR if m.holed else STOP_COLOR
+		l.position = surface_point(m.end, hole) + Vector3(0, 0.3, 0)
 
 
-func show_target(a: Vector2i, hole) -> void:
-	"""Brass ring on the hex the putt is struck to."""
-	if _target == null:
-		var ring := TorusMesh.new()
-		ring.inner_radius = 0.3
-		ring.outer_radius = 0.4
-		ring.rings = 24
-		ring.ring_segments = 6
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color(0.95, 0.68, 0.2)
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.render_priority = 3
-		_target = MeshInstance3D.new()
-		_target.mesh = ring
-		_target.material_override = mat
-		_target.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_target.scale = Vector3(1.0, 0.15, 1.0)
-		add_child(_target)
-	_target.position = surface_point(a, hole) + Vector3(0, 0.03, 0)
-	_target.visible = true
+func show_aim(ball: Vector2i, picked: int, hole, arrow_mesh: Mesh) -> void:
+	"""Six arrows on the hexes round the ball, one per direction a putt can
+	leave it: the picked one bright and pulsing, the rest faint."""
+	if _aim_arrows.is_empty():
+		for d in range(6):
+			var mi := MeshInstance3D.new()
+			mi.mesh = arrow_mesh
+			var mat := StandardMaterial3D.new()
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			mat.no_depth_test = true
+			mat.render_priority = 3
+			mi.material_override = mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mi)
+			_aim_arrows.append(mi)
+	var ball_y := surface_point(ball, hole).y
+	for d in range(6):
+		var mi := _aim_arrows[d]
+		var a: Vector2i = ball + GreenBoard.DIRS[d]
+		var v := GreenBoard.to_world(GreenBoard.DIRS[d])
+		var at := GreenBoard.to_world(a)
+		var y := surface_point(a, hole).y if board.tiles.has(a) else ball_y
+		mi.position = Vector3(at.x, y + 0.06, at.y)
+		mi.rotation = Vector3(0, atan2(v.x, v.y), 0)
+		var on := d == picked
+		(mi.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.86, 0.3, 0.95) if on else Color(1, 1, 1, 0.45)
+		mi.scale = Vector3.ONE * 0.62 if on else Vector3(0.5, 1.0, 0.5)
+		mi.set_meta("picked", on)
+		mi.visible = true
 
 
-func show_gauge(a: Vector2i, hole, struck: int, reach: int, to_cup: int) -> void:
-	"""Distance gauge over the target ring: one pip per hex of reach, filled up
-	to how far the putt is struck, and the distance left to the cup."""
-	if _gauge == null:
-		_gauge = Label3D.new()
-		_gauge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		_gauge.no_depth_test = true
-		_gauge.fixed_size = true
-		_gauge.pixel_size = 0.0011
-		_gauge.font = ScorecardStyle.header_font()
-		_gauge.font_size = 30
-		_gauge.outline_size = 10
-		_gauge.modulate = Color(1.0, 0.95, 0.85)
-		_gauge.outline_modulate = Color(0.12, 0.12, 0.11, 0.9)
-		_gauge.render_priority = 4
-		_gauge.outline_render_priority = 3
-		add_child(_gauge)
-	var pips := "●".repeat(struck) + "○".repeat(maxi(reach - struck, 0))
-	_gauge.text = "%s\n%d / %d   ·   CUP %d" % [pips, struck, reach, to_cup]
-	_gauge.position = surface_point(a, hole) + Vector3(0, 0.45, 0)
-	_gauge.visible = true
+func show_flip(text: String, color: Color, at: Vector3) -> void:
+	"""The flipped modifier cards, big over the ball."""
+	if _flip == null:
+		_flip = _make_label(54)
+	_flip.text = text
+	_flip.modulate = color
+	_flip.position = at + Vector3(0, 0.8, 0)
+	_flip.visible = true
 
 
-func show_reach(ball: Vector2i, reach: int, hole) -> void:
-	"""Faint hex outlines on the green hexes exactly at the edge of reach, so the
-	player can see the whole range they can strike to."""
-	var key := "%s:%d" % [ball, reach]
-	if _reach_marks and key == _reach_key:
-		_reach_marks.visible = true
-		return
-	if _reach_marks:
-		_reach_marks.queue_free()
-	_reach_key = key
-	_reach_marks = Node3D.new()
-	add_child(_reach_marks)
-	var ring := TorusMesh.new()
-	ring.inner_radius = GreenBoard.SIZE * 0.78
-	ring.outer_radius = GreenBoard.SIZE * 0.86
-	ring.rings = 6
-	ring.ring_segments = 4
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1, 1, 1, 0.45)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.render_priority = 2
-	for a in board.tiles:
-		if GreenBoard.distance(ball, a) != reach:
-			continue
-		var m := MeshInstance3D.new()
-		m.mesh = ring
-		m.material_override = mat
-		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		m.scale = Vector3(1.0, 0.1, 1.0)
-		m.position = surface_point(a, hole) + Vector3(0, 0.02, 0)
-		_reach_marks.add_child(m)
+func hide_flip() -> void:
+	if _flip:
+		_flip.visible = false
+
+
+func _make_label(size: int) -> Label3D:
+	var l := Label3D.new()
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.fixed_size = true
+	l.pixel_size = 0.0011
+	l.font = ScorecardStyle.header_font()
+	l.font_size = size
+	l.outline_size = 10
+	l.outline_modulate = Color(0.12, 0.12, 0.11, 0.9)
+	l.render_priority = 4
+	l.outline_render_priority = 3
+	add_child(l)
+	return l
 
 
 func hide_target() -> void:
-	if _target:
-		_target.visible = false
-	if _gauge:
-		_gauge.visible = false
-	if _reach_marks:
-		_reach_marks.visible = false
+	if _endpoints:
+		_endpoints.visible = false
+	for mi in _aim_arrows:
+		mi.visible = false
 
 
 func _make_chevron_mesh() -> ArrayMesh:

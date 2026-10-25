@@ -395,16 +395,21 @@ func _register_path_cards() -> void:
 	# Spin: works on the ball after it lands
 	_register_path_card("topspin", "Topspin", "+3 roll, and the rough doesn't slow it.", 2, {"roll_mod": 3, "topspin": true})
 	_register_path_card("backspin", "Backspin", "Lands and spins back 1 hex.", 3, {"spin_back": 1}, CardData.Rarity.UNCOMMON)
+	# Aim: help picking the shot
+	_register_path_card("range_finder", "Range Finder", "See the shot's flight and landing before you swing.", 3, {"range_finder": true})
+	_register_path_card("locked_in", "Locked In", "Twice the aim arrows: aim in 12 directions.", 2, {"locked_in": true})
 	# Shop-only rares
 	_register_path_card("stinger", "Stinger", "Wind can't move it, +2 roll.", 4, {"ignore_wind": true, "roll_mod": 2}, CardData.Rarity.RARE)
 	_register_path_card("heavy_topspin", "Heavy Topspin", "+5 roll, and the rough doesn't slow it.", 4, {"roll_mod": 5, "topspin": true}, CardData.Rarity.RARE)
 	_register_path_card("flag_hunter", "Flag Hunter", "Landing ring 2 tighter.", 5, {"ring_mod": -2}, CardData.Rarity.RARE)
 	_register_path_card("zip_back", "Zip Back", "Lands and spins back 3 hexes.", 5, {"spin_back": 3}, CardData.Rarity.RARE)
 
-	# Green cards: dealt on the green from their own deck
-	_register_putt_card("firm_putt", "Firm Putt", "Strike it 2 hexes further.", 1, {"reach_bonus": 2})
-	_register_putt_card("dead_weight", "Dead Weight", "Stops where it's struck.", 2, {"dead_weight": true})
-	_register_putt_card("read_green", "Read the Green", "See where the ball will end up.", 3, {"read_green": true}, CardData.Rarity.UNCOMMON)
+	# Green cards: bought in the shop, they change the putting deck (ids kept from the green hand)
+	_register_putt_card("firm_putt", "Firm Putt", "Adds a +1 to your putting deck.", {"deck_add": "plus_1"})
+	_register_putt_card("charge_putt", "Charge It", "Adds a +3 to your putting deck.", {"deck_add": "plus_3"}, CardData.Rarity.UNCOMMON)
+	_register_putt_card("steady_stroke", "Steady Stroke", "Adds Steady to your putting deck: the slopes don't act on that putt; flip again.", {"deck_add": "steady"}, CardData.Rarity.UNCOMMON)
+	_register_putt_card("dead_weight", "Soft Hands", "Takes a −2 out of your putting deck.", {"deck_remove": "minus_2"})
+	_register_putt_card("read_green", "Smooth Stroke", "Takes a −1 out of your putting deck.", {"deck_remove": "minus_1"})
 
 	# Utility cards: act on the course's obstacles as soon as they're played
 	_register_utility_card("extinguisher", "Fire Extinguisher", "Put out every fire on the hole.", 3, "extinguish")
@@ -419,15 +424,14 @@ func _register_path_cards() -> void:
 		_register(strain)
 
 
-func _register_putt_card(id: String, card_name: String, description: String, cost: int, fields: Dictionary, rarity: CardData.Rarity = CardData.Rarity.COMMON) -> void:
+func _register_putt_card(id: String, card_name: String, description: String, fields: Dictionary, rarity: CardData.Rarity = CardData.Rarity.COMMON) -> void:
 	if _cards.has(id):
 		return
 	var card = CardData.create(id, card_name, rarity)
 	card.card_type = CardData.CardType.SHOT
-	card.description = _with_cost(description, cost)
+	card.description = description
 	var effect := EffectPuttCard.new()
 	effect.effect_name = card_name
-	effect.power_cost = cost
 	for key in fields:
 		effect.set(key, fields[key])
 	card.effects.append(effect)

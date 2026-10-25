@@ -128,20 +128,60 @@ func _run() -> void:
 	var side_center: Vector2i = shot_manager.current_context.aim_tile
 	var tc = hex_grid.get("turn_controller")
 	_check(side_center != flag_center, "(h) re-aiming moves the footprint center (%s -> %s)" % [str(flag_center), str(side_center)])
-	_check(tc._hex_distance(side_center, side_target) < tc._hex_distance(flag_center, side_target), "(h) new center is nearer the tapped hex than the old one")
-	_check(shot_manager.current_context.aoe_tiles.has(side_center), "(h) footprint spread contains its center")
-	# Aim is capped at reach: the flag is accepted only when a club gets there
-	var reach: int = hex_grid.aim_reach()
+	# (a shot aimed off the course has its center off it too)
+	_check(shot_manager.current_context.aoe_tiles.has(side_center) or hex_grid.get_cell(side_center.x, side_center.y) < 0, "(h) footprint spread contains its center")
+	# Aiming is a direction: any tap picks the nearest of the six, the club the distance
+	_check(hex_grid.set_aim_cell(flag_tile) and hex_grid.aim_direction == hex_grid._dir_toward(flag_tile), "(h) tapping the flag aims the flag's way")
+	var stats_now: Dictionary = hex_grid.get_club_stats(hex_grid.current_club, {})
+	var aimed: int = hex_grid.hex_distance(ball_now, hex_grid.turn_aim_target)
 	var flag_dist: int = hex_grid.hex_distance(ball_now, flag_tile)
-	_check(hex_grid.set_aim_cell(flag_tile) == (flag_dist <= reach), "(h) re-aim at the flag only if in reach (%d hexes, reach %d)" % [flag_dist, reach])
-	var far_tile: Vector2i = tc._point_along(ball_now, flag_tile, reach + 1)
-	if hex_grid.hex_distance(ball_now, far_tile) > reach:
-		_check(not hex_grid.set_aim_cell(far_tile), "(h) a hex past the longest club's reach can't be picked")
+	_check(hex_grid.turn_aim_target == flag_tile or aimed <= int(stats_now.get("band_max", 0)), "(h) toward the flag: at the flag if the club reaches, else the club's carry (%d of %d)" % [aimed, flag_dist])
+	# The arrows wait for the opening flyover (end it, without the Pro Shop)
+	hex_grid._bag_pending = false
+	if hex_grid.hole_viewer and hex_grid.hole_viewer.is_flying:
+		hex_grid.hole_viewer.skip_flyover()
+	# Directions are twelfths of a turn: the six hex directions are the even ones
+	var arrows_ok := true
+	for d in range(6):
+		hex_grid.set_aim_cell(CourseFeatures.neighbor(ball_now, d))
+		if hex_grid.aim_direction != 2 * d:
+			arrows_ok = false
+	_check(arrows_ok, "(h) tapping each neighbour hex picks its direction")
+	var shown := func() -> int: return hex_grid._aim_arrows.filter(func(a): return a.visible).size()
+	_check(shown.call() == 6, "(h) six aim arrows round the ball (%d)" % shown.call())
+	_check(not hex_grid.trajectory_mesh.visible, "(h) no flight trail before SHOOT is pressed")
+	hex_grid._on_shoot_button_down()
+	_check(hex_grid.trajectory_mesh.visible and shown.call() == 0, "(h) pressing SHOOT shows the trail and hides the arrows")
+	hex_grid._show_shot_preview(false)
+
+	# --- (j) aim cards: Locked In doubles the arrows, Range Finder shows the trail ---
+	var lib = get_node_or_null("/root/CardLibrary")
+	var mk := func(id: String): return CardInstance.create_from_data(lib.get_card(id) if lib else CardLibrary.instance.get_card(id))
+	hex_grid.chip_stack = 99
+	var lock_card = mk.call("locked_in")
+	hex_grid.shot_hand.append(lock_card)
+	hex_grid._on_modifier_card_selected(lock_card)
+	_check(hex_grid.locked_in() and shown.call() == 12, "(j) Locked In: twelve aim arrows (%d)" % shown.call())
+	var between: Vector2i = hex_grid._arrow_cell(3)
+	hex_grid.set_aim_cell(between)
+	_check(hex_grid.aim_direction == 3, "(j) Locked In: an in-between arrow can be picked (got %d)" % hex_grid.aim_direction)
+	hex_grid._on_modifier_card_selected(lock_card)  # take it back
+	_check(not hex_grid.locked_in() and hex_grid.aim_direction % 2 == 0 and shown.call() == 6, "(j) without it: back to six, on a hex direction (%d)" % hex_grid.aim_direction)
+	hex_grid.shot_hand.erase(lock_card)
+	var finder = mk.call("range_finder")
+	hex_grid.shot_hand.append(finder)
+	hex_grid._on_modifier_card_selected(finder)
+	_check(hex_grid.trajectory_mesh.visible and shown.call() == 6, "(j) Range Finder: the trail shows while aiming, arrows too")
+	hex_grid._on_modifier_card_selected(finder)
+	_check(not hex_grid.trajectory_mesh.visible, "(j) Range Finder off the mat: trail hidden again")
+	hex_grid.shot_hand.erase(finder)
 	var near_tile: Vector2i = tc._point_along(ball_now, flag_tile, 2)
 	hex_grid.set_aim_cell(near_tile)
 	var club_min: int = int(hex_grid.CLUB_STATS.get(hex_grid.current_club, {}).get("band_min", 0))
 	var near_carry: int = int(shot_manager.current_context.get_metadata("shot_plan", {}).get("carry", 0))
-	_check(club_min <= 2 or near_carry >= club_min, "(h) a club can't be hit shorter than its band (carry %d, min %d)" % [near_carry, club_min])
+	# (unless its line runs off the course first)
+	var room: int = hex_grid.hex_distance(ball_now, tc._point_along(ball_now, hex_grid.turn_aim_target, club_min))
+	_check(club_min <= 2 or near_carry >= club_min or room < club_min, "(h) a club can't be hit shorter than its band (carry %d, min %d)" % [near_carry, club_min])
 	hex_grid._auto_aim_new_shot()
 
 	# --- (i) shot cards toggle on/off, spend power, max 3; overspend adds Strain ---
@@ -213,7 +253,12 @@ func _run() -> void:
 		var stats: Dictionary = hex_grid.get_club_stats(club, {})
 		var carry: int = hex_grid.hex_distance(ball_tile, hex_grid.turn_aim_target)
 		carries.append("%s %d" % [inst.data.target_club, carry])
-		if carry < int(stats.get("band_min", 0)) or carry > int(stats.get("band_max", 0)):
+		# Short of the band only where the club's line meets the course edge
+		var lo: int = int(stats.get("band_min", 0))
+		var tc2 = hex_grid.get("turn_controller")
+		var edge: bool = hex_grid.hex_distance(ball_tile, tc2._point_along(ball_tile, hex_grid.turn_aim_target, lo)) < lo \
+			or hex_grid.get_cell(CourseFeatures.neighbor(hex_grid.turn_aim_target, int(hex_grid.aim_direction / 2)).x, CourseFeatures.neighbor(hex_grid.turn_aim_target, int(hex_grid.aim_direction / 2)).y) < 0
+		if carry > int(stats.get("band_max", 0)) or (carry < lo and not edge):
 			in_band = false
 	_check(in_band and carries.size() > 0, "(d) each picked club aims inside its own carry band (%s)" % ", ".join(carries))
 	# Back to the shortest legal club, so (e)'s shot stays short and predictable
@@ -223,7 +268,7 @@ func _run() -> void:
 		if not shoot_button.disabled:
 			break
 
-	# --- (g) points: trick detector wired, coins pay out, wallet matches the log ---
+	# --- (g) points: trick detector wired, chips pay Chips (no points), wallet matches the log ---
 	var currency = hex_grid.get("currency_manager")
 	_check(shot_manager.trick_detector != null, "(g) ShotManager scores through the trick detector")
 	var coin: Node3D = null
@@ -239,12 +284,14 @@ func _run() -> void:
 	_check(coin != null and currency != null, "(g) a coin spawned on the hole and a wallet exists")
 	if coin and currency:
 		var before: int = currency.get_balance()
+		var chips_before: int = hex_grid.chip_stack
 		var ball_home: Vector3 = golf_ball.position
 		golf_ball.position = hex_grid.get_tile_surface_position(coin.get_meta("cell"))
 		hex_grid._collect_coins_at_ball()
 		golf_ball.position = ball_home
-		var gained: int = currency.get_balance() - before
-		_check(gained > 0 and gained % TrickShotDetector.COIN_POINTS == 0, "(g) landing on a coin pays %d pts per coin (gained %d)" % [TrickShotDetector.COIN_POINTS, gained])
+		var gained: int = hex_grid.chip_stack - chips_before
+		_check(gained > 0 and gained % hex_grid.CHIPS_PER_COIN == 0, "(g) landing on a chip pays %d Chip per chip (gained %d)" % [hex_grid.CHIPS_PER_COIN, gained])
+		_check(currency.get_balance() == before, "(g) a chip pays no points (wallet %d -> %d)" % [before, currency.get_balance()])
 		var logged := 0
 		for entry in hex_grid.hole_points_log:
 			logged += entry.points

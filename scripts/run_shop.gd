@@ -31,8 +31,8 @@ const ERASER_PRICE := 300  # item: -1 stroke off the run score
 const POOL := [
 	"draw_shot", "fade_shot", "hard_draw", "hard_fade", "loft", "stop",
 	"release", "dart", "knockdown", "stinger", "flag_hunter",
-	"topspin", "backspin", "heavy_topspin", "zip_back",
-	"read_green", "firm_putt", "dead_weight",
+	"topspin", "backspin", "heavy_topspin", "zip_back", "range_finder", "locked_in",
+	"read_green", "firm_putt", "charge_putt", "steady_stroke", "dead_weight",
 	"extinguisher", "groundskeeper", "shutoff",
 ]
 

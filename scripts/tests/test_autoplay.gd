@@ -26,7 +26,7 @@ var _fire_hits := 0
 var _ice_runs := 0
 var _ice_touches := 0
 var _bounces := 0
-var _swings := {"pure": 0, "thin": 0, "slice": 0, "hook": 0}
+var _swings := {"pure": 0, "short": 0, "long": 0, "thin": 0, "hook": 0}
 var _swing_rng := RandomNumberGenerator.new()
 const SWING_TIMING_SD := 0.08  # seconds: how far off a decent player's release is
 var _extinguished := 0
@@ -118,17 +118,18 @@ func _play_hole(n: int) -> void:
 			_problems.append("hole %d stroke %d: green view %s / overlay %s while ball %s the green" % [n, stroke + 1, viewing, overlay_on, "on" if on_green else "off"])
 		_play_extinguisher(n)
 		if on_green and hg.putting_active:
-			if hg.putt_hand.size() != hg.PUTT_HAND_SIZE:
-				_problems.append("hole %d stroke %d: green hand has %d cards" % [n, stroke + 1, hg.putt_hand.size()])
-			for card in hg.putt_hand:
-				if card.data.card_id == "firm_putt":
-					hg.main_ui_ref.emit_signal("modifier_card_selected", card)
-					if hg._putt_opts().reach != GreenBoard.PUTT_REACH + 2:
-						_problems.append("hole %d: Firm Putt didn't add reach" % n)
-					hg.main_ui_ref.emit_signal("modifier_card_selected", card)
-					if hg._putt_opts().reach != GreenBoard.PUTT_REACH:
-						_problems.append("hole %d: Firm Putt didn't toggle off" % n)
-					break
+			if hg.main_ui_ref.putt_panel == null or not hg.main_ui_ref.putt_panel.visible:
+				_problems.append("hole %d stroke %d: no putting panel on the green" % [n, stroke + 1])
+			if hg.putt_strokes >= GreenBoard.MAX_PUTTS:
+				_problems.append("hole %d stroke %d: putt %d of %d" % [n, stroke + 1, hg.putt_strokes + 1, GreenBoard.MAX_PUTTS])
+			# Caddie Peek on a green's first putt, when there are putting chips for it
+			if hg.putt_strokes == 0 and hg.putt_chips >= hg.CADDIE_PEEK_CHIPS:
+				var chips: int = hg.putt_chips
+				hg.main_ui_ref.emit_signal("caddie_peek_pressed")
+				if hg.putt_peek == "" or hg.putt_chips != chips - hg.CADDIE_PEEK_CHIPS:
+					_problems.append("hole %d: Caddie Peek didn't show a card for a chip" % n)
+				elif hg.putt_peek != hg.putt_modifiers.draw_pile.back():
+					_problems.append("hole %d: Caddie Peek showed %s, not the top card" % [n, hg.putt_peek])
 			_read_the_green()
 		if on_green:
 			_green_turns += 1
@@ -163,7 +164,7 @@ func _play_hole(n: int) -> void:
 				print("      MISSED SHORT PUTT flag %s surface %d | plan end %s ring %s carry %s blocked %s | make %s | aoe %s weights %s" % [hg.flag_position, hg.get_cell(hg.flag_position.x, hg.flag_position.y), pl.get("end"), pl.get("ring"), pl.get("carry"), pl.get("blocked"), ctx.get_metadata("putt_make_chance", "-"), ctx.aoe_tiles, ctx.aoe_weights])
 		var on_putt := func(result):
 			fired[0] = true
-			print("    Putt from %s -> %s, %d hexes, holed %s, off green %s" % [from, result.end, result.touched, result.holed, result.off_green])
+			print("    Putt from %s (%s) -> %s, %d hexes, %s" % [from, PuttModifierDeck.describe(result.flip), result.end, result.touched, result.reason])
 		hg.shot_manager.shot_completed.connect(on_done)
 		hg.putt_resolved.connect(on_putt)
 		if club_name != "Putter" and OS.get_environment("AUTOPLAY_SWING") != "off":
@@ -203,7 +204,7 @@ func _print_balance() -> void:
 		if r.strokes == 1:
 			aces += 1
 	var finished := _results.size() - blown
-	print("SWING pure %d, thin %d, slice %d, hook %d" % [_swings.pure, _swings.thin, _swings.slice, _swings.hook])
+	print("SWING pure %d, short %d, long %d, thin %d, hook %d" % [_swings.pure, _swings.short, _swings.long, _swings.thin, _swings.hook])
 	print("BALANCE holes=%d finished=%d avg_vs_par=%+.2f putts/hole=%.2f aces=%d (%.0f%%) blowouts=%d" % [
 		_results.size(), finished, float(total_diff) / maxf(1, finished), float(putts) / maxf(1, finished),
 		aces, 100.0 * aces / maxf(1, finished), blown])
@@ -287,29 +288,24 @@ func _visit_shop(n: int) -> void:
 
 
 func _read_the_green() -> void:
-	"""A sensible putter: simulate every hex in reach; hole it if any route
-	does (the longest route, for points), else leave it closest to the cup."""
+	"""A sensible putter: for each of the six lines, the chance the flip holes
+	it and, failing that, how close the base pace leaves it; take the best."""
 	var board: GreenBoard = hg.green_board
 	var ball: Vector2i = hg._ball_small()
-	var best := Vector2i.ZERO
+	var odds := PuttModifierDeck.chain_odds(hg.putt_modifiers.draw_pile if not hg.putt_modifiers.draw_pile.is_empty() else hg.putt_modifiers.discard)
+	var best := 0
 	var best_score := INF
-	for a in board.tiles:
-		var d := GreenBoard.distance(ball, a)
-		if d == 0 or d > GreenBoard.PUTT_REACH:
-			continue
-		var r: Dictionary = board.roll(ball, a)
-		var score: float
-		if r.holed:
-			score = -100.0 - r.touched
-		elif r.off_green:
-			score = 50.0
-		else:
-			score = GreenBoard.distance(r.end, board.cup)
+	for d in range(6):
+		var p := 0.0
+		for o in odds:
+			if board.simulate_putt(ball, d, GreenBoard.PUTT_BASE + int(o.mod), o.special, {"steady": o.steady}).holed:
+				p += float(o.p)
+		var r: Dictionary = board.simulate_putt(ball, d, GreenBoard.PUTT_BASE)
+		var score: float = -10.0 * p + GreenBoard.distance(r.end, board.cup) * 0.5
 		if score < best_score:
 			best_score = score
-			best = a
-	if best_score < INF:
-		hg.set_putt_target(best)
+			best = d
+	hg.set_putt_dir(best)
 
 
 func _ready_to_shoot() -> bool:
@@ -337,12 +333,17 @@ func _wait(cond: Callable, timeout_s: float) -> bool:
 	return true
 
 
+func _affordable(card) -> bool:
+	"""Enough Chips left to play it (the game refuses it otherwise)."""
+	return hg._card_cost(card) <= hg.chip_stack - hg._planned_cost()
+
+
 func _play_extinguisher(n: int) -> void:
 	"""A Fire Extinguisher in hand with fire on the hole: play it, check it worked."""
 	if hg.course_features == null or hg.course_features.count("fire") == 0:
 		return
 	for card in hg.shot_hand:
-		if card.data.card_id == "extinguisher":
+		if card.data.card_id == "extinguisher" and _affordable(card):
 			hg.main_ui_ref.emit_signal("modifier_card_selected", card)
 			_extinguished += 1
 			if hg.course_features.count("fire") > 0:
@@ -358,10 +359,11 @@ func _model_swing() -> Dictionary:
 	Harder shots have a thinner band and a faster box."""
 	var plan: Dictionary = hg.shot_manager.current_context.get_metadata("shot_plan", {}) if hg.shot_manager.current_context else {}
 	var d: Vector2 = hg._swing_difficulty(plan)
-	var b := SwingButton.bands(d.x)
+	var aim: float = hg._swing_aim_power(plan)
+	var b := SwingButton.bands(d.x, aim)
 	var target_t: float = (b.lo + b.hi) / 2.0 * d.y / 2.0
 	var t := maxf(0.0, target_t + _swing_rng.randfn(0.0, SWING_TIMING_SD))
 	var w := SwingButton.meter_width(t, d.y)
-	var kind := SwingButton.grade(w, d.x)
+	var kind := SwingButton.grade(w, d.x, aim)
 	_swings[kind] += 1
-	return {"kind": kind, "width": w}
+	return {"kind": kind, "width": w, "power": SwingButton.power_at(w)}

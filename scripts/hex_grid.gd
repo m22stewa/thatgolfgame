@@ -217,7 +217,7 @@ var club_uses: Dictionary = {}  # ClubType -> swings taken this hole
 # Travel light: the fewer clubs you take (1 to BAG_SIZE), the more every point
 # on the hole is worth
 const BAG_MULTIPLIER := {1: 3.0, 2: 2.0, 3: 1.5, 4: 1.0}
-const STARTER_CLUBS := [ClubType.DRIVER, ClubType.WOOD_3, ClubType.IRON_3, ClubType.IRON_6, ClubType.IRON_8, ClubType.PITCHING_WEDGE]
+const STARTER_CLUBS := [ClubType.DRIVER, ClubType.WOOD_3, ClubType.WOOD_5, ClubType.IRON_3, ClubType.IRON_6, ClubType.IRON_7, ClubType.IRON_8, ClubType.PITCHING_WEDGE, ClubType.SAND_WEDGE]
 var owned_clubs: Dictionary = {}    # ClubType -> ClubItem
 var hole_bag: Array[int] = []       # ClubTypes picked for this hole (putter not listed)
 var _bag_pending := false           # open the Pro Shop when the flyover ends
@@ -473,12 +473,12 @@ var shot_deck: Array = []       # CardInstances, draw pile
 var shot_discard: Array = []
 var shot_hand: Array = []
 var planned_cards: Dictionary = {}  # CardInstance -> CardModifier, played on this shot
-# Chips: what cards cost to play. Every hole starts with CHIPS_PER_HOLE; coins
-# add to it, fire takes from it, and the cards on the playmat spend it when
+# Chips: what cards cost to play. Every hole starts with CHIPS_PER_HOLE; chips
+# picked up on the course (the "coins" group) add to it, fire takes from it, and the cards on the playmat spend it when
 # the shot is taken. Cards cost 1-6 (CardCost), so a hole's Chips buy a few
-# small cards or one or two big ones.
-const CHIPS_PER_HOLE := 14
-const CHIPS_PER_COIN := 2
+# small cards or one big one.
+const CHIPS_PER_HOLE := 6
+const CHIPS_PER_COIN := 1  # a chip collectable is one Chip, and no points
 var chip_stack: int = CHIPS_PER_HOLE
 
 
@@ -1225,14 +1225,13 @@ func _auto_aim_new_shot() -> void:
 	club_chosen_by_player = false
 	var pick := _caddie_pick()
 	turn_aim_target = pick.get("target", flag_position)
-	target_locked = true
-	locked_cell = turn_aim_target
 	if pick.has("card"):
 		_on_club_card_selected(pick.card)
 	else:
 		_suggest_club_for_target()
 	club_chosen_by_player = false
-	rebuild_turn_plan()
+	# The player only picks a direction: start on the caddie's
+	_aim_direction(_dir_toward(turn_aim_target))
 
 
 # Caddie risk per landing surface, in "hexes further from the flag" units.
@@ -1243,12 +1242,13 @@ const CADDIE_SURFACE_COST := {
 }
 
 
-func _caddie_pick(only_club: int = -1) -> Dictionary:
+func _caddie_pick(only_club: int = -1, only_dir: int = -1) -> Dictionary:
 	"""Best default shot: for each legal club in the hand (or just only_club),
-	every hex inside its carry band, scored on the shot as it would really
-	play (ShotPlan: wind drift, trees, landing ring incl. the lie) by distance
-	left to the flag + landing risk. Ties go to the shorter club. Returns
-	{card, target} or {}."""
+	every hex inside its carry band (or just those in direction only_dir's
+	slice, see _in_slice), scored on the shot as it would really play (ShotPlan:
+	wind drift, trees, landing ring incl. the lie) by distance left to the
+	flag + landing risk. Ties go to the shorter club. Returns {card, target}
+	or {}."""
 	if card_system == null or card_system.club_deck_manager == null or golf_ball == null:
 		return {}
 	var ball := world_to_grid(golf_ball.position)
@@ -1276,6 +1276,8 @@ func _caddie_pick(only_club: int = -1) -> Dictionary:
 				var tile := Vector2i(x, y)
 				var carry := hex_distance(ball, tile)
 				if carry < lo or carry > hi or get_cell(x, y) < 0:
+					continue
+				if only_dir >= 0 and not _in_slice(tile, only_dir):
 					continue
 				# Cheap lower bound first: distance left from the aimed hex
 				if hex_distance(tile, flag_position) - 6.0 + 0.01 * hi >= best_score:
@@ -1316,6 +1318,221 @@ func _caddie_landing_score(center: Vector2i, ring: int) -> float:
 			elif s2 == SurfaceType.TREE or s2 == SurfaceType.SAND:
 				score += 0.5
 	return score
+
+
+# --- Aiming by direction -------------------------------------------------------
+# The player picks a direction from the arrows round the ball; the club
+# decides how far. The shot goes to the best spot in that direction's slice
+# the club can reach (nearest the flag, clear of trouble: the caddie's
+# scoring), so the flag's slice finds the flag.
+# Directions are twelfths of a turn: the even ones (0, 2 .. 10) are the six
+# hex directions (CourseFeatures.neighbor's 0..5), each with a 60-degree
+# slice. The Locked In card opens the odd ones in between (arrows on the
+# second-ring hexes between two neighbours) and narrows every slice to 30.
+# The Range Finder card shows the trail before SHOOT is pressed.
+
+var aim_direction := 0            # 0..11 (even unless Locked In)
+var shot_preview_shown := false   # the trail / landing area, once SHOOT is pressed
+var _aim_arrows: Array[MeshInstance3D] = []
+var _aim_arrow_tween: Tween = null
+const AIM_ARROW_COLOR := Color(1.0, 1.0, 1.0, 0.45)
+const AIM_ARROW_PICKED := Color(1.0, 0.86, 0.3, 0.95)
+
+
+func _planned_has(field: String) -> bool:
+	"""A shot card on the playmat with this EffectShotShape flag set."""
+	for card in planned_cards:
+		for e in card.data.effects:
+			if e is EffectShotShape and e.get(field):
+				return true
+	return false
+
+
+func locked_in() -> bool:
+	return _planned_has("locked_in")
+
+
+func _direction_vec(dir: int) -> Vector2:
+	"""Direction dir (0..11) from the ball as a world (x, z) unit vector."""
+	var ball := world_to_grid(golf_ball.position)
+	var from := get_tile_world_position(ball)
+	var to := get_tile_world_position(_arrow_cell(dir)) - from
+	return Vector2(to.x, to.z).normalized()
+
+
+func _arrow_cell(dir: int) -> Vector2i:
+	"""The hex an arrow sits on: a neighbour for the hex directions, the
+	second-ring hex between two neighbours for the ones in between."""
+	var ball := world_to_grid(golf_ball.position)
+	var d := int(dir / 2)
+	if dir % 2 == 0:
+		return CourseFeatures.neighbor(ball, d)
+	return CourseFeatures.neighbor(CourseFeatures.neighbor(ball, d), (d + 1) % 6)
+
+
+func _directions() -> Array[int]:
+	"""The directions the player can pick right now."""
+	var out: Array[int] = []
+	for k in range(12):
+		if k % 2 == 0 or locked_in():
+			out.append(k)
+	return out
+
+
+func _dir_toward(cell: Vector2i) -> int:
+	"""The pickable direction from the ball that points most nearly at cell."""
+	var from := get_tile_world_position(world_to_grid(golf_ball.position))
+	var to := get_tile_world_position(cell) - from
+	var v := Vector2(to.x, to.z).normalized()
+	var best := 0
+	var best_dot := -INF
+	for k in _directions():
+		var dot := _direction_vec(k).dot(v)
+		if dot > best_dot:
+			best_dot = dot
+			best = k
+	return best
+
+
+func _in_slice(tile: Vector2i, dir: int) -> bool:
+	"""tile lies in direction dir's slice (60 degrees, or 30 when Locked In)."""
+	var from := get_tile_world_position(world_to_grid(golf_ball.position))
+	var to := get_tile_world_position(tile) - from
+	var half := deg_to_rad(15.0 if locked_in() else 30.0) + 0.001
+	return absf(_direction_vec(dir).angle_to(Vector2(to.x, to.z))) <= half
+
+
+func target_for_direction(dir: int) -> Vector2i:
+	"""Where the current club goes in direction dir: the caddie's best spot
+	in that slice (near the flag, clear of trouble); if the slice has nowhere
+	in the club's band, the plain line rule below."""
+	var pick := _caddie_pick(current_club, dir)
+	if pick.has("target"):
+		return pick.target
+	return _line_target(dir)
+
+
+func _line_target(dir: int) -> Vector2i:
+	"""The club's carry straight along direction dir (to the flag when it
+	lies that way and the club reaches it), stopping at the course edge."""
+	var ball := world_to_grid(golf_ball.position)
+	var stats: Dictionary = get_club_stats(current_club, {})
+	var lie_cost := 0
+	if lie_system:
+		lie_cost = TurnController.lie_power(int(lie_system.get_lie_data(get_cell(ball.x, ball.y)).get("distance_mod", 0)))
+	var lo: int = maxi(1, int(stats.get("band_min", 1)))
+	var hi: int = maxi(lo, int(stats.get("band_max", 1)) + lie_cost)
+	var toward := _arrow_cell(dir)
+	if flag_position.x >= 0 and _dir_toward(flag_position) == dir:
+		var to_flag := hex_distance(ball, flag_position)
+		if to_flag >= lo and to_flag <= hi:
+			return flag_position
+		toward = flag_position
+	# Along the line, pulled back onto the course
+	var tile: Vector2i = turn_controller._point_along(ball, toward, hi)
+	while tile != ball and get_cell(tile.x, tile.y) < 0:
+		tile = turn_controller._point_along(ball, toward, hex_distance(ball, tile) - 1)
+	return tile
+
+
+func _aim_direction(dir: int) -> void:
+	"""Aim the shot in direction dir with the current club."""
+	aim_direction = dir
+	if golf_ball == null:
+		return
+	if current_club >= 0:
+		turn_aim_target = target_for_direction(dir)
+	locked_cell = turn_aim_target
+	target_locked = true
+	rebuild_turn_plan()
+
+
+var _was_locked_in := false
+
+
+func _on_aim_cards_changed() -> bool:
+	"""Locked In went on or off the mat: re-aim in the narrower (or wider)
+	slice; coming off while aimed in between, take the nearest hex direction
+	toward the current target. Returns true if it re-aimed (and rebuilt)."""
+	var now := locked_in()
+	if now == _was_locked_in or golf_ball == null or turn_aim_target.x < 0:
+		_was_locked_in = now
+		return false
+	_was_locked_in = now
+	_aim_direction(aim_direction if aim_direction % 2 == 0 or now else _dir_toward(turn_aim_target))
+	return true
+
+
+func _update_aim_arrows() -> void:
+	"""Arrows on the hexes round the ball while a shot is being aimed (six,
+	twelve with Locked In): the picked direction bright and pulsing, the rest
+	faint. Hidden once SHOOT is pressed."""
+	var show: bool = golf_ball != null and turn_controller != null and not putting_active and not shot_preview_shown \
+		and not hole_complete_triggered and turn_aim_target.x >= 0 \
+		and not (shot_manager and (shot_manager.is_animating or shot_manager.is_shot_in_progress)) \
+		and not (hole_viewer and hole_viewer.get("is_flying")) \
+		and not (GameMode.driving_range and range_tool != "")
+	if _aim_arrows.is_empty():
+		if not show:
+			return
+		_build_aim_arrows()
+	var pickable := _directions() if golf_ball else ([] as Array[int])
+	for k in range(12):
+		var arrow := _aim_arrows[k]
+		arrow.visible = show and pickable.has(k)
+		if not arrow.visible:
+			continue
+		var cell := _arrow_cell(k)
+		var v := _direction_vec(k)
+		arrow.position = _hex_marker_position(cell) + Vector3(0, 0.06, 0)
+		arrow.rotation = Vector3(0, atan2(v.x, v.y), 0)
+		var picked := k == aim_direction
+		(arrow.material_override as StandardMaterial3D).albedo_color = AIM_ARROW_PICKED if picked else AIM_ARROW_COLOR
+		if not picked:
+			arrow.scale = Vector3.ONE
+	if _aim_arrow_tween:
+		_aim_arrow_tween.kill()
+		_aim_arrow_tween = null
+	if show and aim_direction < _aim_arrows.size():
+		var picked_arrow := _aim_arrows[aim_direction]
+		_aim_arrow_tween = create_tween().set_loops()
+		_aim_arrow_tween.tween_property(picked_arrow, "scale", Vector3(1.25, 1.0, 1.25), 0.5).set_trans(Tween.TRANS_SINE)
+		_aim_arrow_tween.tween_property(picked_arrow, "scale", Vector3.ONE, 0.5).set_trans(Tween.TRANS_SINE)
+
+
+func _build_aim_arrows() -> void:
+	for d in range(12):
+		var mi := MeshInstance3D.new()
+		mi.name = "AimArrow%d" % d
+		mi.mesh = _aim_arrow_mesh()
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.no_depth_test = true
+		mat.render_priority = 3
+		mi.material_override = mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+		_aim_arrows.append(mi)
+
+
+static func _aim_arrow_mesh() -> ArrayMesh:
+	"""A flat arrow on the ground pointing +z: a stem and a head."""
+	var stem_w := 0.14
+	var pts := PackedVector3Array([
+		# stem
+		Vector3(-stem_w, 0, -0.45), Vector3(stem_w, 0, -0.45), Vector3(stem_w, 0, 0.05),
+		Vector3(-stem_w, 0, -0.45), Vector3(stem_w, 0, 0.05), Vector3(-stem_w, 0, 0.05),
+		# head
+		Vector3(-0.38, 0, 0.05), Vector3(0.38, 0, 0.05), Vector3(0, 0, 0.55),
+	])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = pts
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 func aim_reach() -> int:
@@ -1385,10 +1602,19 @@ func _suggest_club_for_target() -> void:
 
 func _show_turn_footprint() -> void:
 	"""Draw the real shot plan: the aim marker, the weighted landing spread
-	(brighter = more likely), the most-likely center and the flight arc."""
+	(brighter = more likely), the most-likely center and the flight arc. Only
+	once SHOOT is pressed (shot_preview_shown): before that, the aim arrows
+	round the ball are all there is."""
 	_hide_all_aoe_highlights()
 	modifier_trajectory_mesh.visible = false
 	curved_trajectory_mesh.visible = false
+	_update_aim_arrows()
+	if not _trail_visible() and not putting_active:
+		highlight_mesh.visible = false
+		target_highlight_mesh.visible = false
+		trajectory_mesh.visible = false
+		trajectory_shadow_mesh.visible = false
+		return
 	if putting_active:
 		# The green board draws the putt; course-hex markers would sit over it
 		highlight_mesh.visible = false
@@ -1577,6 +1803,7 @@ func _on_shoot_pressed() -> void:
 	if GameMode.driving_range:
 		chip_stack = RANGE_CHIPS
 	_use_club(current_club)
+	_show_shot_preview(true)  # a quick tap skips the press
 	# The camera chases the ball once it's struck
 	if hole_viewer and hole_viewer.has_method("follow_shot"):
 		hole_viewer.follow_shot(_behind_ball_pose())
@@ -1586,8 +1813,29 @@ func _on_shoot_pressed() -> void:
 func _on_shoot_button_down() -> void:
 	if putting_active or shoot_button.disabled:
 		return
+	_show_shot_preview(true)
 	if hole_viewer and hole_viewer.has_method("shot_camera_ready"):
 		hole_viewer.shot_camera_ready(_behind_ball_pose())
+
+
+func _on_shoot_button_up() -> void:
+	"""Let go off the button (no shot): back to the arrows."""
+	await get_tree().create_timer(0.15).timeout
+	if shot_manager and not shot_manager.is_animating and not shot_manager.is_shot_in_progress:
+		_show_shot_preview(false)
+
+
+func _trail_visible() -> bool:
+	"""The trail shows once SHOOT is pressed, or all along with a Range Finder."""
+	return shot_preview_shown or _planned_has("range_finder")
+
+
+func _show_shot_preview(on: bool) -> void:
+	"""The trail and landing area show once the shot is being taken."""
+	if shot_preview_shown == on:
+		return
+	shot_preview_shown = on
+	refresh_aoe_display()
 
 
 func _behind_ball_pose() -> Dictionary:
@@ -1763,9 +2011,9 @@ func _update_shoot_button_state() -> void:
 	var swing_box := shoot_button as SwingButton
 	if putting_active:
 		shoot_button.disabled = false
-		shoot_button.text = "Putt"
+		shoot_button.text = "Flip & Putt"
 		if swing_box:
-			swing_box.set_face("PUTT", stroke_text, false)
+			swing_box.set_face("FLIP & PUTT", "PUTT %d OF %d" % [putt_strokes + 1, GreenBoard.MAX_PUTTS], false)
 		_set_this_shot(_this_shot_text({}))
 		return
 	shoot_button.disabled = not _is_shoot_legal()
@@ -1787,8 +2035,19 @@ func _update_shoot_button_state() -> void:
 				sub += "  ·  +%d STRAIN" % int(plan.over)
 			swing_box.set_face("SHOOT", sub, true)
 			var diff := _swing_difficulty(plan)
-			swing_box.set_difficulty(diff.x, diff.y)
+			swing_box.set_difficulty(diff.x, diff.y, _swing_aim_power(plan))
 	_set_this_shot(_this_shot_text(plan))
+
+
+func _swing_aim_power(plan: Dictionary) -> float:
+	"""Where the SHOOT meter's sweet spot sits: the aimed carry as a share of
+	the club's band (0 its shortest, 1 its longest; past it stays at 1)."""
+	var st := get_club_stats(current_club, {})
+	var lo := float(st.get("band_min", 0))
+	var hi := float(st.get("band_max", 0))
+	if plan.is_empty() or hi <= lo:
+		return 1.0
+	return clampf(inverse_lerp(lo, hi, float(plan.get("carry", hi))), 0.0, 1.0)
 
 
 func _swing_difficulty(plan: Dictionary) -> Vector2:
@@ -1823,7 +2082,7 @@ func _this_shot_text(plan: Dictionary) -> String:
 	"""THIS SHOT, pencilled: "3 Iron + Fade + Stop -> 150-170"."""
 	var parts: Array[String] = []
 	parts.append(get_club_stats(current_club, {}).get("name", "—"))
-	var cards: Array = putt_cards.keys() if putting_active else planned_cards.keys()
+	var cards: Array = [] if putting_active else planned_cards.keys()
 	for card in cards:
 		parts.append(card.get_display_name())
 	var text := " + ".join(parts)
@@ -1833,8 +2092,7 @@ func _this_shot_text(plan: Dictionary) -> String:
 		text += "  →  %d–%d" % [int(lo * YARDS_PER_CELL), int(hi * YARDS_PER_CELL)]
 	elif putting_active and green_board and golf_ball:
 		var ball := _ball_small()
-		text += "  →  %d of %d hexes · cup %d" % [GreenBoard.distance(ball, putt_target),
-			int(_putt_opts().reach), GreenBoard.distance(ball, green_board.cup)]
+		text += "  →  %d + flip  ·  cup %d hexes" % [GreenBoard.PUTT_BASE, GreenBoard.distance(ball, green_board.cup)]
 	return text
 
 
@@ -1857,9 +2115,10 @@ func _refresh_tray() -> void:
 	if not pars.has(run_state.current_hole):
 		pars[run_state.current_hole] = current_par
 	main_ui_ref.update_scorecard(run_state.current_hole, pars, scores, run_state.strokes_this_hole)
-	var hand: Array = putt_hand if putting_active else shot_hand
-	var left: int = putt_deck.size() if putting_active else shot_deck.size()
-	var total: int = (putt_deck.size() + putt_discard.size() + putt_hand.size()) if putting_active else (shot_deck.size() + shot_discard.size() + shot_hand.size())
+	var putts := putting_active and putt_modifiers != null
+	var hand: Array = [] if putts else shot_hand
+	var left: int = putt_modifiers.draw_pile.size() if putts else shot_deck.size()
+	var total: int = putt_modifiers.size() if putts else (shot_deck.size() + shot_discard.size() + shot_hand.size())
 	var points: int = currency_manager.get_balance() if currency_manager else 0
 	var run_text := "RUN %s  ·  BLOWOUT %s" % [run_state.format_vs_par(run_state.get_live_vs_par()), run_state.format_vs_par(run_state.blowout_limit)]
 	main_ui_ref.set_tray_info(hand.size(), left, total, points, run_text, points_multiplier())
@@ -1900,19 +2159,13 @@ func _deal_hand_for_current_hole() -> void:
 
 
 func _on_player_club_picked(card_instance) -> void:
-	"""Tray: the player picked a club. Re-aim at the best spot inside its
-	reach (the caddie's pick for that club), so the flight preview and the
-	landing area show what the club does; a tap re-aims from there."""
+	"""Tray: the player picked a club. The aimed direction stays; the target
+	moves to what the new club carries that way."""
 	if card_instance == null or card_instance.data == null:
 		return
-	var club = ClubType.get(card_instance.data.target_club)
-	if club != null and not putting_active and golf_ball and not hole_complete_triggered:
-		var pick := _caddie_pick(club)
-		if pick.has("target"):
-			turn_aim_target = pick.target
-			locked_cell = pick.target
-			target_locked = true
 	_on_club_card_selected(card_instance)
+	if not putting_active and golf_ball and not hole_complete_triggered and turn_aim_target.x >= 0:
+		_aim_direction(aim_direction)
 
 
 func _on_club_card_selected(card_instance) -> void:
@@ -1934,15 +2187,7 @@ func _on_modifier_card_selected(card_instance) -> void:
 	if card_instance == null or card_instance.data == null:
 		return
 	if putting_active:
-		if putt_hand.has(card_instance):
-			# Green cards cost Chips too
-			if not putt_cards.has(card_instance) and _card_cost(card_instance) > chip_stack - _planned_cost():
-				if main_ui_ref and main_ui_ref.has_method("flash_chips"):
-					main_ui_ref.flash_chips()
-				return
-			_toggle_putt_card(card_instance)
-			_refresh_tray()
-		return
+		return  # on the green the choices are the line and the putting actions
 	var utility := _utility_action(card_instance.data)
 	if utility != "" and shot_hand.has(card_instance):
 		if _card_cost(card_instance) > chip_stack - _planned_cost():
@@ -1966,7 +2211,8 @@ func _on_modifier_card_selected(card_instance) -> void:
 		planned_cards[card_instance] = mod
 	if main_ui_ref and main_ui_ref.has_method("set_card_pressed"):
 		main_ui_ref.set_card_pressed(card_instance, planned_cards.has(card_instance))
-	rebuild_turn_plan()
+	if not _on_aim_cards_changed():
+		rebuild_turn_plan()
 
 
 static func _card_cost(card_instance) -> int:
@@ -1976,13 +2222,13 @@ static func _card_cost(card_instance) -> int:
 func _planned_cost() -> int:
 	"""Chips the cards on the playmat will spend when the shot (or putt) is taken."""
 	var total := 0
-	for card in (putt_cards if putting_active else planned_cards):
+	for card in ({} if putting_active else planned_cards):
 		total += _card_cost(card)
 	return total
 
 
 func _change_chip_stack(amount: int, reason: String = "") -> void:
-	"""Coins add, fire takes (never below 0); shows a callout when reason is set."""
+	"""Chips picked up add, fire takes (never below 0); shows a callout when reason is set."""
 	chip_stack = maxi(0, chip_stack + amount)
 	if reason != "" and shot_ui and shot_ui.has_method("show_callout"):
 		shot_ui.show_callout("%s  %+d Chip%s" % [reason, amount, "" if absi(amount) == 1 else "s"])
@@ -2034,6 +2280,8 @@ func _clear_planned_cards() -> void:
 
 func _begin_shot() -> void:
 	"""Every shot: a fresh hand, then aim at the flag with a suggested club."""
+	shot_preview_shown = false
+	_was_locked_in = false
 	_spread_fire_for_turn()
 	_deal_shot_hand()
 	if turn_controller:
@@ -2077,12 +2325,14 @@ func _play_hole_flyover() -> void:
 	if hole_viewer.has_signal("flyover_finished") and not hole_viewer.flyover_finished.is_connected(_on_flyover_finished):
 		hole_viewer.flyover_finished.connect(_on_flyover_finished)
 	hole_viewer.play_flyover(tee, green, hole_viewer.shot_pose(tee, to_global(get_tile_world_position(aim))), FLYOVER_DELAY)
+	_update_aim_arrows()
 
 
 func _on_flyover_finished() -> void:
 	# Not once the hole is under way (a shot taken during the flyover)
 	var shop := _bag_pending and (run_state == null or run_state.strokes_this_hole == 0)
 	_bag_pending = false
+	_update_aim_arrows.call_deferred()
 	if not shop:
 		_set_flyover_mode(false)
 		return
@@ -2963,15 +3213,9 @@ func set_aim_cell(cell: Vector2i) -> bool:
 			return false
 		if cell == world_to_grid(golf_ball.position):
 			return false
-		if hex_distance(world_to_grid(golf_ball.position), cell) > aim_reach():
-			_out_of_reach_feedback()
-			return false  # past what the club can reach
-		turn_aim_target = cell
-		locked_cell = cell
-		target_locked = true
-		if not club_chosen_by_player:
-			_suggest_club_for_target()
-		rebuild_turn_plan()
+		# Aiming is a direction: an arrow round the ball, or any hex (the
+		# nearest of the six directions toward it). The club sets the distance.
+		_aim_direction(_dir_toward(cell))
 		return true
 	
 	# Legacy path (no turn controller): unified validation
@@ -3546,6 +3790,9 @@ func _find_and_setup_ui() -> void:
 		# If it's our MainUI script
 		main_ui_ref = main_ui
 		shot_ui = main_ui.shot_ui
+		if main_ui.has_signal("lag_putt_pressed"):
+			main_ui.lag_putt_pressed.connect(lag_putt)
+			main_ui.caddie_peek_pressed.connect(caddie_peek)
 		lie_info_panel = main_ui.lie_info_panel
 		lie_name_label = main_ui.lie_name_label
 		lie_description_label = main_ui.lie_desc_label
@@ -3591,6 +3838,7 @@ func _find_and_setup_ui() -> void:
 			# Pressing SHOOT turns the camera back behind the ball for the swing
 			if not shoot_button.button_down.is_connected(_on_shoot_button_down):
 				shoot_button.button_down.connect(_on_shoot_button_down)
+				shoot_button.button_up.connect(_on_shoot_button_up)
 			_update_shoot_button_state()
 
 		# FEAT-003: wire the 2D hand strip selection signals. Selecting a club
@@ -4265,18 +4513,26 @@ var _green_overlay_dirty: bool = true   # Rebuilt once per hole, the first time 
 var green_board: GreenBoard = null       # The small-hex putting surface for this hole
 
 # Putting: on the green a turn is a putt on the green board
+# (design/claude/design_handoff_putting): read a line, flip for pace, roll.
 const PUTT_POINTS_PER_HEX := 5           # a holed putt pays per small hex it touched
-const BANK_SHOT_POINTS := 30             # holed after bouncing off a forgotten putter
+const PUTT_FLIP_HOLD := 0.8              # seconds the flipped cards show before the ball rolls
+const PUTT_HEX_TIME := 0.17              # the ball rolls one small hex per this many seconds
+const PUTT_CHIPS_START := 3              # putting chips (their own pool, lasts the run)
+const LAG_PUTT_CHIPS := 1                # Lag Putt: exactly PUTT_BASE, no flip
+const CADDIE_PEEK_CHIPS := 1             # Caddie Peek: see the top putting card
+const SLOW_BREAK := true                 # a strength-1 slope only bends a slow ball
+const GREEN_TRIES := 8                   # reseeds to find a green with a fair one-putt
+const ONE_PUTT_MIN := 0.15               # ... chance from where the ball first lies
+const ONE_PUTT_MAX := 0.7
 var putting_active: bool = false
-var putt_target: Vector2i = Vector2i.ZERO   # small hex the putt is struck to
-
-# Green cards: their own deck (lasts the run), a fresh hand each putt
-const PUTT_DECK_IDS := ["read_green", "read_green", "firm_putt", "firm_putt", "dead_weight", "dead_weight"]
-const PUTT_HAND_SIZE := 2
-var putt_deck: Array = []
-var putt_discard: Array = []
-var putt_hand: Array = []
-var putt_cards: Dictionary = {}  # green cards played on this putt -> true
+var putt_dir: int = 0                       # GreenBoard.DIRS direction the putt leaves the ball's hex
+var putt_modifiers: PuttModifierDeck = null  # Gloomhaven-style flip deck (lasts the run)
+var putt_chips: int = 0                     # spent on Lag Putt / Caddie Peek, earned by finishing greens
+var putt_strokes: int = 0                   # putts taken on this green
+var green_par: int = 0                      # set from the ball's first lie on the green
+var putt_peek: String = ""                  # the top card, when Caddie Peek has shown it
+var putt_last: Dictionary = {}              # the last putt's flip (PuttModifierDeck.flip), for the panel
+var putt_result: String = ""                # "Birdie" ... once the green is done
 var trick_detector: TrickShotDetector = null  # Awards points for trick shots
 var hole_points_log: Array = []  # [{label, points}] earned this hole, for the hole-complete breakdown
 
@@ -4490,7 +4746,7 @@ func _setup_range() -> void:
 func _range_cards(green: bool) -> Array:
 	"""One of every card: the shot cards, or the green cards when putting."""
 	var ids: Array = []
-	var sources: Array = RunShop.POOL + PUTT_DECK_IDS + (Array(starter_deck.card_ids) if starter_deck else [])
+	var sources: Array = RunShop.POOL + (Array(starter_deck.card_ids) if starter_deck else [])
 	for id in sources:
 		if not ids.has(id):
 			ids.append(id)
@@ -4725,11 +4981,9 @@ func shop_club_uses(club: int) -> int:
 	return int(CLUB_USES.get(club, 0))
 
 
-func shop_club_yards(club: int) -> String:
-	if club == ClubType.PUTTER:
-		return ""
-	var st := get_club_stats(club)
-	return "%d–%d yd" % [int(st.get("band_min", 0) * YARDS_PER_CELL), int(st.get("band_max", 0) * YARDS_PER_CELL)]
+func shop_club_stats(item: ClubItem) -> Dictionary:
+	"""A club's stats as this item would play: its type's plus its tier's."""
+	return item.apply(CLUB_STATS[item.club])
 
 
 func shop_bag_has(club: int) -> bool:
@@ -4781,10 +5035,10 @@ func shop_balance() -> int:
 
 
 func shop_deck_cards() -> Array:
-	"""Every card in the run's decks (shot + green); Strain first."""
-	_ensure_putt_deck()
+	"""Every card in the run's shot deck; Strain first. (Green cards change
+	the putting deck when they're bought: see shop_putt_deck_text.)"""
 	var cards: Array = []
-	for pile in [shot_deck, shot_discard, shot_hand, putt_deck, putt_discard, putt_hand]:
+	for pile in [shot_deck, shot_discard, shot_hand]:
 		cards.append_array(pile)
 	cards.sort_custom(func(a, b):
 		var sa: bool = a.data.card_type == CardData.CardType.NEGATIVE
@@ -4808,13 +5062,41 @@ func shop_buy(index: int) -> void:
 	var data: CardData = run_shop.offers[index]
 	if not _shop_spend(RunShop.price_of(data), "Bought %s" % data.card_name):
 		return
-	var card := CardInstance.create_from_data(data)
 	if RunShop.is_green_card(data):
-		putt_discard.append(card)
+		_apply_green_card(data)
 	else:
-		shot_discard.append(card)
+		shot_discard.append(CardInstance.create_from_data(data))
 	run_shop.offers.remove_at(index)
 	shop_panel.refresh()
+
+
+func _apply_green_card(data: CardData) -> void:
+	"""A green card bought in the shop changes the putting deck."""
+	if putt_modifiers == null:
+		putt_modifiers = PuttModifierDeck.new()
+		putt_chips = PUTT_CHIPS_START
+	for e in data.effects:
+		if e is EffectPuttCard:
+			if e.deck_add != "":
+				putt_modifiers.add(e.deck_add)
+			if e.deck_remove != "":
+				putt_modifiers.remove(e.deck_remove)
+
+
+func shop_putt_deck_text() -> String:
+	"""The putting deck, counted by card: "+0 ×6  ·  +1 ×4  ..."."""
+	var ids: Array = PuttModifierDeck.starter_ids() if putt_modifiers == null else putt_modifiers.draw_pile + putt_modifiers.discard
+	var counts := {}
+	var order: Array[String] = []
+	for id in ids:
+		if not counts.has(id):
+			order.append(id)
+		counts[id] = counts.get(id, 0) + 1
+	order.sort_custom(func(a, b): return PuttModifierDeck.card(a).value > PuttModifierDeck.card(b).value)
+	var parts: Array[String] = []
+	for id in order:
+		parts.append("%s ×%d" % [PuttModifierDeck.card(id).label, counts[id]])
+	return "  ·  ".join(parts)
 
 
 func shop_buy_eraser() -> void:
@@ -4839,7 +5121,7 @@ func shop_reroll() -> void:
 func shop_remove(card) -> void:
 	if card == null or not _shop_spend(RunShop.REMOVE_PRICE, "Removed %s" % card.get_display_name()):
 		return
-	for pile in [shot_deck, shot_discard, shot_hand, putt_deck, putt_discard, putt_hand]:
+	for pile in [shot_deck, shot_discard, shot_hand]:
 		pile.erase(card)
 	shop_panel.clear_selection()
 	shop_panel.refresh()
@@ -4920,10 +5202,20 @@ func _ensure_green_board() -> void:
 		add_child(green_overlay)
 	if not _green_overlay_dirty and green_board != null:
 		return
-	var rng := RandomNumberGenerator.new()
-	rng.seed = (hole_context.seed if hole_context else randi()) ^ 0x5EED
-	green_board = GreenBoard.new()
-	green_board.build(self, rng)
+	# Reseed until the ball's lie has a fair one-putt: not hopeless, not a gimme
+	var base_seed: int = (hole_context.seed if hole_context else randi()) ^ 0x5EED
+	var odds := PuttModifierDeck.chain_odds(PuttModifierDeck.starter_ids())
+	var ball: Vector2i = _ball_small() if golf_ball else Vector2i.ZERO
+	for i in range(GREEN_TRIES):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = base_seed + i * 7919
+		green_board = GreenBoard.new()
+		green_board.build(self, rng)
+		if golf_ball == null or not green_board.tiles.has(ball):
+			break
+		var p := green_board.one_putt_chance(ball, odds, {"slow_break": SLOW_BREAK})
+		if p >= ONE_PUTT_MIN and p <= ONE_PUTT_MAX:
+			break
 	green_overlay.show_board(green_board, self)
 	_green_overlay_dirty = false
 
@@ -4934,112 +5226,84 @@ func _ball_small() -> Vector2i:
 
 
 func _begin_putt() -> void:
-	"""A putting turn: aim straight at the cup (within reach); tap to re-aim."""
+	"""A putting turn: aimed out of the ball's hex in the direction nearest the
+	cup; tap to pick another of the six. The hand holds only the putter: the
+	choices are the line, Flip & Putt, Lag Putt and Caddie Peek."""
 	_ensure_green_board()
 	putting_active = true
 	club_chosen_by_player = false
 	current_club = ClubType.PUTTER
-	_deal_putt_hand()
 	if main_ui_ref and main_ui_ref.has_method("set_hand"):
 		var clubs := _legal_club_cards()
-		main_ui_ref.set_hand(clubs, putt_hand, _club_subtitles(clubs))
+		main_ui_ref.set_hand(clubs, [], _club_subtitles(clubs))
 		for card in clubs:
 			if card.data.target_club == "PUTTER" and main_ui_ref.has_method("set_selected_club"):
 				main_ui_ref.set_selected_club(card)
-	turn_aim_target = flag_position  # a turn is aimed (the real aim is putt_target)
+	turn_aim_target = flag_position  # a turn is aimed (the real aim is putt_dir)
 	target_locked = true
-	set_putt_target(green_board.cup)
+	if putt_modifiers == null:
+		putt_modifiers = PuttModifierDeck.new()
+		putt_chips = PUTT_CHIPS_START
+	if putt_strokes == 0 or putt_result != "":
+		putt_strokes = 0
+		green_par = GreenBoard.par_for(_ball_small(), green_board.cup)
+		putt_last = {}
+		putt_peek = ""
+		putt_result = ""
+	set_putt_dir(_putt_dir_toward(GreenBoard.to_world(green_board.cup)))
 
 
-func _ensure_putt_deck() -> void:
-	"""The green deck is built the first time it's needed (first putt or the
-	first Pro Shop visit)."""
-	if putt_deck.is_empty() and putt_discard.is_empty() and putt_hand.is_empty() and CardLibrary.instance:
-		for id in PUTT_DECK_IDS:
-			putt_deck.append(CardInstance.create_from_data(CardLibrary.instance.get_card(id)))
-		_shuffle_cards(putt_deck)
-
-
-func _deal_putt_hand() -> void:
-	"""Discard the last green hand and draw PUTT_HAND_SIZE fresh cards."""
-	putt_cards.clear()
-	if GameMode.driving_range:
-		putt_hand = _range_cards(true)
-		return
-	_ensure_putt_deck()
-	putt_discard.append_array(putt_hand)
-	putt_hand.clear()
-	for i in range(PUTT_HAND_SIZE):
-		if putt_deck.is_empty():
-			if putt_discard.is_empty():
-				break
-			putt_deck = putt_discard
-			putt_discard = []
-			_shuffle_cards(putt_deck)
-		putt_hand.append(putt_deck.pop_back())
-
-
-func _putt_opts() -> Dictionary:
-	"""The green cards played on this putt, as GreenBoard.roll() options."""
-	var opts := {"reach": GreenBoard.PUTT_REACH, "dead_weight": false, "read": false}
-	for card in putt_cards:
-		for e in card.data.effects:
-			if e is EffectPuttCard:
-				opts.reach += e.reach_bonus
-				opts.dead_weight = opts.dead_weight or e.dead_weight
-				opts.read = opts.read or e.read_green
-	return opts
-
-
-func _toggle_putt_card(card) -> void:
-	if putt_cards.has(card):
-		putt_cards.erase(card)
-	else:
-		putt_cards[card] = true
-	if main_ui_ref and main_ui_ref.has_method("set_card_pressed"):
-		main_ui_ref.set_card_pressed(card, putt_cards.has(card))
-	set_putt_target(putt_target)
-
-
-func set_putt_target(small: Vector2i) -> void:
-	"""Strike the putt toward small (clamped to reach) and preview it: the
-	struck line only. Reading the arrows beyond is the player's plan."""
+func set_putt_dir(dir: int) -> void:
+	"""Read the line out of the ball's hex in direction dir (0-5): the path at
+	PUTT_BASE (dashed pencil) and at the longest previewed pace (faint), and a
+	label on every hex the putt can stop on, with the paces that stop there
+	(red where they drop)."""
 	if not putting_active or green_board == null:
 		return
+	putt_dir = posmod(dir, 6)
 	var ball := _ball_small()
-	if small == ball:
-		return
-	var opts := _putt_opts()
-	putt_target = green_board.clamp_target(ball, small, opts.reach)
 	_hide_all_aoe_highlights()
 	highlight_mesh.visible = false
 	target_highlight_mesh.visible = false
-	modifier_trajectory_mesh.visible = false
 	curved_trajectory_mesh.visible = false
 	trajectory_shadow_mesh.visible = false
-	# The struck line; with Read the Green, the whole route the ball will take
-	var route: Array[Vector2i] = GreenBoard.line(ball, putt_target)
-	var color := Color(1, 1, 1, 0.85)
-	if opts.read:
-		route = [ball]
-		route.append_array(green_board.roll(ball, putt_target, opts).path)
-		color = Color(1.0, 0.75, 0.25, 0.95)
-	var points: Array = []
-	for a in route:
-		points.append(GreenBoard.to_world(a))
-	var end_y := green_overlay.surface_point(route[route.size() - 1], self).y if green_board.tiles.has(route[route.size() - 1]) else golf_ball.position.y
-	_draw_path_ribbon(trajectory_mesh, points, golf_ball.position.y, end_y, color, 0.0)
-	trajectory_mesh.visible = true
-	green_overlay.show_target(putt_target, self)
-	green_overlay.show_gauge(putt_target, self, GreenBoard.distance(ball, putt_target), opts.reach,
-		GreenBoard.distance(ball, green_board.cup))
-	green_overlay.show_reach(ball, opts.reach, self)
+	var read := green_board.preview(ball, putt_dir, {"slow_break": SLOW_BREAK})
+	_draw_putt_path(trajectory_mesh, read.base, Color(0.29, 0.29, 0.28, 0.9))
+	_draw_putt_path(modifier_trajectory_mesh, read.long, Color(0.12, 0.23, 0.17, 0.4))
+	green_overlay.show_endpoints(read.marks, self)
+	green_overlay.show_aim(ball, putt_dir, self, _aim_arrow_mesh())
+	_refresh_putt_panel()
 	_update_shoot_button_state()
 
 
+func _draw_putt_path(mesh: MeshInstance3D, path: Array, color: Color) -> void:
+	if path.size() < 2:
+		mesh.visible = false
+		return
+	var points: Array = []
+	for a in path:
+		points.append(GreenBoard.to_world(a))
+	var end_y := green_overlay.surface_point(path[path.size() - 1], self).y
+	_draw_path_ribbon(mesh, points, golf_ball.position.y, end_y, color, 0.0)
+	mesh.visible = true
+
+
+func _putt_dir_toward(w: Vector2) -> int:
+	"""The direction out of the ball's hex that points most nearly at world (x, z)."""
+	var v := w - GreenBoard.to_world(_ball_small())
+	var best := putt_dir
+	var best_dot := -INF
+	for d in range(6):
+		var dot := GreenBoard.to_world(GreenBoard.DIRS[d]).normalized().dot(v.normalized())
+		if dot > best_dot:
+			best_dot = dot
+			best = d
+	return best
+
+
 func putt_aim_ray(from: Vector3, dir: Vector3) -> bool:
-	"""Tap on the green view: aim the putt at the small hex under the ray
-	(intersected with the green's surface height)."""
+	"""Tap on the green view: putt in the direction (of the six) nearest the
+	tapped point on the green's surface."""
 	if not putting_active or green_board == null or absf(dir.y) < 0.001:
 		return false
 	var plane_y := green_overlay.surface_point(green_board.cup, self).y
@@ -5047,60 +5311,169 @@ func putt_aim_ray(from: Vector3, dir: Vector3) -> bool:
 	if t < 0.0:
 		return false
 	var hit := from + dir * t
-	set_putt_target(GreenBoard.from_world(Vector2(hit.x, hit.z)))
+	var w := Vector2(hit.x, hit.z)
+	if w.distance_to(GreenBoard.to_world(_ball_small())) < GreenBoard.SIZE * 0.5:
+		return true  # a tap on the ball itself keeps the aim
+	set_putt_dir(_putt_dir_toward(w))
 	return true
 
 
-func _execute_putt() -> void:
-	"""Roll the putt on the green board: struck line, then arrow pushes. Holed
-	putts pay per hex touched; off the green it's back to the shot view."""
-	var result := green_board.roll(_ball_small(), putt_target, _putt_opts())
-	chip_stack -= _planned_cost()  # the green cards are paid for as the putt is struck
+func can_putt_action(chips: int) -> bool:
+	"""A putting action that costs chips can be taken now."""
+	return putting_active and not hole_complete_triggered and putt_chips >= chips \
+		and not (shot_manager and shot_manager.is_animating)
+
+
+func caddie_peek() -> void:
+	"""Pay CADDIE_PEEK_CHIPS to see the putting deck's top card."""
+	if putt_peek != "" or not can_putt_action(CADDIE_PEEK_CHIPS):
+		return
+	putt_peek = putt_modifiers.peek()
+	putt_chips -= CADDIE_PEEK_CHIPS
+	_refresh_putt_panel()
+
+
+func lag_putt() -> void:
+	"""Pay LAG_PUTT_CHIPS for a putt of exactly PUTT_BASE pace, no flip."""
+	if not can_putt_action(LAG_PUTT_CHIPS):
+		return
+	putt_chips -= LAG_PUTT_CHIPS
+	_execute_putt(true)
+
+
+func _execute_putt(lag: bool = false) -> void:
+	"""Flip the putting deck (or lag), roll the putt with simulate_putt and
+	animate it hex by hex. Holed: points per hex touched and chips for the
+	green. Missed the MAX_PUTTS-th: pick up."""
+	if not putting_active or (shot_manager and shot_manager.is_animating):
+		return
+	var ball := _ball_small()
+	var flipped := {"cards": [] as Array[String], "mod": 0, "total": GreenBoard.PUTT_BASE, "special": "", "steady": false}
+	if not lag:
+		flipped = putt_modifiers.flip()
+	var result := green_board.simulate_putt(ball, putt_dir, int(flipped.total), flipped.special,
+		{"steady": flipped.steady, "slow_break": SLOW_BREAK})
+	result.flip = flipped
+	putt_last = flipped
+	putt_peek = ""
+	putt_strokes += 1
 	if GameMode.driving_range:
-		chip_stack = RANGE_CHIPS
+		putt_chips = PUTT_CHIPS_START
 	putting_active = false
-	putt_cards.clear()
 	green_overlay.hide_target()
 	trajectory_mesh.visible = false
+	modifier_trajectory_mesh.visible = false
 	previous_valid_tile = world_to_grid(golf_ball.position)
 	if run_state:
 		run_state.record_stroke(0)
 	putt_resolved.emit(result)
+	_refresh_putt_panel()
 	shot_serial += 1
 	var my_serial := shot_serial
 	if shot_manager:
 		shot_manager.start_animation()
-	var route: Array[Vector3] = [golf_ball.position]
+	if not lag:
+		green_overlay.show_flip(_flip_text(flipped), _flip_color(flipped), golf_ball.position)
+		await get_tree().create_timer(PUTT_FLIP_HOLD).timeout
+		if my_serial != shot_serial:
+			return
+	var route: Array[Vector3] = []
 	for a in result.path:
-		if green_board.tiles.has(a):
-			route.append(green_overlay.surface_point(a, self) + Vector3(0, BALL_RADIUS_OFFSET, 0))
-		else:
-			# Off the green: the ball stops on the fringe course hex it ran onto
-			var w := GreenBoard.to_world(a)
-			route.append(get_tile_surface_position(world_to_grid(Vector3(w.x, 0.0, w.y))))
-	await _animate_ball_smooth_roll(route, 0.11)
+		route.append(green_overlay.surface_point(a, self) + Vector3(0, BALL_RADIUS_OFFSET, 0))
+	route[0] = golf_ball.position
+	await _animate_ball_smooth_roll(route, PUTT_HEX_TIME)
+	green_overlay.hide_flip()
 	if shot_manager:
 		shot_manager.end_animation()
 	if my_serial != shot_serial:
 		return
-	# Coins rolled over pay whether or not the putt drops, and leave the green
+	# Chips rolled over pay whether or not the putt drops, and leave the green
 	for c in result.coins:
 		green_board.features.erase(c)
 		green_overlay.remove_coin(c)
 		if run_state:
 			run_state.add_coins(1)
-		_award_points(TrickShotDetector.COIN_POINTS, "Coin")
 	if result.coins.size() > 0:
-		_change_chip_stack(result.coins.size() * CHIPS_PER_COIN, "Coin" if result.coins.size() == 1 else "Coins")
+		_change_chip_stack(result.coins.size() * CHIPS_PER_COIN, "Chip" if result.coins.size() == 1 else "Chips")
 	if result.holed:
 		var paid := _award_points(result.touched * PUTT_POINTS_PER_HEX, "Putt: %d hexes" % result.touched)
-		if result.banked:
-			paid += _award_points(BANK_SHOT_POINTS, "Bank shot")
 		if shot_ui:
-			shot_ui.show_bonus("Bank shot! %d-hex putt" % result.touched if result.banked else "%d-hex putt" % result.touched, paid)
+			shot_ui.show_bonus("%d-hex putt" % result.touched, paid)
+		_finish_green(false)
+		_trigger_hole_complete()
+	elif putt_strokes >= GreenBoard.MAX_PUTTS and not GameMode.driving_range:
+		# Missed the last putt: pick up, scoring one more
+		if run_state:
+			run_state.record_stroke(0)
+		putt_strokes += 1
+		if shot_ui and shot_ui.has_method("show_callout"):
+			shot_ui.show_callout("Pick up: %d putts" % putt_strokes)
+		_finish_green(true)
 		_trigger_hole_complete()
 	else:
 		_start_new_shot()
+
+
+func _finish_green(picked_up: bool) -> void:
+	"""The green's result against its par: the stamp, +1 putting chip and one
+	more per putt under par, and a Yips card in the putting deck for 3 putts or
+	more."""
+	var diff := putt_strokes - green_par
+	putt_result = "Picked up" if picked_up else {-2: "Eagle", -1: "Birdie", 0: "Par", 1: "Bogey", 2: "Double bogey"}.get(diff, "Triple bogey")
+	var chips := 0 if picked_up else 1 + maxi(0, -diff)
+	putt_chips += chips
+	if chips > 0 and shot_ui and shot_ui.has_method("show_callout"):
+		shot_ui.show_callout("Green: %s  +%d putting chip%s" % [putt_result, chips, "" if chips == 1 else "s"])
+	if putt_strokes >= 3 and not GameMode.driving_range:
+		putt_modifiers.add("yips")
+	_refresh_putt_panel()
+
+
+func _refresh_putt_panel() -> void:
+	"""The tray's putting card: green, par, putt count, chips, deck, the last
+	flip and the actions."""
+	if main_ui_ref == null or not main_ui_ref.has_method("set_putting"):
+		return
+	var on := putting_active or putt_result != "" or not putt_last.is_empty()
+	if not on or putt_modifiers == null or green_board == null:
+		main_ui_ref.set_putting({})
+		return
+	main_ui_ref.set_putting({
+		"green": green_board.style.capitalize(), "par": green_par,
+		"putt": mini(putt_strokes + (1 if putting_active else 0), GreenBoard.MAX_PUTTS), "max": GreenBoard.MAX_PUTTS,
+		"chips": putt_chips, "draw": putt_modifiers.draw_pile.size(), "discard": putt_modifiers.discard.size(),
+		"math": PuttModifierDeck.describe(putt_last) if not putt_last.is_empty() else "",
+		"flips": putt_last.get("cards", []),
+		"peek": PuttModifierDeck.card(putt_peek).label if putt_peek != "" else "",
+		"result": putt_result,
+		"can_lag": putting_active and can_putt_action(LAG_PUTT_CHIPS),
+		"can_peek": putting_active and putt_peek == "" and can_putt_action(CADDIE_PEEK_CHIPS),
+		"lag_chips": LAG_PUTT_CHIPS, "peek_chips": CADDIE_PEEK_CHIPS,
+	})
+
+
+func _flip_text(flipped: Dictionary) -> String:
+	"""The flipped cards and the pace: "+1 ↻  +0\n2 + 1 + 0 = 3"."""
+	var labels: Array[String] = []
+	for id in flipped.get("cards", []):
+		labels.append(PuttModifierDeck.card(id).label)
+	var text := "  ".join(labels) + "\n" + PuttModifierDeck.describe(flipped)
+	match flipped.get("special", ""):
+		"lip": text += "\nLIP OUT"
+		"star": text += "\nSWEET SPOT"
+	if flipped.get("steady", false):
+		text += "\nSTEADY"
+	return text
+
+
+static func _flip_color(flipped: Dictionary) -> Color:
+	if flipped.get("special", "") == "star":
+		return Color(1.0, 0.84, 0.3)
+	if flipped.get("special", "") == "lip" or int(flipped.get("mod", 0)) < 0:
+		return Color(1.0, 0.45, 0.4)
+	if int(flipped.get("mod", 0)) > 0:
+		return Color(0.55, 1.0, 0.55)
+	return Color(1.0, 0.97, 0.9)
 
 
 func _green_frame() -> Dictionary:
@@ -5180,6 +5553,11 @@ func _on_run_hole_started() -> void:
 	club_uses.clear()
 	_place_course_features()
 	_green_overlay_dirty = true
+	putt_strokes = 0
+	putt_last = {}
+	putt_peek = ""
+	putt_result = ""
+	_refresh_putt_panel()
 	if green_overlay:
 		green_overlay.visible = false
 	hole_points_log.clear()
@@ -5218,9 +5596,7 @@ func _collect_coins_near(cell: Vector2i) -> void:
 		return
 	if run_state:
 		run_state.add_coins(count)
-	var points := count * TrickShotDetector.COIN_POINTS
-	_award_points(points, "Coin x%d" % count if count > 1 else "Coin")
-	_change_chip_stack(count * CHIPS_PER_COIN, "Coin" if count == 1 else "Coins")
+	_change_chip_stack(count * CHIPS_PER_COIN, "Chip" if count == 1 else "Chips")
 
 
 func _show_blowout() -> void:
@@ -5284,9 +5660,8 @@ func _show_run_complete() -> void:
 	owned_clubs.clear()
 	hole_bag.clear()
 	club_uses.clear()
-	putt_deck.clear()
-	putt_discard.clear()
-	putt_hand.clear()
+	putt_modifiers = null
+	putt_chips = 0
 	blowout_shown = false
 	if shop_panel:
 		shop_panel.visible = false  # the new run's first hole opens its own
@@ -8930,7 +9305,7 @@ func _spawn_coins(fairway_cells: Array) -> void:
 # Collect coins within magnet radius of a landing cell
 # A hex column of light over each coin, so it can be seen and flown through
 const COIN_BEAM_HEIGHT := 16.0
-const COIN_BEAM_COLOR := Color(1.0, 0.82, 0.3)
+const COIN_BEAM_COLOR := Color(1.0, 0.42, 0.36)  # chip red, lightened to glow
 const COIN_BEAM_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
@@ -8956,7 +9331,7 @@ func _add_coin_beam(holder: Node3D) -> void:
 		_coin_beam_material.shader = shader
 		_coin_beam_material.set_shader_parameter("beam_color", Color(COIN_BEAM_COLOR, 0.45))
 	var prism := CylinderMesh.new()
-	prism.radial_segments = 6  # vertices at 0, 60... degrees: the flat-top hex tiles
+	prism.radial_segments = 6  # turned 30 degrees below to match the flat-top tiles
 	prism.rings = 1
 	prism.top_radius = TILE_SIZE * 0.82
 	prism.bottom_radius = TILE_SIZE * 0.82
@@ -8969,6 +9344,7 @@ func _add_coin_beam(holder: Node3D) -> void:
 	beam.material_override = _coin_beam_material
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	beam.position.y = COIN_BEAM_HEIGHT / 2.0 - 0.5  # from the tile surface up
+	beam.rotation.y = PI / 6.0  # a cylinder's corners start on z: turn them onto the tile's
 	holder.add_child(beam)
 
 

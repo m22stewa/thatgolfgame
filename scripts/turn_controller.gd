@@ -69,11 +69,13 @@ var ball_tile: Vector2i = Vector2i(-1, -1)
 # Hex the player aimed at. When set, the shot follows the true line to it and
 # the club band caps the carry; (-1,-1) falls back to the 6-direction aim_dir.
 var aim_target: Vector2i = Vector2i(-1, -1)
-# The SHOOT meter's grade for the shot about to be hit ({kind: pure / thin /
-# slice / hook}); empty = a plain strike. Cleared by the host each shot.
+# The SHOOT meter's release for the shot about to be hit ({kind: pure / short /
+# long / thin / hook, power: 0-1 across the club's band}); empty = a plain
+# strike at the aimed carry. Cleared by the host each shot.
 var swing: Dictionary = {}
-const SWING_THIN_SHORT := 2   # hexes a thin strike comes up short
-const SWING_SLICE_SIDE := 1   # hexes right
+const SWING_THIN_SHORT := 2   # hexes a thin strike comes up short of the club's band
+const SWING_THIN_SIDE := 1    # hexes right
+const SWING_HOOK_LONG := 1    # hexes an overswung hook flies past the club's band
 const SWING_HOOK_SIDE := 2    # hexes left
 # Prototype: with a tapped target, build the card-shaped flight (ShotPlan)
 # instead of the club-band projection.
@@ -227,10 +229,11 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 	var target := aim_target
 	if ctx.band_min > 0 and _hex_distance(ball_tile, target) < ctx.band_min:
 		target = _point_along(ball_tile, aim_target, ctx.band_min)
-	var swung := _apply_swing(target, float(ctx.get_metadata("shape_bulge", 0.0)), int(ctx.get_metadata("ring_mod", 0)) + ctx.spread_mod)
+	var top := ctx.band_max + lie_power(ctx.distance_mod)
+	var swung := _apply_swing(target, float(ctx.get_metadata("shape_bulge", 0.0)), int(ctx.get_metadata("ring_mod", 0)) + ctx.spread_mod, ctx.band_min, top)
 	target = swung.target
 	var plan := ShotPlan.build(hex_grid, ball_tile, target, {
-		"power": ctx.band_max + lie_power(ctx.distance_mod),
+		"power": top,
 		"bulge": swung.bulge,
 		"loft": ctx.get_metadata("loft", false),
 		"ignore_wind": ctx.get_metadata("ignore_wind", false) or played_club == int(hex_grid.ClubType.PUTTER),
@@ -263,20 +266,25 @@ func _build_path_footprint(ctx: ShotContext) -> void:
 	ctx.add_metadata("footprint_built", true)
 
 
-func _apply_swing(target: Vector2i, bulge: float, ring_mod: int) -> Dictionary:
-	"""The SHOOT meter's grade: pure tightens the ring, thin comes up short,
-	a slice misses right and a hook further left (with the flight bending
-	that way). No swing (a plain tap) changes nothing."""
-	var dist := _hex_distance(ball_tile, target)
+func _apply_swing(target: Vector2i, bulge: float, ring_mod: int, band_min: int, band_max: int) -> Dictionary:
+	"""The SHOOT meter sets the power. In the sweet spot (pure) the shot
+	carries to the aim with a tighter ring; elsewhere in the power zone
+	(short / long) the carry is the club's band at that power, along the aimed
+	line. Too little is thin (short of the club, missing right), too much an
+	overswung hook (past it, bending left). No swing (a plain tap) changes
+	nothing."""
 	match swing.get("kind", ""):
 		"pure":
 			ring_mod -= 1
+		"short", "long":
+			var carry := roundi(lerpf(band_min, band_max, float(swing.get("power", 1.0))))
+			target = _point_along(ball_tile, target, maxi(1, carry))
 		"thin":
-			target = _point_along(ball_tile, target, maxi(1, dist - SWING_THIN_SHORT))
-		"slice":
-			target = _side_step(target, SWING_SLICE_SIDE)
+			target = _point_along(ball_tile, target, maxi(1, band_min - SWING_THIN_SHORT))
+			target = _side_step(target, SWING_THIN_SIDE)
 			bulge -= 1.5
 		"hook":
+			target = _point_along(ball_tile, target, band_max + SWING_HOOK_LONG)
 			target = _side_step(target, -SWING_HOOK_SIDE)
 			bulge += 2.0
 	return {"target": target, "bulge": bulge, "ring_mod": ring_mod}

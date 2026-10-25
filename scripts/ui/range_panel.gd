@@ -20,7 +20,7 @@ const TOOLS := [
 	["OBSTACLES", ""],
 	["ice", "ICE"], ["fire", "FIRE"],
 	["tunnel", "WIND GUST"], ["trampoline", "TRAMPOLINE"],
-	["coin", "COIN"],
+	["coin", "CHIP"],
 	["PLACE", ""],
 	["ball", "MOVE BALL"], ["flag", "MOVE FLAG"],
 ]

@@ -131,6 +131,13 @@ func _ready() -> void:
 	
 	# Create wind UI elements
 	_setup_wind_display()
+
+	# Points the way to the green while it is off screen, over the 3D band
+	var green_indicator := GreenIndicator.new()
+	green_indicator.name = "GreenIndicator"
+	green_indicator.viewer = self
+	add_child(green_indicator)
+	move_child(green_indicator, viewport_container.get_index() + 1)
 	
 	# Find references after scene is ready
 	call_deferred("_find_references")
@@ -318,6 +325,12 @@ func _screen_to_viewport(screen_pos: Vector2) -> Vector2:
 	"""A point in this control (UI units) to a pixel in the 3D viewport."""
 	var shown := viewport_container.size * viewport_container.scale
 	return screen_pos * (Vector2(viewport.size) / shown)
+
+
+func world_to_screen(world_pos: Vector3) -> Vector2:
+	"""A world point to this control (UI units); mirrored if behind the camera."""
+	var shown := viewport_container.size * viewport_container.scale
+	return camera.unproject_position(world_pos) * (shown / Vector2(viewport.size))
 
 
 func _on_viewport_resized() -> void:

@@ -3,43 +3,41 @@ class_name GreenBoard
 
 ## GreenBoard - The putting surface at half the hex size of the course.
 ##
-## Putting is a reading puzzle: every green hex carries an arrow (one of 6
-## directions, strength 0-3). A putt rolls the ball straight to the hex you
-## pick (within PUTT_REACH), then the arrow on the hex it lands on pushes it
-## that many hexes, and again on the next hex, until it reaches a flat hex.
-## A struck ball is moving too fast to drop: it rolls over the cup, unless it
-## is a 1-hex tap-in. Only the green (an arrow push) feeds a longer putt in.
-## Rolling off the green ends the putt on the fringe. The more hexes a holed
-## putt touches, the more it scores.
+## Putting is a planned puzzle (design/claude/design_handoff_putting). A putt
+## leaves the ball's hex in one of the six directions with a pace: PUTT_BASE
+## plus the PuttModifierDeck flip (a lag putt is exactly PUTT_BASE). The ball
+## rolls hex by hex, spending 1 pace per hex, and each hex it enters acts on it
+## (simulate_putt). The same function draws the preview, so the read is never
+## hidden. Hole out in MAX_PUTTS or pick up.
 ##
-## Puzzle pieces (seeded with the board), after hex movement puzzles:
-##   lip     - a raised edge between two hexes along a ridge (Ricochet Robots'
-##             walls): the ball can't cross it and stops against it
-##   slick   - a fast patch (ice in Pokemon / TERASLIDE): a ball that runs onto
-##             it keeps sliding the way it was going, hex by hex, until it
-##             reaches grippy green, a lip, the cup (it drops) or the edge
-##
-## Features on the green (seeded with the board):
-##   coin    - collected when the ball rolls over it (the putt carries on)
+## Hexes on the green:
+##   slope   - a hand-placed-looking slope zone, 4-10 per green (most of the
+##             green is flat). Strength 1-3. Rolling down it adds strength - 1
+##             pace, up it takes that away; across it bends the ball 60
+##             degrees toward the fall line (a strength-1 slope only bends a
+##             slow ball, pace 2 or less).
+##   slick   - a fast patch: +1 pace on every slick hex
 ##   spike   - spike marks: the ball stops dead on them
-##   putter  - a forgotten putter lying across two hexes: the ball bounces off
-##             it and rolls back the way it came for the hexes it had left
-##             (a bank shot)
+##   coin    - collected when the ball rolls over it (the putt carries on)
+##   cup     - drops a ball arriving with 0 or 1 pace left; a firmer one lips
+##             out and keeps rolling. Never a slope.
+## Rolling off the green ends the putt on the last green hex (the fringe).
 ##
 ## Small hexes use axial coords (q, r), flat-top like the course grid:
 ##   x = SIZE * 1.5 * q,  z = SIZE * sqrt(3) * (r + q / 2)
 ## With SIZE = 0.5 every course hex centre is also a small hex centre, and each
 ## course hex covers about four small ones. Elevation is a seeded field (tilt,
-## mounds and bowls, sometimes a tier) so every green has character. Every
-## green also has 2-3 curving feeder valleys that run into the cup from
-## different sides, and ridges that split the flow: there are several routes
-## in, and a putt struck onto the head of a valley rides a long chain of
-## arrows down it (more hexes touched, more points).
+## mounds and bowls, sometimes a tier, feeder valleys into the cup, ridges);
+## the steepest few hexes of it become the green's slopes.
 
 const SIZE := 0.5                   # small hex radius (course hexes are 1.0)
 const STEP := 0.8660254             # distance between neighbouring small hexes (SIZE * sqrt(3))
-const PUTT_REACH := 6               # small hexes a putt can be struck
-const MAX_PUSHES := 60              # safety cap on the arrow chain
+const PUTT_BASE := 2                # pace before the flip; a lag putt is exactly this
+const MAX_PUTTS := 4                # miss the 4th and pick up (scores MAX_PUTTS + 1)
+const MAX_STEPS := 30               # safety cap on a putt's roll
+const SLOPES_MIN := 4               # slope hexes per green: about 1 in 10, within these
+const SLOPES_MAX := 10
+const PREVIEW_TOTALS := 6           # the preview labels where paces 0..6 stop
 const SURF_GREEN := 4
 const SURF_FLAG := 8
 
@@ -49,13 +47,8 @@ const DIRS: Array[Vector2i] = [
 	Vector2i(-1, 1), Vector2i(-1, 0), Vector2i(0, -1),
 ]
 
-# Share of green hexes at each arrow strength (0 = flat ... 3 = steep)
-const STRENGTH_SHARE := [0.15, 0.4, 0.3, 0.15]
-
-var tiles: Dictionary = {}   # Vector2i axial -> {height: float, dir: int, strength: int}
-var features: Dictionary = {}  # Vector2i axial -> {kind: "coin" | "spike" | "putter", dir: int}
-var walls: Dictionary = {}     # edge key (see edge_key) -> [a, b]: a lip between two neighbouring hexes
-var _ridge_lines: Array = []   # the ridges' spines, for laying lips along them
+var tiles: Dictionary = {}   # Vector2i axial -> {height: float, dir: int, strength: int, slick?: bool}
+var features: Dictionary = {}  # Vector2i axial -> {kind: "coin" | "spike"}
 var cup: Vector2i = Vector2i.ZERO
 var style: String = "rolling"  # rolling | two-tier | crowned | punchbowl
 var low := 0.0               # height range, for tinting
@@ -148,10 +141,9 @@ func build(hole, rng: RandomNumberGenerator) -> void:
 	tiles[cup] = {"height": 0.0, "dir": 0, "strength": 0}
 
 	_shape_surface(rng)
-	_set_arrows()
-	_place_walls()
 	_place_slick(rng)
 	_place_features(rng)
+	_set_slopes()
 
 
 func _shape_surface(rng: RandomNumberGenerator) -> void:
@@ -195,7 +187,6 @@ func _shape_surface(rng: RandomNumberGenerator) -> void:
 	bumps.append({"at": to_world(cup), "amp": -0.12, "sigma": 0.9})
 	var valleys := _feeder_valleys(rng)
 	var ridges := _ridges(rng, center, radius)
-	_ridge_lines = ridges
 
 	low = INF
 	high = -INF
@@ -295,11 +286,13 @@ static func _nearest_on(points: PackedVector2Array, p: Vector2) -> Dictionary:
 	return best
 
 
-func _set_arrows() -> void:
-	"""Arrow = downhill neighbour direction; strength by how steep this hex is
-	relative to the rest of the green (STRENGTH_SHARE), so every green has a
-	full range of reads. The cup is a flat sink."""
-	var drops: Array = []
+func _set_slopes() -> void:
+	"""Each hex's fall line (the downhill neighbour) from the height field, but
+	only the steepest few hexes keep it as a slope: about one hex in ten, 4-10
+	per green, never the cup, a slick hex or spike marks. The rest of the green
+	is flat. Strength by rank among the slopes: the steeper 60% are 2, the
+	rest 1, and a hex much steeper than the others is 3."""
+	var drops := {}
 	for a in tiles:
 		var best_dir := 0
 		var best_drop := -INF
@@ -314,65 +307,42 @@ func _set_arrows() -> void:
 				hn = 2.0 * h - float(tiles[a - DIRS[i]].height)
 			else:
 				hn = h
-			var drop := h - hn
-			if drop > best_drop:
-				best_drop = drop
+			if h - hn > best_drop:
+				best_drop = h - hn
 				best_dir = i
 		tiles[a].dir = best_dir
-		tiles[a]["_drop"] = maxf(best_drop, 0.0)
-		drops.append(maxf(best_drop, 0.0))
-	drops.sort()
-	var cuts: Array = []
-	var acc := 0.0
-	for i in range(3):
-		acc += STRENGTH_SHARE[i]
-		cuts.append(drops[mini(int(acc * drops.size()), drops.size() - 1)])
+		tiles[a].strength = 0
+		drops[a] = maxf(best_drop, 0.0)
+	var open: Array = []
 	for a in tiles:
-		var d: float = tiles[a]._drop
-		var s := 0
-		for c in cuts:
-			if d > c:
-				s += 1
+		if a != cup and not is_slick(a) and features.get(a, {}).get("kind", "") != "spike" and drops[a] > 0.0:
+			open.append(a)
+	# Steepest first; ties by hex so the seed gives the same green every time
+	open.sort_custom(func(x, y): return drops[x] > drops[y] if drops[x] != drops[y] else x < y)
+	var count := mini(clampi(tiles.size() / 10, SLOPES_MIN, SLOPES_MAX), open.size())
+	var picked: Array = open.slice(0, count)
+	if picked.is_empty():
+		return
+	var median: float = drops[picked[picked.size() / 2]]
+	for i in range(picked.size()):
+		var a: Vector2i = picked[i]
+		var s := 2 if i < ceili(picked.size() * 0.6) else 1
+		if i == 0 and drops[a] > median * 1.6:
+			s = 3
 		tiles[a].strength = s
-		tiles[a].erase("_drop")
-	tiles[cup].strength = 0
 
 
-static func edge_key(a: Vector2i, b: Vector2i) -> Vector4i:
-	"""Order-free key for the edge between two hexes."""
-	if a.x < b.x or (a.x == b.x and a.y < b.y):
-		return Vector4i(a.x, a.y, b.x, b.y)
-	return Vector4i(b.x, b.y, a.x, a.y)
-
-
-func _place_walls() -> void:
-	"""Lips along each ridge spine: every edge between two green hexes that the
-	spine crosses, with a gate left open at its middle so the lip is
-	something to route round or through, never a fence across the green.
-	Never on the cup's edges."""
-	walls.clear()
-	var keys := tiles.keys()
-	keys.sort()
-	for g in _ridge_lines:
-		var p0: Vector2 = g.points[0]
-		var p1: Vector2 = g.points[g.points.size() - 1]
-		for a in keys:
-			for i in range(3):  # each edge once: half the directions
-				var b: Vector2i = a + DIRS[i]
-				if not tiles.has(b) or a == cup or b == cup:
-					continue
-				var hit = Geometry2D.segment_intersects_segment(p0, p1, to_world(a), to_world(b))
-				if hit == null:
-					continue
-				var t := ((hit as Vector2) - p0).dot(p1 - p0) / maxf((p1 - p0).length_squared(), 0.0001)
-				if absf(t - 0.5) < 0.12:
-					continue  # the gate
-				walls[edge_key(a, b)] = [a, b]
+func slope_count() -> int:
+	var n := 0
+	for a in tiles:
+		if tiles[a].strength > 0:
+			n += 1
+	return n
 
 
 func _place_slick(rng: RandomNumberGenerator) -> void:
-	"""1-2 fast patches of 3-7 hexes, grown from a seed hex, clear of the cup.
-	Slick hexes are flat (no arrow): the ball's own pace carries it across."""
+	"""One fast patch of 3-6 hexes, grown from a seed hex, clear of the cup.
+	Slick hexes are never slopes (_set_slopes skips them)."""
 	var open: Array[Vector2i] = []
 	for a in tiles:
 		if distance(a, cup) >= 2:
@@ -380,33 +350,26 @@ func _place_slick(rng: RandomNumberGenerator) -> void:
 	open.sort()
 	if open.size() < 12:
 		return
-	for _patch in range(rng.randi_range(1, 2)):
-		var patch: Array[Vector2i] = [open[rng.randi_range(0, open.size() - 1)]]
-		var size := rng.randi_range(3, 7)
-		for _grow in range(size * 4):
-			if patch.size() >= size:
-				break
-			var from: Vector2i = patch[rng.randi_range(0, patch.size() - 1)]
-			var nxt: Vector2i = from + DIRS[rng.randi_range(0, 5)]
-			if tiles.has(nxt) and distance(nxt, cup) >= 2 and not patch.has(nxt):
-				patch.append(nxt)
-		for a in patch:
-			tiles[a].slick = true
-			tiles[a].strength = 0
+	var patch: Array[Vector2i] = [open[rng.randi_range(0, open.size() - 1)]]
+	var size := rng.randi_range(3, 6)
+	for _grow in range(size * 4):
+		if patch.size() >= size:
+			break
+		var from: Vector2i = patch[rng.randi_range(0, patch.size() - 1)]
+		var nxt: Vector2i = from + DIRS[rng.randi_range(0, 5)]
+		if tiles.has(nxt) and distance(nxt, cup) >= 2 and not patch.has(nxt):
+			patch.append(nxt)
+	for a in patch:
+		tiles[a].slick = true
 
 
 func is_slick(a: Vector2i) -> bool:
 	return tiles.has(a) and tiles[a].get("slick", false)
 
 
-func blocked(a: Vector2i, b: Vector2i) -> bool:
-	"""A lip between a and b."""
-	return walls.has(edge_key(a, b))
-
-
 func _place_features(rng: RandomNumberGenerator) -> void:
-	"""Seeded green clutter: usually a forgotten putter, 2-4 spike marks and
-	1-2 coins, kept off the cup and its neighbours."""
+	"""Seeded green clutter: 1-2 spike marks and 1-2 coins, kept off the cup,
+	its neighbours and the slick patch."""
 	features.clear()
 	var open: Array[Vector2i] = []
 	for a in tiles:
@@ -415,183 +378,130 @@ func _place_features(rng: RandomNumberGenerator) -> void:
 	open.sort()  # the seed must give the same green every time
 	if open.is_empty():
 		return
-	if rng.randf() < 0.7:
-		for _try in range(20):
-			var a: Vector2i = open[rng.randi_range(0, open.size() - 1)]
-			var d := rng.randi_range(0, 5)
-			var b: Vector2i = a + DIRS[d]
-			if tiles.has(b) and distance(b, cup) >= 2 and not features.has(a) and not features.has(b):
-				features[a] = {"kind": "putter", "dir": d}
-				features[b] = {"kind": "putter", "dir": d}
-				break
 	for kind in ["spike", "coin"]:
-		var count := rng.randi_range(2, 4) if kind == "spike" else rng.randi_range(1, 2)
+		var count := rng.randi_range(1, 2)
 		for _i in range(count):
 			for _try in range(20):
 				var a: Vector2i = open[rng.randi_range(0, open.size() - 1)]
 				if not features.has(a):
-					features[a] = {"kind": kind, "dir": 0}
+					features[a] = {"kind": kind}
 					break
 
 
 # --- Putting ---
 
-func clamp_target(ball: Vector2i, target: Vector2i, reach: int = PUTT_REACH) -> Vector2i:
-	"""Pull a tapped hex back along the line to within reach. Aiming at the cup
-	from further than a tap-in stops the ball just short of it."""
-	var d := distance(ball, target)
-	if d > reach:
-		target = line(ball, target)[reach]
-		d = reach
-	if target == cup and d > 1:
-		target = line(ball, target)[d - 1]
-	return target
+static func par_for(ball: Vector2i, cup_hex: Vector2i) -> int:
+	"""The green's par from where the ball first lies: 2 within 4 hexes of the
+	cup, otherwise 3."""
+	return 2 if distance(ball, cup_hex) <= 4 else 3
 
 
-func roll(ball: Vector2i, target: Vector2i, opts: Dictionary = {}) -> Dictionary:
-	"""Resolve a putt. opts: reach (int, default PUTT_REACH), dead_weight (the
-	green doesn't push it: the ball stays where it's struck).
-	Returns {path: Array[Vector2i] (hexes entered, in order), holed, off_green,
-	end, touched (unique hexes entered), coins (collected), banked, spiked}."""
-	var path: Array[Vector2i] = []
-	var result := {"path": path, "holed": false, "off_green": false, "end": ball, "touched": 0,
-		"coins": [], "banked": false, "spiked": false}
-	var reach := int(opts.get("reach", PUTT_REACH))
-	# The struck roll: straight to the target; arrows don't act mid-roll and
-	# the ball rolls over the cup (only a 1-hex tap-in drops). Off a putter it
-	# rolls back along its line for the hexes it had left.
-	var struck := line(ball, clamp_target(ball, target, reach))
-	var steps: Array[Vector2i] = struck.slice(1)
-	var tap_in := steps.size() == 1
-	var cur := ball
-	var i := 0
-	while i < steps.size():
-		var nxt: Vector2i = steps[i]
-		if blocked(cur, nxt):
-			break  # stops against the lip
-		if _is_putter(nxt):
-			if result.banked:
-				break  # a second bounce kills it
-			result.banked = true
-			steps = _rebound(struck, struck.find(cur), steps.size() - i)
-			i = 0
-			continue
-		if nxt == cup and not tap_in:
-			path.append(nxt)  # too quick to drop: over the cup
-			cur = nxt
-			i += 1
-			continue
-		if _enter(nxt, path, result):
-			return _finish(result)
-		cur = nxt
-		i += 1
-	if opts.get("dead_weight", false):
-		result.end = cur
+func simulate_putt(start: Vector2i, dir: int, total: int, special: String = "", opts: Dictionary = {}) -> Dictionary:
+	"""Roll a putt out of start in direction dir (0-5) with pace total. special:
+	"lip" (the cup won't take it: it hangs on the edge, a hex short), "star"
+	(drops at any pace, or from a hex beside the cup) or "". opts: steady (the
+	slopes don't act), slow_break (default true: a strength-1 slope only bends
+	a ball with 2 pace or less). Returns {path: Array[Vector2i] (ball first),
+	end, holed, reason (short | rolled | ran | lipout | holed | fringe | spike),
+	coins (rolled over), touched (unique hexes entered)}."""
+	var path: Array[Vector2i] = [start]
+	var result := {"path": path, "end": start, "holed": false, "reason": "rolled", "coins": [], "touched": 0}
+	if total <= 0:
+		result.reason = "short"
 		return _finish(result)
-	# Still carrying pace onto a slick patch: it slides on the way it was rolling
-	var last := path[path.size() - 2] if path.size() >= 2 else ball
-	var slide := _slide(cur, _dir_index(cur - last), path, result)
-	if slide.ended:
-		return _finish(result)
-	cur = slide.cur
-	# Then the green takes over: each landing hex pushes the ball on
-	var seen := {}
-	var stopped := false
-	for _push in range(MAX_PUSHES):
-		var t: Dictionary = tiles[cur]
-		if t.strength == 0 or stopped:
+	var steady: bool = opts.get("steady", false)
+	var slow_break: bool = opts.get("slow_break", true)
+	var pos := start
+	var heading := posmod(dir, 6)
+	var pace := total
+	for _step in range(MAX_STEPS):
+		if pace <= 0:
 			break
-		if seen.get(cur, 0) >= 2:
-			break  # caught in a loop: the ball settles
-		seen[cur] = seen.get(cur, 0) + 1
-		var dir: int = t.dir
-		for _s in range(t.strength):
-			var nxt: Vector2i = cur + DIRS[dir]
-			if blocked(cur, nxt):
-				stopped = true  # rests against the lip
-				break
-			if _is_putter(nxt):
-				# Bank off the putter: reverse for the rest of this push
-				result.banked = true
-				dir = (dir + 3) % 6
-				nxt = cur + DIRS[dir]
-				if _is_putter(nxt):
-					break
-			if _enter(nxt, path, result):
+		var nxt: Vector2i = pos + DIRS[heading]
+		if not tiles.has(nxt):
+			result.reason = "fringe"  # stops on the last green hex
+			break
+		pos = nxt
+		pace -= 1
+		path.append(pos)
+		if pos == cup:
+			if special == "lip":
+				path.pop_back()
+				result.end = path[path.size() - 1]
+				result.reason = "lipout"
 				return _finish(result)
-			cur = nxt
-			if is_slick(cur):
-				slide = _slide(cur, dir, path, result)
-				if slide.ended:
-					return _finish(result)
-				cur = slide.cur
-				break  # the slide used up this push
-	result.end = cur
+			if special == "star" or pace <= 1:
+				result.holed = true
+				result.end = cup
+				result.reason = "holed"
+				return _finish(result)
+			result.reason = "ran"  # too firm: over the cup and on
+			continue
+		var kind: String = features.get(pos, {}).get("kind", "")
+		if kind == "coin" and not result.coins.has(pos):
+			result.coins.append(pos)
+		if kind == "spike":
+			result.reason = "spike"
+			break
+		var t: Dictionary = tiles[pos]
+		if t.strength > 0 and not steady:
+			var off := posmod(int(t.dir) - heading, 6)
+			if off == 0:
+				pace += t.strength - 1  # downhill
+			elif off == 3:
+				pace -= t.strength - 1  # uphill
+			elif t.strength >= 2 or not slow_break or pace <= 2:
+				heading = posmod(heading + (1 if off < 3 else -1), 6)  # breaks toward the fall line
+		if is_slick(pos):
+			pace += 1
+	if special == "star" and distance(pos, cup) == 1:
+		path.append(cup)
+		pos = cup
+		result.holed = true
+		result.reason = "holed"
+	result.end = pos
 	return _finish(result)
 
 
-func _slide(cur: Vector2i, dir: int, path: Array[Vector2i], result: Dictionary) -> Dictionary:
-	"""On a slick hex the ball keeps going in dir until grippy green, a lip or
-	a putter stops it (or the cup / the edge ends the putt). Returns {cur, ended}."""
-	if dir < 0:
-		return {"cur": cur, "ended": false}
-	for _guard in range(MAX_PUSHES):
-		if not is_slick(cur):
-			break
-		var nxt: Vector2i = cur + DIRS[dir]
-		if blocked(cur, nxt) or _is_putter(nxt):
-			break
-		if _enter(nxt, path, result):
-			return {"cur": nxt, "ended": true}
-		cur = nxt
-	result.end = cur
-	return {"cur": cur, "ended": false}
+func preview(start: Vector2i, dir: int, opts: Dictionary = {}) -> Dictionary:
+	"""The read for a line: where each pace 0..PREVIEW_TOTALS stops (no
+	special card). Returns {marks: [{end, totals: Array[int], holed}], base
+	(path at PUTT_BASE), long (path at PREVIEW_TOTALS)}."""
+	var marks: Array = []
+	var by_end := {}
+	var base: Array[Vector2i] = []
+	var long: Array[Vector2i] = []
+	for t in range(PREVIEW_TOTALS + 1):
+		var r := simulate_putt(start, dir, t, "", opts)
+		if t == PUTT_BASE:
+			base = r.path
+		if t == PREVIEW_TOTALS:
+			long = r.path
+		if not by_end.has(r.end):
+			by_end[r.end] = {"end": r.end, "totals": [] as Array[int], "holed": r.holed}
+			marks.append(by_end[r.end])
+		by_end[r.end].totals.append(t)
+	return {"marks": marks, "base": base, "long": long}
 
 
-static func _dir_index(step: Vector2i) -> int:
-	return DIRS.find(step)
-
-
-func _rebound(struck: Array[Vector2i], at: int, remaining: int) -> Array[Vector2i]:
-	"""Bounced off a putter while at struck[at]: retrace the struck line back
-	toward (and past) the ball for the remaining hexes."""
-	var out: Array[Vector2i] = []
-	var pos: Vector2i = struck[at]
-	var back := struck[0] - struck[1] if struck.size() > 1 else Vector2i.ZERO
-	for j in range(remaining):
-		var idx := at - 1 - j
-		pos = struck[idx] if idx >= 0 else pos + back
-		out.append(pos)
-	return out
-
-
-func _is_putter(a: Vector2i) -> bool:
-	return features.has(a) and features[a].kind == "putter"
-
-
-func _enter(a: Vector2i, path: Array[Vector2i], result: Dictionary) -> bool:
-	"""Move the ball onto a; true when the putt ends here (cup, off the green,
-	spike marks)."""
-	path.append(a)
-	result.end = a
-	if a == cup:
-		result.holed = true
-		return true
-	if not tiles.has(a):
-		result.off_green = true
-		return true
-	var f: Dictionary = features.get(a, {})
-	if f.get("kind", "") == "coin" and not result.coins.has(a):
-		result.coins.append(a)
-	if f.get("kind", "") == "spike":
-		result.spiked = true
-		return true
-	return false
+func one_putt_chance(start: Vector2i, odds: Array, opts: Dictionary = {}) -> float:
+	"""Best chance of holing from start over the six lines. odds: the flip's
+	outcomes, [{mod, special, steady, p}] (PuttModifierDeck.chain_odds)."""
+	var best := 0.0
+	for d in range(6):
+		var p := 0.0
+		for o in odds:
+			var o_opts := opts.duplicate()
+			o_opts.steady = o.steady
+			if simulate_putt(start, d, PUTT_BASE + int(o.mod), o.special, o_opts).holed:
+				p += float(o.p)
+		best = maxf(best, p)
+	return best
 
 
 func _finish(result: Dictionary) -> Dictionary:
 	var unique := {}
-	for a in result.path:
+	for a in result.path.slice(1):
 		unique[a] = true
 	result.touched = unique.size()
 	return result

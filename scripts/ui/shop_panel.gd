@@ -4,14 +4,21 @@ class_name ShopPanel
 ## ShopPanel - The Pro Shop, full screen at the start of each hole (after the
 ## flyover).
 ##
-## Top: your bag for the hole - tap BAG_SIZE of your clubs (tiles in their
-## tier colour; the putter is always in), and better clubs for sale.
-## Left: the RunShop's offers as real card faces with Buy buttons, the Eraser
-## item, and a reroll. Right: your deck as card faces, the shot deck in rows of
-## DECK_COLUMNS and the green deck below it. Tap any card to read it big
-## (CardZoom) with what you can do to it here: Buy an offer; Remove or Upgrade
-## a deck card. It only displays and forwards clicks: the host (hex_grid) owns
-## the decks and the wallet and implements shop_* actions, then calls refresh().
+## Two tabs, Clubs (open first) and Cards, with Tee Off below both.
+##
+## Clubs, in three areas. Left, above: your clubs - tap one to put it in the
+## bag. Left, below: upgrades, better clubs for sale. Right: the bag for the
+## hole, up to BAG_SIZE clubs plus the putter, stacked so only each card's ink
+## column shows (the last one whole) - tap one to take it out.
+##
+## Cards. Left: the RunShop's offers as real card faces with Buy buttons, the
+## Eraser item, and a reroll. Right: your deck as card faces, the shot deck in
+## rows of DECK_COLUMNS and the green deck below it. Tap any card to read it
+## big (CardZoom) with what you can do to it here: Buy an offer; Remove or
+## Upgrade a deck card. On hole 1 the Cards tab is shut: no points to spend yet.
+##
+## It only displays and forwards clicks: the host (hex_grid) owns the decks
+## and the wallet and implements shop_* actions, then calls refresh().
 
 const INK := ScorecardStyle.INK
 const SOFT := ScorecardStyle.INK_SOFT
@@ -19,14 +26,19 @@ const RED := ScorecardStyle.RED
 const DECK_COLUMNS := 6
 const DECK_SCALE := 0.7   # deck cards a little smaller than the offers
 const OFFER_SCALE := 0.74
+const BAG_SLOTS := 4  # clubs in the bag besides the putter (hex_grid.BAG_SIZE)
+const BAG_STEP := 52.0 * ClubTile.SCALE  # stacked bag cards: just the ink column shows
 
 var shop: RunShop
 var host  # hex_grid: shop_balance(), shop_deck_cards(), shop_buy(i), shop_buy_eraser(), shop_reroll(), shop_remove(card), shop_upgrade(card), shop_continue()
 var main_ui  # builds card faces (build_shot_card)
 
 var _balance: Label
+var _clubs_caption: Label
+var _clubs_row: HFlowContainer
 var _bag_caption: Label
-var _bag_row: HBoxContainer
+var _bag_odds: Label
+var _bag_stack: Control
 var _club_offers: HBoxContainer
 var _hole := 1  # the hole this visit is for
 var _hole_title: Label
@@ -40,6 +52,10 @@ var _reroll_button: Button
 var _continue_button: Button
 var _note: Label
 var _zoom: CardZoom
+var _clubs_tab: Button
+var _cards_tab: Button
+var _clubs_page: Control
+var _cards_page: Control
 var _tapped: Control = null  # the card last tapped
 
 
@@ -79,33 +95,71 @@ func _init() -> void:
 	header.add_child(spacer)
 	_balance = _label("", 44, ScorecardStyle.PENCIL, ScorecardStyle.pencil_font())
 	header.add_child(_balance)
-	col.add_child(_rule(RED, 3))
 
-	# The bag for this hole, and clubs for sale
-	var bag := HBoxContainer.new()
-	bag.add_theme_constant_override("separation", 40)
-	col.add_child(bag)
-	var bag_col := VBoxContainer.new()
-	bag_col.add_theme_constant_override("separation", 8)
-	bag.add_child(bag_col)
-	_bag_caption = _caption("")
-	bag_col.add_child(_bag_caption)
-	_bag_row = HBoxContainer.new()
-	_bag_row.add_theme_constant_override("separation", 10)
-	bag_col.add_child(_bag_row)
-	var shop_col := VBoxContainer.new()
-	shop_col.add_theme_constant_override("separation", 8)
-	bag.add_child(shop_col)
-	shop_col.add_child(_caption("CLUBS FOR SALE  ·  REPLACES YOURS"))
+	# The tabs, sitting on a red rule
+	var tabs := VBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 0)
+	col.add_child(tabs)
+	var tab_row := HBoxContainer.new()
+	tab_row.add_theme_constant_override("separation", 8)
+	tabs.add_child(tab_row)
+	_clubs_tab = _tab("CLUBS", func(): _show_tab(true))
+	tab_row.add_child(_clubs_tab)
+	_cards_tab = _tab("CARDS", func(): _show_tab(false))
+	tab_row.add_child(_cards_tab)
+	tabs.add_child(_rule(RED, 3))
+
+	# Clubs: your clubs over upgrades on the left, the bag on the right
+	var clubs := HBoxContainer.new()
+	clubs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	clubs.add_theme_constant_override("separation", 40)
+	col.add_child(clubs)
+	_clubs_page = clubs
+	var clubs_left := VBoxContainer.new()
+	clubs_left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	clubs_left.add_theme_constant_override("separation", 8)
+	clubs.add_child(clubs_left)
+	_clubs_caption = _caption("")
+	clubs_left.add_child(_clubs_caption)
+	_clubs_row = HFlowContainer.new()
+	_clubs_row.custom_minimum_size = Vector2(0, ClubTile.SIZE.y)
+	_clubs_row.add_theme_constant_override("h_separation", 12)
+	_clubs_row.add_theme_constant_override("v_separation", 12)
+	clubs_left.add_child(_clubs_row)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 6)
+	clubs_left.add_child(gap)
+	clubs_left.add_child(_caption("UPGRADES  ·  A BETTER CLUB REPLACES YOURS"))
 	_club_offers = HBoxContainer.new()
 	_club_offers.add_theme_constant_override("separation", 12)
-	shop_col.add_child(_club_offers)
-	col.add_child(_rule(ScorecardStyle.RULE, 1))
+	clubs_left.add_child(_club_offers)
 
+	var bag_divider := ColorRect.new()
+	bag_divider.color = ScorecardStyle.RULE
+	bag_divider.custom_minimum_size = Vector2(2, 0)
+	clubs.add_child(bag_divider)
+	var bag_col := VBoxContainer.new()
+	bag_col.add_theme_constant_override("separation", 8)
+	clubs.add_child(bag_col)
+	_bag_caption = _caption("")
+	bag_col.add_child(_bag_caption)
+	var bag_box := PanelContainer.new()
+	var bag_style := ScorecardStyle.paper_box(ScorecardStyle.RULE, 2, ScorecardStyle.PAPER_DARK, 6)
+	bag_style.set_content_margin_all(14)
+	bag_box.add_theme_stylebox_override("panel", bag_style)
+	bag_col.add_child(bag_box)
+	_bag_stack = Control.new()
+	_bag_stack.custom_minimum_size = Vector2(BAG_STEP * BAG_SLOTS + ClubTile.SIZE.x, ClubTile.SIZE.y)
+	bag_box.add_child(_bag_stack)
+	_bag_odds = _caption("")
+	bag_col.add_child(_bag_odds)
+
+	# Cards: offers on the left, your deck on the right
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 40)
 	col.add_child(body)
+	_cards_page = body
 
 	# Left: for sale
 	var left := VBoxContainer.new()
@@ -172,8 +226,20 @@ func open(p_shop: RunShop, p_host, p_main_ui, next_hole: int) -> void:
 	var info: Dictionary = host.shop_hole_info()
 	_hole_title.text = info.title
 	_hole_details.text = info.details
+	var cards := next_hole > 1
+	_cards_tab.disabled = not cards
+	_cards_tab.text = "CARDS" if cards else "CARDS  ·  AFTER HOLE 1"
 	visible = true
 	refresh()
+	_show_tab(true)
+
+
+func _show_tab(clubs: bool) -> void:
+	_clubs_page.visible = clubs
+	_cards_page.visible = not clubs
+	_note.visible = not clubs
+	_style_tab(_clubs_tab, clubs)
+	_style_tab(_cards_tab, not clubs)
 
 
 func refresh() -> void:
@@ -228,30 +294,51 @@ func refresh() -> void:
 		else:
 			shots += 1
 	_deck_caption.text = "YOUR DECK  ·  %d SHOT CARDS  ·  TAP A CARD TO READ, REMOVE OR UPGRADE IT" % shots
-	_green_caption.text = "GREEN DECK  ·  %d CARDS" % greens
+	_green_caption.text = "PUTTING DECK  ·  %s" % host.shop_putt_deck_text() if host.has_method("shop_putt_deck_text") else "GREEN DECK  ·  %d CARDS" % greens
 	_note.text = "Strain comes from overswinging. Tap it to remove it." if _has_strain() else ""
 
 
 func _refresh_bag(balance: int) -> void:
-	"""Owned clubs as tiles to pick for the hole, the putter locked in, and
-	the club offers with Buy buttons."""
-	for c in _bag_row.get_children():
+	"""Your clubs to tap into the bag, the bag stacked (putter at the back,
+	then longest first), and the upgrades with Buy buttons."""
+	for c in _clubs_row.get_children():
 		c.queue_free()
-	for item in host.shop_clubs():
-		var tile := _club_tile(item)
-		tile.button_pressed = host.shop_bag_has(item.club)
-		var club: int = item.club
-		tile.pressed.connect(func(): host.shop_toggle_bag(club))
-		_bag_row.add_child(tile)
-	var putter := _club_tile(host.shop_putter())
-	putter.locked = true
-	putter.disabled = true
-	putter.yards = "the green"
-	_bag_row.add_child(putter)
-	var needed: int = host.shop_bag_needed()
+	for c in _bag_stack.get_children():
+		c.queue_free()
 	var picked: int = host.hole_bag.size()
-	_bag_caption.text = "YOUR BAG FOR HOLE %d  ·  PICK UP TO %d  ·  FEWER CLUBS, MORE POINTS: 4 %s · 3 %s · 2 %s · 1 %s  ·  PUTTER ALWAYS IN" % [
-		_hole, host.shop_bag_size(), host.shop_bag_multiplier(4), host.shop_bag_multiplier(3), host.shop_bag_multiplier(2), host.shop_bag_multiplier(1)]
+	var full: bool = picked >= host.shop_bag_size()
+	var bagged: Array = [host.shop_putter()]
+	for item in host.shop_clubs():
+		var club: int = item.club
+		if host.shop_bag_has(club):
+			bagged.append(item)
+			continue
+		var tile := _club_tile(item)
+		tile.toggle_mode = false
+		if full:
+			tile.modulate.a = 0.5  # no room in the bag
+		tile.pressed.connect(func(): host.shop_toggle_bag(club))
+		_clubs_row.add_child(tile)
+	if _clubs_row.get_child_count() == 0:
+		_clubs_row.add_child(_caption("ALL YOUR CLUBS ARE IN THE BAG"))
+	for i in range(bagged.size()):
+		var item: ClubItem = bagged[i]
+		var tile := _club_tile(item)
+		tile.toggle_mode = false
+		tile.position = Vector2(BAG_STEP * i, 0)
+		if i == 0:  # the putter
+			tile.locked = true
+			tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		else:
+			var club: int = item.club
+			tile.pressed.connect(func(): host.shop_toggle_bag(club))
+		_bag_stack.add_child(tile)
+
+	var needed: int = host.shop_bag_needed()
+	_clubs_caption.text = ("YOUR CLUBS  ·  THE BAG IS FULL" if full else "YOUR CLUBS  ·  TAP ONE TO PUT IT IN THE BAG")
+	_bag_caption.text = "YOUR BAG FOR HOLE %d  ·  %d OF %d  ·  TAP TO TAKE OUT" % [_hole, picked, host.shop_bag_size()]
+	_bag_odds.text = "FEWER CLUBS, MORE POINTS:  4 %s · 3 %s · 2 %s · 1 %s\nPUTTER ALWAYS IN" % [
+		host.shop_bag_multiplier(4), host.shop_bag_multiplier(3), host.shop_bag_multiplier(2), host.shop_bag_multiplier(1)]
 	_continue_button.disabled = needed > 0
 	_continue_button.text = "PICK A CLUB" if needed > 0 else "TEE OFF  ·  %s POINTS  →" % host.shop_bag_multiplier(picked)
 
@@ -263,6 +350,7 @@ func _refresh_bag(balance: int) -> void:
 		slot.add_theme_constant_override("separation", 6)
 		var tile := _club_tile(item)
 		tile.toggle_mode = false
+		tile.mouse_filter = Control.MOUSE_FILTER_IGNORE  # bought with the button below
 		slot.add_child(tile)
 		var idx := i
 		var buy := _button("BUY  ·  %d" % item.price(), func(): host.shop_buy_club(idx))
@@ -276,7 +364,7 @@ func _refresh_bag(balance: int) -> void:
 func _club_tile(item: ClubItem) -> ClubTile:
 	var tile := ClubTile.new()
 	tile.item = item
-	tile.yards = host.shop_club_yards(item.club)
+	tile.stats = host.shop_club_stats(item)
 	tile.uses = host.shop_club_uses(item.club)
 	return tile
 
@@ -342,6 +430,34 @@ func _item_face(title: String, text: String) -> Control:
 	face.stats = [["STROKES", "-1"], ["USE", "NOW"]]
 	face.set_icon("eraser")
 	return face
+
+
+func _tab(text: String, on_press: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(300, 60)
+	b.add_theme_font_override("font", ScorecardStyle.header_font())
+	b.add_theme_font_size_override("font_size", 28)
+	b.pressed.connect(on_press)
+	return b
+
+
+func _style_tab(b: Button, active: bool) -> void:
+	"""The open tab is red, joined to the rule below it; the other is paper."""
+	var fill := RED if active else ScorecardStyle.PAPER_DARK
+	var text := ScorecardStyle.PAPER if active else INK
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var box := ScorecardStyle.paper_box(RED if active else ScorecardStyle.RULE, 0 if active else 2, fill, 0)
+		box.border_width_bottom = 0
+		box.corner_radius_top_left = 8
+		box.corner_radius_top_right = 8
+		if state == "hover" and not active:
+			box.bg_color = ScorecardStyle.PAPER
+		b.add_theme_stylebox_override(state, box)
+	for key in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(key, text)
+	b.add_theme_color_override("font_disabled_color", ScorecardStyle.INK_SOFT)
 
 
 func _label(text: String, size: int, color: Color, font: Font = null) -> Label:

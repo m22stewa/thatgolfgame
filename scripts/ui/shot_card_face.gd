@@ -17,15 +17,19 @@ static func kind_for(data: CardData) -> Dictionary:
 		return {"kind": "strain", "tag": "CURSE", "strength": 1.0}
 	for e in data.effects:
 		if e is EffectPuttCard:
-			if e.read_green:
+			if e.deck_add == "steady":
+				return {"kind": "lockedin", "tag": "GREEN", "strength": 1.0}
+			if e.deck_add != "":
+				return {"kind": "firm", "tag": "GREEN", "strength": 2.0 if e.deck_add == "plus_3" else 1.0}
+			if e.deck_remove != "":
 				return {"kind": "read", "tag": "GREEN", "strength": 1.0}
-			if e.reach_bonus > 0:
-				return {"kind": "firm", "tag": "GREEN", "strength": 1.0}
-			if e.dead_weight:
-				return {"kind": "dead", "tag": "GREEN", "strength": 1.0}
 		if e is EffectCourseUtility:
 			return {"kind": e.action, "tag": "UTILITY", "strength": 1.0}
 		if e is EffectShotShape:
+			if e.range_finder:
+				return {"kind": "rangefinder", "tag": "AIM", "strength": 1.0}
+			if e.locked_in:
+				return {"kind": "lockedin", "tag": "AIM", "strength": 1.0}
 			if e.bulge > 0.0:
 				return {"kind": "draw", "tag": "SHAPE", "strength": 2.0 if e.bulge > 2.0 else 1.0}
 			if e.bulge < 0.0:
@@ -100,6 +104,29 @@ func _draw() -> void:
 				var x := c.x - h * 0.4 + i * h * 0.45
 				draw_line(Vector2(x, c.y), Vector2(x + h * 0.25, c.y), INK, w, true)
 			draw_colored_polygon(PackedVector2Array([c + Vector2(h, 0), c + Vector2(h * 0.7, -7), c + Vector2(h * 0.7, 7)]), INK)
+		"rangefinder":
+			# A scope's sight: rings and a crosshair, the flight's arc behind
+			var pts := PackedVector2Array()
+			for i in range(17):
+				var t := i / 16.0
+				pts.append(Vector2(c.x - h + 2.0 * h * t, c.y + h * 0.7 - sin(t * PI) * h * 1.3))
+			for i in range(0, 16, 2):
+				draw_line(pts[i], pts[i + 1], ACCENT, 2.0, true)
+			draw_arc(c, h * 0.55, 0, TAU, 32, INK, 3.0, true)
+			draw_line(c + Vector2(-h * 0.75, 0), c + Vector2(h * 0.75, 0), INK, 2.0, true)
+			draw_line(c + Vector2(0, -h * 0.75), c + Vector2(0, h * 0.75), INK, 2.0, true)
+			draw_circle(c, 3.0, ACCENT)
+		"lockedin":
+			# Twelve arrows round the ball
+			draw_circle(c, h * 0.16, INK)
+			for i in range(12):
+				var a := i * TAU / 12.0
+				var dir := Vector2(cos(a), sin(a))
+				var col := ACCENT if i % 2 == 1 else INK
+				draw_line(c + dir * h * 0.35, c + dir * h * 0.8, col, 2.0, true)
+				var tip := c + dir * h * 0.95
+				var side := dir.rotated(PI / 2.0) * 4.0
+				draw_colored_polygon(PackedVector2Array([tip, c + dir * h * 0.75 + side, c + dir * h * 0.75 - side]), col)
 		"topspin", "backspin":
 			# The ball turning over its top: forward (right) for topspin,
 			# back (left) for backspin; doubled arrows for the hard ones

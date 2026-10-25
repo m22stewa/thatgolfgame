@@ -1,6 +1,6 @@
 [gd_scene load_steps=7 format=3 uid="uid://jwagoduhcb10"]
 
-[ext_resource type="PackedScene" uid="uid://b0y807oo2fqu3" path="res://assets/kenney-platforms/coin-gold.glb" id="1_rwqht"]
+[ext_resource type="Script" path="res://scripts/chip_model.gd" id="1_rwqht"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rwqht"]
 transparency = 1
@@ -91,14 +91,15 @@ _data = {
 [node name="Coin" type="Node3D"]
 transform = Transform3D(2.4999049, 0, -0.021815777, 0, 2.5, 0, 0.021815777, 0, 2.4999049, 0, 0, 0)
 
-[node name="coin-gold2" parent="." instance=ExtResource("1_rwqht")]
+[node name="Chip" type="Node3D" parent="."]
+script = ExtResource("1_rwqht")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
 transform = Transform3D(0.26941568, 0, 2.3283064e-10, 0, 0.26941568, 0, -2.3283064e-10, 0, 0.26941568, 0, 0, 0)
 mesh = SubResource("CylinderMesh_i64fm")
 
 [node name="AnimationPlayer" type="AnimationPlayer" parent="."]
-root_node = NodePath("../coin-gold2")
+root_node = NodePath("../Chip")
 libraries = {
 &"": SubResource("AnimationLibrary_d14el")
 }

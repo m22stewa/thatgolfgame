@@ -177,6 +177,7 @@ func _add_tunnel(at: Vector3, cell: Vector2i, dir: int, hole) -> void:
 	column.material_override = mat
 	column.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	column.position = at + Vector3(0, GUST_HEIGHT / 2.0, 0)
+	column.rotation.y = PI / 6.0  # corners onto the tile's, like _add_hex
 	add_child(column)
 	var holder := Node3D.new()
 	holder.position = at
