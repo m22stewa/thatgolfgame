@@ -77,6 +77,7 @@ var club_uses: Dictionary = {}  # ClubType name -> [uses left, uses per hole, wo
 var conditions: ConditionsStrip  # wind + lie, under THIS SHOT
 var putt_panel: PuttPanel  # in place of the hand while putting
 var _hand_and_mat: Control
+var _hand_head: Control  # HAND · N OF M and CHIPS: the shot hand's, hidden while putting
 
 func _ready() -> void:
 	set_prototype_ui.call_deferred(prototype_ui)
@@ -156,6 +157,7 @@ func _build_scorecard_tray() -> void:
 	hand_strip.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var rows := hand_modifier_row.get_parent() as BoxContainer
 	var hand_head := HBoxContainer.new()
+	_hand_head = hand_head
 	rows.add_child(hand_head)
 	rows.move_child(hand_head, 0)
 	_hand_label = _tray_caption("HAND")
@@ -184,6 +186,7 @@ func _build_scorecard_tray() -> void:
 	_hand_and_mat = hand_and_mat
 	putt_panel = PuttPanel.new()
 	putt_panel.visible = false
+	putt_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	putt_panel.lag_pressed.connect(func(): lag_putt_pressed.emit())
 	putt_panel.peek_pressed.connect(func(): caddie_peek_pressed.emit())
 	rows.add_child(putt_panel)
@@ -224,13 +227,16 @@ func _build_scorecard_tray() -> void:
 			b.custom_minimum_size = Vector2(120, 38)
 	# SHOOT is always square: as tall as the tray's content, or narrower if
 	# the rest of the tray needs the width (then centred). Sized from the
-	# anchored tray and the other sections, so it can't feed back into itself.
+	# anchored tray's height (the screen below TRAY_TOP, less the paper's top
+	# rule and the margins), never the tray's current size: that grows with
+	# its content, SHOOT included, and would feed back into itself.
 	shoot_button.reparent(right, false)
 	shoot_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var square := func():
 		var others := content.get_combined_minimum_size().x - shoot_button.custom_minimum_size.x
 		var room := get_viewport_rect().size.x - 36.0 - others  # the screen less the tray's side margins
-		var side := maxf(80.0, minf(tray.size.y - 22.0, room))  # top + bottom margins
+		var tall := get_viewport_rect().size.y * (1.0 - TRAY_TOP) - paper.get_minimum_size().y - 22.0  # top + bottom margins
+		var side := maxf(80.0, minf(tall, room))
 		if not shoot_button.custom_minimum_size.is_equal_approx(Vector2(side, side)):
 			shoot_button.custom_minimum_size = Vector2(side, side)
 	tray.resized.connect(square)
@@ -291,8 +297,9 @@ func set_putting(state: Dictionary) -> void:
 	if putt_panel == null:
 		return
 	putt_panel.visible = not state.is_empty()
-	if _hand_and_mat:
-		_hand_and_mat.visible = state.is_empty()
+	for c in [_hand_and_mat, _hand_head]:
+		if c:
+			c.visible = state.is_empty()
 	if not state.is_empty():
 		putt_panel.set_state(state)
 

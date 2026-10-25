@@ -61,8 +61,8 @@ func _init() -> void:
 func _button(parent: Control, on_press: Callable) -> Button:
 	var b := Button.new()
 	ScorecardStyle.flat_button(b)
-	b.add_theme_font_size_override("font_size", 18)
-	b.custom_minimum_size = Vector2(150, 44)
+	b.add_theme_font_size_override("font_size", 20)
+	b.custom_minimum_size = Vector2(190, 56)
 	b.focus_mode = Control.FOCUS_NONE
 	b.pressed.connect(on_press)
 	parent.add_child(b)
