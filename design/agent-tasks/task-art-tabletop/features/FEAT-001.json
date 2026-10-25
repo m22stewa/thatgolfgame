@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Environment + lighting overhaul in scenes/GOLF.tscn to a clean neutral-studio 'well-lit crafted board' look that is also cheaper to render. Edit the ACTIVE environment Environment_rvr3e (GOLF.tscn lines 38-55) and the DirectionalLight3D (line 246). This is independent of FEAT-002/003 but is ordered first because the lighting/ambient it establishes is what the new matte materials and trees are tuned against. Does NOT touch camera framing, tonemap choice, textureFloor geometry, tile positions, or generation.",
+  "status": "completed",
+  "steps": [
+    "In scenes/GOLF.tscn Environment_rvr3e (L38-55): set glow_enabled=false and remove glow_normalized/glow_intensity=6.49 (or, if any subtle bloom is wanted, glow_intensity<=0.2). Target: no heavy bloom.",
+    "Remove ALL distance-fog lines: fog_enabled, fog_mode, fog_light_color, fog_density, fog_depth_curve, fog_depth_begin, fog_depth_end.",
+    "Remove ALL volumetric-fog lines: volumetric_fog_density, volumetric_fog_length, volumetric_fog_sky_affect.",
+    "Turn SDFGI OFF: remove sdfgi_use_occlusion=true and ensure no sdfgi_enabled=true remains.",
+    "Replace the bright-blue sky: either retint ProceduralSkyMaterial_cdobm to a soft desaturated gradient (pale neutral top ~#aebfc9, warm-neutral horizon, muted ground) OR swap in a simple neutral gradient sky. Keep a tasteful subtle backdrop, not a vivid blue.",
+    "Add soft sky-lit/neutral ambient + gentle AO on Environment_rvr3e: ambient_light_source sky-based (3) or neutral ambient_light_color (~#bfc6cc) at ambient_light_energy~0.6; ssao_enabled=true with low ssao_radius/ssao_intensity for gentle crevice darkening.",
+    "Enable and tune the key light: DirectionalLight3D (L246) set visible=true, light_energy~0.9, warm-neutral light_color (drop the yellow-green 0.79,0.68,0.07), keep shadow_enabled=true, soften shadows (e.g. light_angular_distance for soft contact shadows).",
+    "Leave the Camera3D transform, tonemap_mode, EditorHelpers, and the textureFloor plane untouched. (Optional calming of the cloud shader speed/contrast belongs to FEAT-003, not here.)"
+  ],
+  "acceptance_criteria": [
+    "scenes/GOLF.tscn active WorldEnvironment has glow effectively off (intensity<=0.2 or disabled), NO fog_* lines, NO volumetric_fog_* lines, and SDFGI not enabled.",
+    "The green tile is no longer lit to glow by environment glow (final emission removal is FEAT-002, but glow is gone here).",
+    "DirectionalLight3D is visible=true and acts as a soft neutral key with shadows.",
+    "V1 headless-run grep yields no output; V2 editor-import grep yields no SCRIPT ERROR/parse error.",
+    "V3 test_turn_loop 40/40 exit 0 and V4 test_live_hand_wiring 16/16 exit 0 (environment edit must not break load/generation/turn loop)."
+  ],
+  "verification": [
+    "/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/m22stewa/Documents/Godot/Golf/.worktrees/artpass --quit-after 400 2>&1 | grep -iE \"error|not found|null|invalid|nonexistent\" | grep -viE \"shader|vulkan|rendering device|headless\"  (expect no output)",
+    "/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/m22stewa/Documents/Godot/Golf/.worktrees/artpass --editor --quit 2>&1 | grep -iE \"SCRIPT ERROR|parse error\"  (expect no output)",
+    "/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/m22stewa/Documents/Godot/Golf/.worktrees/artpass scenes/tests/test_turn_loop.tscn 2>&1 | tail -3  (expect 40 checks, 0 failures; exit 0)",
+    "/Applications/Godot.app/Contents/MacOS/Godot --headless --path /Users/m22stewa/Documents/Godot/Golf/.worktrees/artpass scenes/tests/test_live_hand_wiring.tscn 2>&1 | tail -3  (expect 16 checks, 0 failures; exit 0)"
+  ],
+  "blocked_reason": null,
+  "findings": "Done. Final neutral-studio values in GOLF.tscn (tune FEAT-002/003 materials against these):\n- Environment_rvr3e: background_mode=2 (sky), tonemap_mode=2 (UNCHANGED per scope). Removed ALL glow (glow_enabled=false; dropped glow_normalized/glow_intensity=6.49), ALL distance-fog lines, ALL volumetric_fog_* lines, and SDFGI (dropped sdfgi_use_occlusion; no sdfgi_enabled present).\n- Ambient: ambient_light_source=3 (Sky) + ambient_light_color=Color(0.7490196,0.7764706,0.79843137,1) (~#bfc6cc neutral) at ambient_light_energy=0.6. Note: with source=3 the sky provides ambient; the neutral color is set as a fallback/tint.\n- AO: ssao_enabled=true, ssao_radius=0.5, ssao_intensity=1.0 (gentle crevice darkening).\n- Sky (ProceduralSkyMaterial_cdobm, retinted in place, not swapped): sky_top=Color(0.68235296,0.7490196,0.7882353,1) (~#aebfc9 pale neutral), sky_horizon=Color(0.81960785,0.80392158,0.76470588,1) (warm-neutral), ground_bottom=Color(0.43137255,0.43921569,0.4627451,1), ground_horizon=Color(0.6,0.60784314,0.6117647,1) (muted). sky_cover noise + ground_curve=0.09513669 kept.\n- DirectionalLight3D (key light): visible=true, light_color=Color(1,0.96078431,0.90196078,1) (warm-neutral, replaced yellow-green 0.79,0.68,0.07), light_energy=0.9, light_angular_distance=2.5 (soft contact shadows; was 14.68), shadow_enabled=true. Transform UNCHANGED.\n- UNTOUCHED per scope: Camera3D transform, tonemap_mode, EditorHelpers, textureFloor plane, second Environment_fkwjp/World3D_eulkx (SubViewport feed).\nAll 4 gates pass: V1 no output, V2 no SCRIPT ERROR/parse error, V3 40/40 exit 0, V4 16/16 exit 0. Accepted-baseline font errors did not surface."
+}

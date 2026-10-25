@@ -150,10 +150,12 @@ This project combines procedurally generated 3D golf holes with card-based modif
 
 ## Documentation
 
-- `design.md` - Architecture and implementation status
-- `GAME_SYSTEMS.md` - Detailed reference for all game systems
-- `CARD_SYSTEM.md` - Card system documentation
-- `WIND_SYSTEM.md` - Wind system design document
+Design files live in [`design/`](design/README.md):
+
+- `design/docs/design.md` - Architecture and implementation status
+- `design/docs/GAME_SYSTEMS.md` - Detailed reference for all game systems
+- `design/docs/CARD_SYSTEM.md` - Card system documentation
+- `design/docs/WIND_SYSTEM.md` - Wind system design document
 
 ## License
 

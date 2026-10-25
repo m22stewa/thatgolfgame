@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=Barlow:wght@400;500;600&family=Nanum+Pen+Script&display=swap" rel="stylesheet"><style>body{margin:0;background:#e8e4da;font-family:'Barlow',system-ui,sans-serif;color:#1f3a2c}a{color:#1f3a2c}a:hover{color:#b8432f}</style></helmet>
+<div style="max-width:1320px;margin:0 auto;padding:40px 32px 64px;display:flex;flex-direction:column;gap:30px">
+
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="font:600 13px/1 'Barlow Condensed';letter-spacing:.2em;text-transform:uppercase;color:#b8432f">Putting · final design for review · v1</div>
+<div style="font:800 64px/0.92 'Barlow Condensed';text-transform:uppercase">Read the break, flip the pace</div>
+<div style="font:400 17px/1.45 'Barlow';max-width:760px;text-wrap:pretty;color:#2b2b28">P3 + P6 combined. You choose the line by reading the slopes, and the putting deck sets the pace: every putt rolls 2 hexes plus a flipped modifier. The line is fully readable, and the uncertainty comes from pace only. Play it below; the rules reference follows.</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:22px;align-items:start">
+<div style="background:#f6f1e3;border:1.5px solid #1f3a2c;padding:4px;box-shadow:0 10px 22px rgba(0,0,0,.12)">
+<div style="border:1px solid #1f3a2c;position:relative;background:oklch(0.6 0.08 145)">{{ board }}
+<div style="position:absolute;left:10px;top:10px;font:400 24px/0.9 'Nanum Pen Script';color:#4a4a48;max-width:240px">{{ boardHint }}</div>
+</div>
+</div>
+
+<div style="background:#f6f1e3;border:1.5px solid #1f3a2c;padding:4px;box-shadow:0 10px 22px rgba(0,0,0,.12)">
+<div style="border:1px solid #1f3a2c;display:flex;flex-direction:column">
+<div style="display:flex;justify-content:space-between;align-items:center;background:#1f3a2c;color:#f6f1e3;font:600 13px/1 'Barlow Condensed';letter-spacing:.16em;text-transform:uppercase;padding:9px 12px"><span>Green {{ gNum }} of 3 · {{ gName }}</span><span>Par {{ par }}</span></div>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #1f3a2c">
+<div style="padding:8px 10px;border-right:1px solid #1f3a2c44"><div style="font:600 10px/1 'Barlow Condensed';letter-spacing:.16em">PUTT</div><div style="font:400 40px/0.9 'Nanum Pen Script';color:#4a4a48">{{ strokeTxt }}</div></div>
+<div style="padding:8px 10px;border-right:1px solid #1f3a2c44"><div style="font:600 10px/1 'Barlow Condensed';letter-spacing:.16em">CHIPS</div><div style="font:400 40px/0.9 'Nanum Pen Script';color:#4a4a48">{{ chips }}</div></div>
+<div style="padding:8px 10px"><div style="font:600 10px/1 'Barlow Condensed';letter-spacing:.16em">DRAW / DISCARD</div><div style="font:400 40px/0.9 'Nanum Pen Script';color:#4a4a48">{{ pileN }} / {{ discardN }}</div></div>
+</div>
+<div style="padding:10px 12px;border-bottom:1px solid #1f3a2c44;font:400 14px/1.4 'Barlow';color:#2b2b28;text-wrap:pretty">{{ gNote }}</div>
+<div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #1f3a2c">
+<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><div style="font:700 18px/1 'Barlow Condensed';text-transform:uppercase">{{ lineText }}</div><sc-if value="{{ showOdds }}"><div style="font:400 28px/0.9 'Nanum Pen Script';color:#b8432f">drop {{ dropPct }}</div></sc-if></div>
+<sc-if value="{{ peeked }}"><div style="font:500 14px/1.3 'Barlow';color:#2c4a6b">Caddie peek: the top card is <b>{{ peekLabel }}</b></div></sc-if>
+<div onClick="{{ flip }}" style="height:54px;display:flex;align-items:center;justify-content:center;background:#b8432f;color:#f6f1e3;font:800 26px/1 'Barlow Condensed';letter-spacing:.14em;cursor:pointer;box-shadow:0 3px 0 #7d2a1c;opacity:{{ flipOp }}" style-active="transform:translateY(2px);box-shadow:0 1px 0 #7d2a1c">FLIP &amp; PUTT</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+<div onClick="{{ lag }}" style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid #1f3a2c;cursor:pointer;opacity:{{ lagOp }}" style-hover="background:#e9e1cb"><div style="font:700 16px/1 'Barlow Condensed';letter-spacing:.1em">LAG PUTT</div><div style="font:500 11px/1.2 'Barlow Condensed';letter-spacing:.06em">exactly 2 · 1 chip</div></div>
+<div onClick="{{ peek }}" style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid #2c4a6b;color:#2c4a6b;cursor:pointer;opacity:{{ peekOp }}" style-hover="background:#e9e1cb"><div style="font:700 16px/1 'Barlow Condensed';letter-spacing:.1em">CADDIE PEEK</div><div style="font:500 11px/1.2 'Barlow Condensed';letter-spacing:.06em">see top card · 1 chip</div></div>
+</div>
+</div>
+<div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #1f3a2c44;min-height:120px">
+<div style="font:600 10px/1 'Barlow Condensed';letter-spacing:.16em">LAST PUTT</div>
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+<sc-for list="{{ flips }}" as="f" hint-placeholder-count="0"><div style="width:52px;height:72px;border:1.5px solid {{ f.ink }};background:#fbf8ef;color:{{ f.ink }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;box-shadow:0 2px 4px rgba(0,0,0,.15)"><div style="font:600 8px/1 'Barlow Condensed';letter-spacing:.08em;text-transform:uppercase;text-align:center">{{ f.kind }}</div><div style="font:800 28px/1 'Barlow Condensed'">{{ f.label }}</div></div></sc-for>
+<div style="font:400 28px/0.9 'Nanum Pen Script';color:#4a4a48">{{ flipMath }}</div>
+</div>
+</div>
+<sc-if value="{{ holed }}" hint-placeholder-val="{{ false }}">
+<div style="margin:10px 12px 0;border:2.5px solid #b8432f;outline:1px solid #b8432f;outline-offset:3px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+<div><div style="font:800 30px/1 'Barlow Condensed';text-transform:uppercase;color:#b8432f">{{ resultWord }}</div><div style="font:500 14px/1.3 'Barlow'">{{ resultSub }}</div></div>
+<div onClick="{{ next }}" style="background:#1f3a2c;color:#f6f1e3;font:700 16px/1 'Barlow Condensed';letter-spacing:.12em;padding:12px 14px;cursor:pointer">NEXT GREEN →</div>
+</div>
+</sc-if>
+<div style="padding:10px 12px;display:flex;flex-direction:column;gap:4px">
+<sc-for list="{{ log }}" as="l" hint-placeholder-count="0"><div style="font:400 14px/1.35 'Barlow';color:#2b2b28">{{ l }}</div></sc-for>
+</div>
+<div style="display:flex;justify-content:flex-end;gap:16px;padding:0 12px 10px;font:600 12px/1 'Barlow Condensed';letter-spacing:.12em"><span onClick="{{ reset }}" style="cursor:pointer;text-decoration:underline">RESET GREEN</span><span onClick="{{ newDeck }}" style="cursor:pointer;text-decoration:underline">NEW DECK</span></div>
+</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1.5px solid #1f3a2c;background:#f6f1e3">
+<sc-for list="{{ turn }}" as="t" hint-placeholder-count="5">
+<div style="padding:14px 14px 16px;border-right:1px solid #1f3a2c44;display:flex;flex-direction:column;gap:6px">
+<div style="display:flex;align-items:baseline;gap:8px"><span style="font:400 34px/0.8 'Nanum Pen Script';color:#b8432f">{{ t.n }}</span><span style="font:800 22px/1 'Barlow Condensed';text-transform:uppercase">{{ t.k }}</span></div>
+<div style="font:400 14px/1.4 'Barlow';color:#2b2b28;text-wrap:pretty">{{ t.v }}</div>
+</div>
+</sc-for>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:22px;align-items:start">
+
+<div style="background:#f6f1e3;border:1.5px solid #2c4a6b;padding:4px"><div style="border:1px solid #2c4a6b">
+<div style="background:#2c4a6b;color:#f6f1e3;font:600 13px/1 'Barlow Condensed';letter-spacing:.16em;text-transform:uppercase;padding:9px 12px">Slopes · applied on entering a hex</div>
+<div style="display:grid;grid-template-columns:110px repeat(3,minmax(0,1fr));font:400 14px/1.3 'Barlow';color:#2b2b28">
+<div style="padding:8px 10px;border-bottom:1px solid #2c4a6b"></div>
+<div style="padding:8px 10px;border-bottom:1px solid #2c4a6b;font:700 14px/1 'Barlow Condensed';letter-spacing:.1em;color:#2c4a6b">› GENTLE</div>
+<div style="padding:8px 10px;border-bottom:1px solid #2c4a6b;font:700 14px/1 'Barlow Condensed';letter-spacing:.1em;color:#2c4a6b">›› FIRM</div>
+<div style="padding:8px 10px;border-bottom:1px solid #2c4a6b;font:700 14px/1 'Barlow Condensed';letter-spacing:.1em;color:#2c4a6b">››› STEEP</div>
+<sc-for list="{{ slopeRows }}" as="r" hint-placeholder-count="3">
+<div style="padding:9px 10px;border-bottom:1px solid #2c4a6b33;font:700 15px/1.1 'Barlow Condensed';text-transform:uppercase">{{ r.k }}<div style="font:500 11px/1.2 'Barlow';text-transform:none;color:#2b2b28aa;margin-top:2px">{{ r.sub }}</div></div>
+<div style="padding:9px 10px;border-bottom:1px solid #2c4a6b33;border-left:1px solid #2c4a6b22">{{ r.a }}</div>
+<div style="padding:9px 10px;border-bottom:1px solid #2c4a6b33;border-left:1px solid #2c4a6b22">{{ r.b }}</div>
+<div style="padding:9px 10px;border-bottom:1px solid #2c4a6b33;border-left:1px solid #2c4a6b22">{{ r.c }}</div>
+</sc-for>
+</div>
+<div style="padding:10px 12px;font:400 14px/1.4 'Barlow';color:#2b2b28;text-wrap:pretty">At most one bend per hex, always 60° toward the arrow. A ball with 2 or fewer hexes of pace left breaks more, the way a dying putt really does. The cup hex has no slope.</div>
+</div></div>
+
+<div style="background:#f6f1e3;border:1.5px solid #1f3a2c;padding:4px"><div style="border:1px solid #1f3a2c">
+<div style="background:#1f3a2c;color:#f6f1e3;font:600 13px/1 'Barlow Condensed';letter-spacing:.16em;text-transform:uppercase;padding:9px 12px">Cup &amp; surfaces</div>
+<div style="display:grid;grid-template-columns:120px minmax(0,1fr)">
+<sc-for list="{{ surfaces }}" as="r" hint-placeholder-count="6">
+<div style="padding:9px 10px;border-bottom:1px solid #1f3a2c33;border-right:1px solid #1f3a2c44;font:700 15px/1.1 'Barlow Condensed';text-transform:uppercase">{{ r.k }}</div>
+<div style="padding:9px 12px;border-bottom:1px solid #1f3a2c33;font:400 14px/1.4 'Barlow';color:#2b2b28;text-wrap:pretty">{{ r.v }}</div>
+</sc-for>
+</div>
+</div></div>
+
+<div style="background:#f6f1e3;border:1.5px solid #2c4a6b;padding:4px"><div style="border:1px solid #2c4a6b">
+<div style="background:#2c4a6b;color:#f6f1e3;font:600 13px/1 'Barlow Condensed';letter-spacing:.16em;text-transform:uppercase;padding:9px 12px">Putting deck · 20-card starter</div>
+<div style="display:flex;flex-wrap:wrap;gap:12px;padding:14px 12px">
+<sc-for list="{{ deckFaces }}" as="c" hint-placeholder-count="8">
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div style="width:64px;height:90px;border:1.5px solid {{ c.ink }};background:#fbf8ef;color:{{ c.ink }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px"><div style="font:600 8px/1 'Barlow Condensed';letter-spacing:.08em;text-transform:uppercase">{{ c.kind }}</div><div style="font:800 32px/1 'Barlow Condensed'">{{ c.label }}</div></div><div style="font:400 24px/0.8 'Nanum Pen Script';color:#4a4a48">×{{ c.n }}</div></div>
+</sc-for>
+</div>
+<div style="display:grid;grid-template-columns:120px minmax(0,1fr);border-top:1px solid #2c4a6b">
+<sc-for list="{{ deckRules }}" as="r" hint-placeholder-count="4">
+<div style="padding:9px 10px;border-bottom:1px solid #2c4a6b33;border-right:1px solid #2c4a6b44;font:700 15px/1.1 'Barlow Condensed';text-transform:uppercase">{{ r.k }}</div>
+<div style="padding:9px 12px;border-bottom:1px solid #2c4a6b33;font:400 14px/1.4 'Barlow';color:#2b2b28;text-wrap:pretty">{{ r.v }}</div>
+</sc-for>
+</div>
+</div></div>
+
+<div style="background:#f6f1e3;border:1.5px solid #1f3a2c;padding:4px"><div style="border:1px solid #1f3a2c">
+<div style="background:#1f3a2c;color:#f6f1e3;font:600 13px/1 'Barlow Condensed';letter-spacing:.16em;text-transform:uppercase;padding:9px 12px">Godot · how this maps to green_board.gd</div>
+<div style="display:flex;flex-direction:column;gap:8px;padding:12px">
+<sc-for list="{{ godot }}" as="t" hint-placeholder-count="4"><div style="display:grid;grid-template-columns:22px 1fr;font:400 14px/1.45 'Barlow';color:#2b2b28"><span style="font:400 22px/1 'Nanum Pen Script';color:#b8432f">{{ t.n }}</span><span style="text-wrap:pretty">{{ t.v }}</span></div></sc-for>
+</div>
+</div></div>
+
+</div>
+
+<div style="border:2.5px solid #b8432f;outline:1px solid #b8432f;outline-offset:3px;background:#f6f1e3;padding:16px 18px;display:flex;flex-direction:column;gap:10px">
+<div style="font:600 12px/1 'Barlow Condensed';letter-spacing:.2em;color:#b8432f">DECISIONS FOR YOU</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px 24px">
+<sc-for list="{{ questions }}" as="q" hint-placeholder-count="4"><div style="display:grid;grid-template-columns:24px 1fr;font:400 15px/1.4 'Barlow';color:#2b2b28"><span style="font:400 26px/0.9 'Nanum Pen Script';color:#b8432f">{{ q.n }}</span><span style="text-wrap:pretty"><b style="font-weight:600">{{ q.k }}</b> {{ q.v }}</span></div></sc-for>
+</div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;preview&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;endpoints&quot;,&quot;odds&quot;,&quot;none&quot;],&quot;default&quot;:&quot;endpoints&quot;,&quot;tsType&quot;:&quot;'endpoints'|'odds'|'none'&quot;},&quot;slowBreak&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;startChips&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:3,&quot;min&quot;:0,&quot;max&quot;:10,&quot;tsType&quot;:&quot;number&quot;}}">
+const S3 = Math.sqrt(3), DIRS = [[1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1]], DNAME = ['up-right', 'down-right', 'down', 'down-left', 'up-left', 'up'];
+const INK = '#1f3a2c', NAVY = '#2c4a6b', RED = '#b8432f', PEN = '#4a4a48', TAN = '#7a5a2a';
+const K = (q, r) => q + ',' + r, add = (a, d) => [a[0] + DIRS[d][0], a[1] + DIRS[d][1]];
+const dist = (a, b) => { const dq = a[0] - b[0], dr = a[1] - b[1]; return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)); };
+const W = (q, r) => [1.5 * q, S3 * (r + q / 2)];
+const ek = (a, b) => [K(...a), K(...b)].sort().join('|');
+const RAD = 4, MAXP = 4;
+const DEFS = [
+  { name: 'Double break', par: 2, ball: [-2, 0], cup: [2, -1], spikes: ['-1,3'], slick: [], arrows: { '-1,0': [1, 2], '0,0': [0, 2], '1,-1': [2, 2], '-1,-1': [2, 1], '0,-2': [2, 2], '1,1': [2, 1], '2,1': [3, 2] },
+    note: 'Seven slopes. Aim down-right: the downhill hex adds pace, the hump kicks the ball up and the fall line brings it back into the cup. A flip of +1 or +2 drops it, and +0 leaves a tap-in.' },
+  { name: 'Crowned', par: 2, ball: [-2, 2], cup: [2, -1], spikes: [], slick: ['0,0'], arrows: { '1,-1': [0, 2], '1,0': [1, 2], '0,1': [2, 2], '-1,1': [3, 2], '-1,0': [4, 2], '0,-1': [5, 2] },
+    note: 'One ring of slopes around a slick crown. Straight over the top costs pace going up and gains it coming down. Going around the ring takes longer but stays flat.' },
+  { name: 'Two-tier', par: 3, ball: [-3, 1], cup: [2, 0], spikes: ['3,-2'], slick: ['-2,3'], tier: true, arrows: { '0,-4': [4, 1], '0,-3': [4, 1], '0,-2': [4, 1], '0,-1': [4, 2], '0,0': [4, 2], '0,1': [4, 2], '0,2': [4, 2], '0,3': [4, 2], '0,4': [4, 2], '1,-2': [1, 1], '2,-1': [2, 2] },
+    note: 'There is no ledge, just a slope up to the upper tier. Climbing it directly costs 1 pace; the gentle ramp at the top costs nothing. On the upper tier, a slope funnels the ball into the cup. Lag to the ramp, then make the read.' }
+];
+function build(d) {
+  const cells = new Set(), all = [];
+  for (let q = -RAD; q <= RAD; q++) for (let r = -RAD; r <= RAD; r++) if (Math.abs(q + r) <= RAD) { cells.add(K(q, r)); all.push([q, r]); }
+  const arrows = d.arrows, H = {};
+  all.forEach(c => { const k = K(...c), a = arrows[k]; H[k] = (d.tier && c[0] >= 1 ? 0.07 : 0) - (a ? a[1] * 0.025 : 0); });
+  const lips = new Set(), lipList = [];
+  return { ...d, cells, all, H, arrows, lips, lipList, spikeSet: new Set(d.spikes), slickSet: new Set(d.slick), cupK: K(...d.cup) };
+}
+const GREENS = DEFS.map(build);
+const CARD_DEFS = [
+  [6, { v: 0, label: '+0', kind: 'Modifier', ink: INK }], [4, { v: 1, label: '+1', kind: 'Modifier', ink: INK }], [4, { v: -1, label: '−1', kind: 'Modifier', ink: INK }],
+  [1, { v: 2, label: '+2', kind: 'Modifier', ink: INK }], [1, { v: -2, label: '−2', kind: 'Modifier', ink: INK }], [2, { v: 1, label: '+1', kind: 'Rolling', ink: NAVY, roll: true }],
+  [1, { v: 0, label: '✕', kind: 'Lip out', ink: RED, special: 'lip' }], [1, { v: 0, label: '★', kind: 'Sweet spot', ink: TAN, special: 'star' }]
+];
+const CARDS = []; CARD_DEFS.forEach(([n, c]) => { for (let i = 0; i < n; i++) CARDS.push(c); });
+const rngOf = s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const shuffle = (a, rnd = Math.random) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+function drawChain(pile, discard, rnd) {
+  let p = pile.slice(), d = discard.slice(); const drawn = [];
+  do { if (!p.length) { p = shuffle(d, rnd); d = []; } if (!p.length) break; drawn.push(p.shift()); } while (CARDS[drawn[drawn.length - 1]].roll);
+  const total = 2 + drawn.reduce((s, i) => s + CARDS[i].v, 0), sp = drawn.map(i => CARDS[i].special).filter(Boolean);
+  return { p, d, drawn, total, special: sp[sp.length - 1] || null };
+}
+function sim(G, start, dir, total, special, slow) {
+  let pos = start, h = dir, pace = total, why = 'rolled';
+  const path = [start];
+  if (total <= 0) return { path, end: start, holed: false, why: 'short' };
+  for (let g = 0; pace > 0 && g < 30; g++) {
+    const nx = add(pos, h), nk = K(...nx);
+    if (!G.cells.has(nk)) { why = 'fringe'; break; }
+    if (G.lips.has(ek(pos, nx))) { why = 'lip'; break; }
+    pos = nx; pace--; path.push(pos);
+    if (nk === G.cupK) {
+      if (special === 'lip') { path.pop(); pos = path[path.length - 1]; return { path, end: pos, holed: false, why: 'lipout' }; }
+      if (special === 'star' || pace <= 1) return { path, end: pos, holed: true, why: 'holed' };
+      why = 'ran'; continue;
+    }
+    if (G.spikeSet.has(nk)) { why = 'spike'; break; }
+    const a = G.arrows[nk];
+    if (a) { const [ad, st] = a, df = (ad - h + 6) % 6;
+      if (df === 0) pace += st - 1; else if (df === 3) pace -= st - 1;
+      else if (st >= 2 || !slow || pace <= 2) h = df < 3 ? (h + 1) % 6 : (h + 5) % 6; }
+    if (G.slickSet.has(nk)) pace += 1;
+  }
+  if (special === 'star' && dist(pos, G.cup) === 1) { path.push(G.cup); return { path, end: G.cup, holed: true, why: 'holed' }; }
+  return { path, end: pos, holed: false, why };
+}
+const WHY = { holed: 'Drops!', lip: 'Stopped against the lip.', spike: 'Stopped dead in the spike marks.', fringe: 'Ran out to the fringe.', lipout: 'Lip out (✕): it hangs on the edge.', short: 'Barely moved.', rolled: 'Rolled out.', ran: 'Too firm: lipped out and ran on.' };
+const WORD = { '-2': 'Eagle', '-1': 'Birdie', '0': 'Par', '1': 'Bogey', '2': 'Double bogey' };
+function drawBoard(G, ball, st, pv, pick, trail) {
+  const h = React.createElement, s = 26;
+  const P = (q, r) => { const [x, y] = W(q, r); return [x * s, y * s]; };
+  const pts = (x, y, sc = 0.96) => Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 3 * i; return (x + s * sc * Math.cos(a)).toFixed(1) + ',' + (y + s * sc * Math.sin(a)).toFixed(1); }).join(' ');
+  const kids = [];
+  for (let q = -RAD - 1; q <= RAD + 1; q++) for (let r = -RAD - 1; r <= RAD + 1; r++) { if (Math.abs(q + r) > RAD + 1 || G.cells.has(K(q, r))) continue; const [x, y] = P(q, r); kids.push(h('polygon', { key: 'f' + K(q, r), points: pts(x, y), fill: 'oklch(0.66 0.09 145)', stroke: 'oklch(0.58 0.08 145)', strokeWidth: 1 })); }
+  G.all.forEach(c => { const k = K(...c), [x, y] = P(...c);
+    kids.push(h('polygon', { key: 'h' + k, points: pts(x, y), fill: G.slickSet.has(k) ? 'oklch(0.9 0.045 215)' : `oklch(${(0.84 + G.H[k]).toFixed(3)} 0.08 148)`, stroke: '#3b6b4a', strokeWidth: 1 }));
+    if (pv && pv.shade[k]) kids.push(h('polygon', { key: 'sh' + k, points: pts(x, y, 0.9), fill: RED, opacity: Math.min(0.55, 0.12 + pv.shade[k] * 1.2) }));
+    if (G.spikeSet.has(k)) for (let i = 0; i < 6; i++) kids.push(h('circle', { key: 'sp' + k + i, cx: x - 8 + (i % 3) * 8, cy: y - 4 + Math.floor(i / 3) * 8, r: 1.7, fill: INK }));
+    const a = G.arrows[k]; if (a) { const [nx, ny] = P(...add(c, a[0])), ang = Math.atan2(ny - y, nx - x) * 180 / Math.PI, g = [h('line', { key: 'l', x1: -9, y1: 0, x2: 9, y2: 0, stroke: INK, strokeWidth: 1.4, opacity: .7 })];
+      for (let i = 0; i < a[1]; i++) g.push(h('path', { key: 'c' + i, d: `M${4 - i * 5} -4.5 L${9 - i * 5} 0 L${4 - i * 5} 4.5`, fill: 'none', stroke: INK, strokeWidth: 1.6, strokeLinejoin: 'round' }));
+      kids.push(h('g', { key: 'a' + k, transform: `translate(${x} ${y}) rotate(${ang})` }, g)); } });
+  G.lipList.forEach(([a, b], i) => { const [ax, ay] = P(...a), [bx, by] = P(...b), mx = (ax + bx) / 2, my = (ay + by) / 2, dx = bx - ax, dy = by - ay, n = Math.hypot(dx, dy), ux = -dy / n * s * 0.5, uy = dx / n * s * 0.5;
+    kids.push(h('line', { key: 'lip' + i, x1: mx - ux, y1: my - uy, x2: mx + ux, y2: my + uy, stroke: '#5a4331', strokeWidth: 5, strokeLinecap: 'round' })); });
+  const line = (path, key, o) => kids.push(h('polyline', { key, points: path.map(c => P(...c).join(',')).join(' '), fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round', ...o }));
+  if (pv) { pv.paths.forEach((p, i) => line(p.path, 'pp' + i, { stroke: p.base ? PEN : INK, strokeWidth: p.base ? 2.6 : 1.4, strokeDasharray: p.base ? '6 4' : '2 4', opacity: p.base ? 1 : .55 }));
+    pv.marks.forEach((m, i) => { const [x, y] = P(...m.c); kids.push(h('g', { key: 'm' + i }, h('circle', { cx: x, cy: y - 14, r: 9 + (m.t.length > 1 ? 4 : 0), fill: '#fbf8ef', stroke: m.holed ? RED : PEN, strokeWidth: 1.5 }), h('text', { x, y: y - 9.5, textAnchor: 'middle', fontFamily: 'Barlow Condensed', fontWeight: 700, fontSize: 12, fill: m.holed ? RED : PEN }, m.t))); }); }
+  if (trail && trail.length > 1) line(trail, 'trail', { stroke: RED, strokeWidth: 2.6 });
+  const [cx, cy] = P(...G.cup);
+  kids.push(h('circle', { key: 'cup', cx, cy, r: 8, fill: '#1a1a1a' }), h('line', { key: 'pin', x1: cx, y1: cy, x2: cx, y2: cy - 32, stroke: INK, strokeWidth: 2 }), h('path', { key: 'fl', d: `M${cx} ${cy - 32} l15 5 l-15 5z`, fill: RED }));
+  const [bx, by] = P(...ball);
+  if (pick) DIRS.forEach((d, i) => { const [nx, ny] = P(...add(ball, i)), ux = (nx - bx) / (S3 * s), uy = (ny - by) / (S3 * s), x = bx + ux * s * 1.15, y = by + uy * s * 1.15, on = st.dir === i, ang = Math.atan2(uy, ux) * 180 / Math.PI;
+    kids.push(h('g', { key: 'd' + i, onClick: () => pick(i), style: { cursor: 'pointer' } }, h('circle', { cx: x, cy: y, r: 11, fill: on ? INK : '#fbf8ef', stroke: INK, strokeWidth: 1.6 }), h('path', { d: 'M-4 -4 L2 0 L-4 4', transform: `translate(${x} ${y}) rotate(${ang})`, fill: 'none', stroke: on ? '#fbf8ef' : INK, strokeWidth: 2, strokeLinecap: 'round' }))); });
+  if (!st.holed) kids.push(h('circle', { key: 'ball', cx: bx, cy: by, r: 7, fill: '#fff', stroke: '#222', strokeWidth: 2 }));
+  return h('svg', { viewBox: `${-8.3 * s} ${-9.6 * s} ${16.6 * s} ${19.2 * s}`, style: { width: '100%', height: 'auto', maxHeight: '78vh', display: 'block', margin: '0 auto' } }, kids);
+}
+class Component extends DCLogic {
+  state = this.fresh(0, this.props.startChips ?? 3, shuffle(CARDS.map((_, i) => i)), []);
+  fresh(g, chips, pile, discard) { const G = GREENS[g]; return { g, ball: G.ball, pile, discard, chips, strokes: 0, picked: false, dir: null, peek: false, flips: [], math: '', log: ['Pick a line: tap an arrow next to the ball.'], anim: null, holed: false }; }
+  can() { const s = this.state; return !s.anim && !s.holed && !s.picked; }
+  componentWillUnmount() { clearInterval(this._t); }
+  putt(total, special, drawnFaces, pile, discard, drawn, chips) {
+    const st = this.state, G = GREENS[st.g], res = sim(G, st.ball, st.dir, total, special, this.props.slowBreak ?? true);
+    let d2 = [...discard, ...drawn], p2 = pile, shuffled = false;
+    if (drawn.some(i => CARDS[i].special)) { p2 = shuffle([...pile, ...d2]); d2 = []; shuffled = true; }
+    const math = drawnFaces.length ? '2 ' + drawnFaces.map(f => (f.v < 0 ? '− ' + -f.v : '+ ' + f.v)).join(' ') + ' = ' + total : 'lag = 2';
+    this.setState({ pile: p2, discard: d2, chips, strokes: st.strokes + 1, flips: drawnFaces, math, anim: { path: res.path, i: 0, res, shuffled, dir: st.dir, total }, dir: null, peek: false });
+    clearInterval(this._t);
+    this._t = setInterval(() => {
+      const a = this.state.anim; if (!a) return clearInterval(this._t);
+      if (a.i < a.path.length - 1) return this.setState({ anim: { ...a, i: a.i + 1 } });
+      clearInterval(this._t);
+      const msg = `Putt ${this.state.strokes}: ${DNAME[a.dir]}, ${a.total} hex. ${WHY[a.res.why]}${a.shuffled ? ' Deck reshuffled.' : ''}`;
+      const picked = !a.res.holed && this.state.strokes >= MAXP;
+      this.setState(s => ({ anim: null, ball: a.res.holed ? GREENS[s.g].cup : a.res.end, holed: a.res.holed, picked, log: [picked ? `Putt ${MAXP} missed: pick up, score ${MAXP + 1}.` : msg, ...s.log].slice(0, 5) }));
+    }, 170);
+  }
+  flip = () => { const st = this.state; if (st.dir == null || !this.can()) return; const c = drawChain(st.pile, st.discard); this.putt(c.total, c.special, c.drawn.map(i => CARDS[i]), c.p, c.d, c.drawn, st.chips); };
+  lag = () => { const st = this.state; if (st.dir == null || !this.can() || st.chips < 1) return; this.putt(2, null, [], st.pile, st.discard, [], st.chips - 1); };
+  peekFn = () => { const st = this.state; if (st.peek || st.chips < 1 || !this.can()) return; let { pile, discard } = st; if (!pile.length) { pile = shuffle(discard); discard = []; } this.setState({ pile, discard, peek: true, chips: st.chips - 1 }); };
+  odds(G, st, slow) {
+    const key = [st.g, K(...st.ball), st.dir, st.pile.join('.'), st.discard.length, st.peek, slow].join('|');
+    if (this._m && this._m.key === key) return this._m.val;
+    const rnd = rngOf(key.length * 7919 + st.pile.length * 31 + st.dir), N = 700, shade = {}; let holed = 0;
+    for (let i = 0; i < N; i++) { const pile = st.peek ? [st.pile[0], ...shuffle(st.pile.slice(1), rnd)] : shuffle(st.pile, rnd); const c = drawChain(pile, st.discard, rnd), r = sim(G, st.ball, st.dir, c.total, c.special, slow);
+      if (r.holed) holed++; else { const k = K(...r.end); shade[k] = (shade[k] || 0) + 1 / N; } }
+    const val = { drop: Math.round(100 * holed / N), shade }; this._m = { key, val }; return val;
+  }
+  renderVals() {
+    const st = this.state, G = GREENS[st.g], mode = this.props.preview ?? 'endpoints', slow = this.props.slowBreak ?? true;
+    const ball = st.anim ? st.anim.path[st.anim.i] : st.ball, can = !st.anim && !st.holed && !st.picked, score = st.picked ? MAXP + 1 : st.strokes;
+    let pv = null, od = null;
+    if (st.dir != null && can) {
+      od = this.odds(G, st, slow);
+      pv = { paths: [], marks: [], shade: mode === 'odds' ? od.shade : {} };
+      if (mode === 'none') pv.paths.push({ path: sim(G, st.ball, st.dir, 2, null, slow).path, base: true });
+      else { const ends = {};
+        for (let t = 0; t <= 6; t++) { const r = sim(G, st.ball, st.dir, t, null, slow); if (t === 2 || t === 6) pv.paths.push({ path: r.path, base: t === 2 }); const k = K(...r.end); (ends[k] = ends[k] || { c: r.end, t: [], holed: r.holed }).t.push(t); }
+        pv.marks = Object.values(ends).filter(m => K(...m.c) !== K(...st.ball) || m.t.length).map(m => ({ c: m.c, holed: m.holed, t: m.t.length > 2 ? m.t[0] + '–' + m.t[m.t.length - 1] : m.t.join('·') })); }
+    }
+    const top = st.peek && st.pile.length ? CARDS[st.pile[0]] : null;
+    const counts = CARD_DEFS.map(([n, c]) => ({ ...c, n }));
+    return {
+      board: drawBoard(G, ball, st, pv, can ? (i => this.setState({ dir: i })) : null, st.anim ? st.anim.path.slice(0, st.anim.i + 1) : null),
+      boardHint: st.dir == null && can ? 'tap an arrow by the ball to pick a line' : mode === 'endpoints' && pv ? 'numbers = where each total stops' : '',
+      gNum: st.g + 1, gName: G.name, par: G.par, gNote: G.note, strokes: st.strokes, chips: st.chips, pileN: st.pile.length, discardN: st.discard.length,
+      lineText: st.picked ? 'Picked up' : st.holed ? 'In the hole' : st.anim ? 'Rolling…' : st.dir == null ? 'No line chosen' : 'Line: ' + DNAME[st.dir],
+      showOdds: mode === 'odds' && !!od, dropPct: od ? od.drop + '%' : '',
+      peeked: !!top, peekLabel: top ? top.label + ' (' + top.kind + ')' : '',
+      flipOp: st.dir != null && can ? 1 : .35, lagOp: st.dir != null && can && st.chips >= 1 ? 1 : .35, peekOp: !st.peek && st.chips >= 1 && can ? 1 : .35,
+      flip: this.flip, lag: this.lag, peek: this.peekFn,
+      flips: st.flips.map(f => ({ ...f })), flipMath: st.math,
+      strokeTxt: st.strokes + ' / ' + MAXP, holed: st.holed || st.picked, resultWord: WORD[String(score - G.par)] || '+' + (score - G.par), resultSub: st.picked ? `Picked up after ${MAXP} putts · scores ${score} · par ${G.par}` : `Holed in ${score} · par ${G.par}`,
+      next: () => { const g = (st.g + 1) % 3, bonus = Math.max(0, G.par - score); this.setState({ ...this.fresh(g, st.chips + 1 + bonus, st.pile, st.discard), log: [`New green. +1 chip${bonus ? `, +${bonus} for under par` : ''}. The deck carries over.`] }); },
+      reset: () => { clearInterval(this._t); this.setState(this.fresh(st.g, st.chips, st.pile, st.discard)); },
+      newDeck: () => { clearInterval(this._t); this.setState(this.fresh(st.g, this.props.startChips ?? 3, shuffle(CARDS.map((_, i) => i)), [])); },
+      log: st.log,
+      turn: [
+        { n: '1', k: 'Read', v: 'Pick 1 of 6 lines from the ball. The preview traces the line for each total from 0 to 6, breaks included, so the read is never hidden.' },
+        { n: '2', k: 'Prepare', v: 'Optional: Caddie Peek (1 chip) shows the top card of the deck before you commit.' },
+        { n: '3', k: 'Strike', v: 'Flip & Putt: 2 plus the flipped modifier, flipping again on rolling cards. Or Lag Putt (1 chip): exactly 2, no flip.' },
+        { n: '4', k: 'Roll', v: 'The ball moves hex by hex. Each hex it enters can bend it, speed it up or slow it down.' },
+        { n: '5', k: 'Resolve', v: 'It drops or stops. Flipped cards go to the discard pile, and ✕ or ★ reshuffles everything at the end of the putt.' }
+      ],
+      slopeRows: [
+        { k: 'Side', sub: 'arrow 60° or 120° off the line', a: 'Bends 60° only if 2 or fewer hexes are left', b: 'Bends 60°', c: 'Bends 60°' },
+        { k: 'Downhill', sub: 'arrow along the line', a: 'No effect', b: '+1 hex', c: '+2 hex' },
+        { k: 'Uphill', sub: 'arrow against the line', a: 'No effect', b: '−1 hex', c: '−2 hex' }
+      ],
+      surfaces: [
+        { k: 'Cup', v: 'Drops if the ball enters the cup with 0 or 1 hexes still to roll. Any faster and it lips out and runs on along its line.' },
+        { k: '★ Sweet spot', v: 'Drops if the ball passes over the cup or finishes next to it.' },
+        { k: '✕ Lip out', v: 'Cannot drop: the ball stops on the hex before the cup.' },
+        { k: 'Putt limit', v: 'At most 4 putts per green. If the 4th misses, pick up and score 5. One-putts and two-putts are possible but have to be planned: lag to a good read, then make it.' },
+        { k: 'Spike marks', v: 'The ball stops dead in that hex.' },
+        { k: 'Slick', v: '+1 hex when entered, which stacks with downhill.' },
+        { k: 'Fringe', v: 'The ball stops on the last green hex. (Spec: the next putt from there has disadvantage.)' }
+      ],
+      deckFaces: counts,
+      deckRules: [
+        { k: 'Persistence', v: 'The deck and discard pile carry across every green in the run. When the draw pile runs out, the discard pile is shuffled to refill it.' },
+        { k: 'Earned', v: '+3 (rare reward), break cards ↻ / ↺ (bend 60°, then flip again) and Steady (ignore slope, flip again). Perks can also remove −1s.' },
+        { k: 'Curse / Bless', v: 'A 3-putt adds a −3 Yips card. Blessings are one-use ★. Both leave the deck once drawn.' },
+        { k: 'Adv. / Disadv.', v: 'Spec, not in the prototype. Advantage flips two chains and you pick one. Disadvantage (fringe or spike lie) flips two and applies the one that finishes further from the cup.' }
+      ],
+      godot: [
+        { n: '1', v: 'Reuse the green_board.gd per-hex arrow data, slick and spikes. Keep arrows sparse (4–10 per green, authored or as slope zones) and drop full-length lips; tiers become a band of uphill arrows. Only putt resolution changes.' },
+        { n: '2', v: 'Replace the push chain with a deterministic simulate_putt(start, dir, total, special) → {path, holed, reason}. The preview is the same function called for totals 0–6.' },
+        { n: '3', v: 'Add a PuttDeck resource (draw pile, discard, draw_chain(), reshuffle flag) and store it in the run state next to the swing deck.' },
+        { n: '4', v: 'Generator check: for the tee-off ball position, run every direction against the starter deck and reseed if the best drop chance is under 15% or over 70%. Par comes from hex distance (≤4 is par 2, otherwise par 3).' }
+      ],
+      questions: [
+        { n: '1', k: 'Preview depth.', v: 'Show the numbered endpoints, full odds or nothing? Try all three under Tweaks → preview.' },
+        { n: '2', k: 'Slow-ball break.', v: 'Should gentle slopes only bend a dying putt? It adds realism but also a rule to learn. Toggle it under Tweaks.' },
+        { n: '3', k: 'Lag putt.', v: 'Keep it fixed at exactly 2, or let the player choose 1–3? A choice makes it stronger and might need a higher cost.' },
+        { n: '4', k: 'Chips.', v: 'Should chips earned on the green (par bonus) be the same currency as swing chips, or a separate putting pool?' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

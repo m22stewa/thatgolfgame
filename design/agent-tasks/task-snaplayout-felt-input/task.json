@@ -1,0 +1,7 @@
+{
+  "task_id": "task-snaplayout-felt-input",
+  "task_description": "Marvel-Snap 75/25 layout restructure (3D hole fills top ~75%, cards/modifiers/Shoot in a bottom ~25% felt tray), a prominent procedural woven-felt tray + stronger turf/rough felt grain, and a cross-platform hole-view input overhaul (desktop mouse+keyboard / laptop trackpad / phone touch) for the Godot 4.7.2 golf deckbuilder. UI/UX + input only: no gameplay/turn-loop/hole-gen/scoring/card-logic changes beyond re-parenting the existing hand UI. Preserve %HandStrip/%ClubRow/%ModifierRow/%ShootButton through re-parenting; keep aiming and putting input paths working; keep test_turn_loop (40/40) and test_live_hand_wiring (16/16) green; project.godot may change only for input settings; models/ .md .github/ untouched; the 2 baseline font errors are accepted.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003"],
+  "blocked_reason": null
+}
